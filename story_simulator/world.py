@@ -30,50 +30,51 @@ class World( object ):
     # Properties
     ########################################################################
 
-    def generic_excel_getter( self, property_name, subfolders=[] ):
-        '''Generic property for loading in an excel file in a subdirectory.'''
-
-        hidden_attr = '_{}'.format( property_name )
-
-        if not hasattr( self, hidden_attr ):
-
-            # Set up the subfolders
-            used_subfolders = copy.copy( subfolders )
-            used_subfolders.append( '{}.xlsx'.format( property_name ) )
-
-            filepath = os.path.join( self.world_dir, *used_subfolders )
-
-            setattr( self, hidden_attr, pd.read_excel( filepath ) )
-
-        return getattr( self, hidden_attr )
-
-    ########################################################################
-
     @property
     def historical_events( self ):
 
-        return self.generic_excel_getter( 'historical_events', [ 'world' ] )
+        return utilities.generic_table_getter(
+            self,
+            'historical_events',
+            self.world_dir,
+            subfolders = [ 'world' ]
+        )
 
     ########################################################################
 
     @property
     def events( self ):
 
-        return self.generic_excel_getter( 'events', [ 'world' ] )
+        return utilities.generic_table_getter(
+            self,
+            'events',
+            self.world_dir,
+            subfolders = [ 'world' ]
+        )
 
     ########################################################################
 
     @property
     def characters( self ):
 
-        return self.generic_excel_getter( 'characters', [ 'world/characters' ] )
+        return utilities.generic_table_getter(
+            self,
+            'characters',
+            self.world_dir,
+            subfolders = [ 'world', 'characters' ]
+        )
 
     ########################################################################
 
     @property
     def nodes( self ):
 
-        return self.generic_excel_getter( 'nodes', [ 'world/settings' ] )
+        return utilities.generic_table_getter(
+            self,
+            'nodes',
+            self.world_dir,
+            subfolders = [ 'world', 'settings' ]
+        )
 
     ########################################################################
     # Methods
@@ -83,7 +84,10 @@ class World( object ):
 
         part = getattr( self, part_name )
 
-        ind = prob_tools.sample_discrete_probabilities( part['Likelihood'].values, normalize=True )
+        ind = prob_tools.sample_discrete_probabilities(
+            part['Likelihood'].values,
+            normalize = True
+        )
 
         if n_samples == 1:
             return part.loc[ind]

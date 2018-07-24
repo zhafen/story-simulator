@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-'''Functions for generating names
+'''Functions for generating names.
 
 @author: Zach Hafen
 @contact: zachary.h.hafen@gmail.com
@@ -24,6 +24,8 @@ class Name( object ):
         self,
         n_p_min = 2,
         n_p_max = 4,
+        vowel_likelihoods = [ 0.25, 0.05 ],
+        consonant_likelihoods = [ 0.5, 0.02 ],
         phonemes_dir = None,
         phonemes = 'all',
     ):
@@ -40,6 +42,9 @@ class Name( object ):
 
         if phonemes_dir is None:
             self.phonemes_dir = os.path.dirname( os.path.realpath( __file__ ) )
+
+        # Actually generate the name
+        self.generate_name()
 
     ########################################################################
     # Properties
@@ -85,12 +90,29 @@ class Name( object ):
         # This is probably easiest to implement as probability of there being
         # subsequent consonants or vowels
 
-        self.n_p = np.random.randint( self.n_p_min, self.n_p_max )
+        # Get the number of letters in the word
+        if self.n_p_min != self.n_p_max:
+            self.n_p = np.random.randint( self.n_p_min, self.n_p_max )
+        else:
+            self.n_p = self.n_p_max
 
         # Get the individual phenomes
         self.name_data = []
         for i in range( self.n_p ):
-            phoneme_name = np.random.choice( self.available_phonemes.index )
+
+            if i == 0:
+                phoneme_name = np.random.choice( self.available_phonemes.index )
+            elif i == 1:
+                if self.name_data[0]['Vowel']:
+                    if np.random.uniform() < self.vowel_likelihoods:
+                        phoneme_name = np.random.choice( self.available_vowels.index )
+                    else:
+                        phoneme_name = np.random.choice( self.available_consonants.index )
+                else:
+                    if np.random.uniform() < self.consonant_likelihoods:
+                        phoneme_name = np.random.choice( self.available_consonants.index )
+                    else:
+                        phoneme_name = np.random.choice( self.available_vowels.index )
 
             phoneme = self.available_phonemes.loc[phoneme_name]
 

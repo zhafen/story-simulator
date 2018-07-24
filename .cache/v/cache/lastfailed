@@ -1,0 +1,3 @@
+{
+  "tests/test_generator/test_name.py::TestName::test_generate_name_consonants_and_vowels": true
+}

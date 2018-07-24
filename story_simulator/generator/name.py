@@ -26,6 +26,7 @@ class Name( object ):
         n_p_max = 4,
         vowel_chain = [ 0.25, 0.05 ],
         consonant_chain = [ 0.5, 0.02 ],
+        chain_type = 'percents',
         phonemes_dir = None,
         phonemes = None,
     ):

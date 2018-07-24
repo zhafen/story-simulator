@@ -18,6 +18,19 @@ import story_simulator.generator.name as name_generator
 
 class TestName( unittest.TestCase ):
 
+    def test_available_consonants_and_vowels( self ):
+
+        name = name_generator.Name()
+
+        # Make sure there are no consonants or vowels mixed up
+        assert name.available_consonants['Vowel'].sum() == 0
+        assert name.available_vowels['Vowel'].sum() == len( name.available_vowels )
+
+        # Make sure we have all the letters
+        assert len( name.available_vowels ) + len( name.available_consonants ) == len( name.available_phonemes )
+
+    ########################################################################
+
     def test_generate_name_consonants_and_vowels( self ):
 
         # Set up a random seed for reproducibility.

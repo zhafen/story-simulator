@@ -75,6 +75,16 @@ class Name( object ):
     ########################################################################
 
     @property
+    def available_vowels( self ):
+        return self.available_phonemes.loc[self.available_phonemes['Vowel']]
+
+    @property
+    def available_consonants( self ):
+        return self.available_phonemes.loc[np.invert(self.available_phonemes['Vowel'])]
+
+    ########################################################################
+
+    @property
     def name( self ):
         '''Name using the default spelling'''
 

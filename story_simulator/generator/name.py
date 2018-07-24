@@ -24,17 +24,30 @@ class Name( object ):
         self,
         n_p_min = 2,
         n_p_max = 4,
-        vowel_likelihoods = [ 0.25, 0.05 ],
-        consonant_likelihoods = [ 0.5, 0.02 ],
+        vowel_chain = [ 0.25, 0.05 ],
+        consonant_chain = [ 0.5, 0.02 ],
         phonemes_dir = None,
         phonemes = 'all',
     ):
         '''Constructor.
 
         Args:
+            n_p_min, n_p_max (int) :
+                Minimum/maximum number of phonemes in the name.
+
+            vowel_chain, consonant_chain (array-like) :
+                The ith index is the probability that there will be a chain of i+2 vowels/consonants,
+                given that there is already a chain of i+1 vowels/consonants.
+                If the ith index doesn't exist, the probability is zero.
+                TODO: I'd really like to make it that s.t. these aren't conditional_probabililities,
+                but are the percentages of the time that we have particular words.
+
             phonemes_dir (str) :
                 The directory the phonemes data is stored in. Defaults to the
                 directory this file is stored in.
+
+            phonemes (str or array-like) :
+                List of phonemes to use.
 
         Phonemes:
             What phonemes in particular to use?
@@ -96,9 +109,6 @@ class Name( object ):
     ########################################################################
 
     def generate_name( self ):
-        # TODO: Allow there to be a flow of consonants and vowels
-        # This is probably easiest to implement as probability of there being
-        # subsequent consonants or vowels
 
         # Get the number of letters in the word
         if self.n_p_min != self.n_p_max:
@@ -106,25 +116,55 @@ class Name( object ):
         else:
             self.n_p = self.n_p_max
 
+        def get_phoneme( phonemes_df ):
+            '''Helper function for getting a phoneme.'''
+            phoneme_name = np.random.choice( phonemes_df.index )
+            return self.available_phonemes.loc[phoneme_name]
+
         # Get the individual phenomes
         self.name_data = []
         for i in range( self.n_p ):
 
             if i == 0:
-                phoneme_name = np.random.choice( self.available_phonemes.index )
-            elif i == 1:
-                if self.name_data[0]['Vowel']:
-                    if np.random.uniform() < self.vowel_likelihoods:
-                        phoneme_name = np.random.choice( self.available_vowels.index )
-                    else:
-                        phoneme_name = np.random.choice( self.available_consonants.index )
-                else:
-                    if np.random.uniform() < self.consonant_likelihoods:
-                        phoneme_name = np.random.choice( self.available_consonants.index )
-                    else:
-                        phoneme_name = np.random.choice( self.available_vowels.index )
+                phoneme = get_phoneme( self.available_phonemes )
 
-            phoneme = self.available_phonemes.loc[phoneme_name]
+                # Start up a chain
+                j0 = 0
+                chain_vowel = phoneme['Vowel']
+
+            else:
+                j = i - 1 - j0
+
+                # Vowel chain case
+                if chain_vowel:
+
+                    # Vowel chain continues case
+                    if np.random.uniform() < self.vowel_chain[j]:
+                        phoneme = get_phoneme( self.available_vowels )
+
+                    # Vowel chain ends case
+                    else:
+                        phoneme = get_phoneme( self.available_consonants )
+
+                        # Start a new chain
+                        j0 = i
+                        chain_vowel = phoneme['Vowel']
+
+                # Consonant chain case
+                else:
+
+                    # Consonant chain continues case
+                    if np.random.uniform() < self.consonant_chain[j]:
+                        phoneme = get_phoneme( self.available_consonants )
+
+                    # Consonant chain ends case
+                    else:
+                        phoneme = get_phoneme( self.available_vowels )
+
+                        # Start a new chain
+                        j0 = i
+                        chain_vowel = phoneme['Vowel']
+
 
             self.name_data.append( phoneme )
         

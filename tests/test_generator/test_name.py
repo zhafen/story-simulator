@@ -34,38 +34,73 @@ class TestName( unittest.TestCase ):
     def test_generate_name_consonants_and_vowels( self ):
 
         # Set up a random seed for reproducibility.
-        # Numbers produced are 0.19, 0.62, 0.437
-        # np.random.seed( 1234 )
+        np.random.seed( 1234 )
 
-        vowel_likelihoods = [ 0.25, 0.15, 0.1 ]
-        consonant_likelihoods = [ 0.2, 0.1, 0.05 ]
-
-        n_samples = 1000
         n_letters = 3
+        vowel_c = [ 0.25, 0.15, 0.1 ]
+        consonant_c = [ 0.2, 0.1, 0.05 ]
+
+        # Initial name draw to allow us to calc the probabilities
+        name = name_generator.Name(
+            n_p_min = n_letters,
+            n_p_max = n_letters,
+            vowel_chain = vowel_c,
+            consonant_chain = consonant_c,
+        )
+
+        # Calculate the expected probabilities
+        n_available_vowels = name.available_phonemes['Vowel'].sum()
+        n_available_phonemes = len( name.available_phonemes )
+        p_first_vowel = float( n_available_vowels ) / n_available_phonemes
+
+        # Probabilities for the second letter being a vowel
+        p_second_vowel = p_first_vowel * vowel_c[0] + \
+                ( 1. - p_first_vowel ) * ( 1. - consonant_c[0] )
+        p_second_consonant = p_first_vowel * ( 1. - vowel_c[0] ) + \
+                ( 1. - p_first_vowel ) * consonant_c[0]
+        npt.assert_allclose( p_second_vowel + p_second_consonant, 1. )
+
+        # Probabilities for the third letter being a vowel
+        # The ways we can get to the third phoneme as a vowel are:
+        # VVV
+        # VCV
+        # CCV
+        # CVV
+        p_third_vowel = (
+            p_first_vowel * vowel_c[0] * vowel_c[1] +
+            p_first_vowel * ( 1. - vowel_c[0] ) * ( 1. - consonant_c[0] ) +
+            ( 1. - p_first_vowel ) * consonant_c[0] * ( 1. - consonant_c[1] ) +
+            ( 1. - p_first_vowel ) * ( 1. - consonant_c[0] ) * vowel_c[0]
+        )
+        # To make sure our math is right, let's calculate the probability of getting
+        # the third phoneme as a consonant. Combinations are...
+        # CCC
+        # CVC
+        # VVC
+        # VCC
+        p_third_consonant = (
+            (1. - p_first_vowel ) * consonant_c[0] * consonant_c[1] +
+            (1. - p_first_vowel ) * ( 1. - consonant_c[0] ) * ( 1. - vowel_c[0] ) +
+            p_first_vowel * vowel_c[0] * ( 1. - vowel_c[1] ) +
+            p_first_vowel * ( 1. - vowel_c[0] ) * consonant_c[0]
+        )
+        # Our check
+        npt.assert_allclose( p_third_vowel + p_third_consonant, 1. )
+
+        # Sample the name generator
+        n_samples = 1000
         n_vowels = np.zeros( n_letters )
         for i in range( n_samples ):
 
             name = name_generator.Name(
                 n_p_min = n_letters,
                 n_p_max = n_letters,
-                vowel_likelihoods = vowel_likelihoods,
-                consonant_likelihoods = consonant_likelihoods,
+                vowel_chain = vowel_c,
+                consonant_chain = consonant_c,
             )
 
             n_vowels += name.name_data['Vowel'].values.astype( int )
 
-        # Calculate the expected probabilities
-        n_available_vowels = name.available_phonemes['Vowel'].sum()
-        n_available_phonemes = len( name.available_phonemes )
-        p_first_vowel = float( n_available_vowels ) / n_available_phonemes
-        p_second_vowel = p_first_vowel * vowel_likelihoods[0] + \
-                ( 1. - p_first_vowel ) * ( 1. - consonant_likelihoods[0] )
-        p_second_consonant = p_first_vowel * ( 1. - vowel_likelihoods[0] ) + \
-                ( 1. - p_first_vowel ) * consonant_likelihoods[0]
-        p_third_vowel = p_first_vowel * vowel_likelihoods[1] + \
-                ( 1. - p_first_vowel ) * consonant_likelihoods[1] + \
-                p_second_vowel * vowel_likelihoods[0] + \
-                p_second_consonant * ( 1. - consonant_likelihoods[0] )
 
         actual = n_vowels.astype( float ) / n_samples
         expected = np.array([
@@ -73,6 +108,5 @@ class TestName( unittest.TestCase ):
             p_second_vowel,
             p_third_vowel,
         ])
-        npt.assert_allclose( expected, actual )
+        npt.assert_allclose( expected, actual, atol=0.02 )
                 
-

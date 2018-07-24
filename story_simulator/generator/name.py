@@ -27,7 +27,7 @@ class Name( object ):
         vowel_chain = [ 0.25, 0.05 ],
         consonant_chain = [ 0.5, 0.02 ],
         phonemes_dir = None,
-        phonemes = 'all',
+        phonemes = None,
     ):
         '''Constructor.
 
@@ -80,10 +80,14 @@ class Name( object ):
     def available_phonemes( self ):
         '''Actual data used'''
 
-        if self.phonemes == 'all':
+        if self.phonemes is None:
             return self.phonemes_table
 
-        raise Exception( "Not implemented yet." )
+        # Case where particular phonemes are selected
+        else:
+            if not hasattr( self, '_available_phonemes' ):
+                self._available_phonemes = self.phonemes_table.loc[self.phonemes]
+            return self._available_phonemes
 
     ########################################################################
 
@@ -101,8 +105,7 @@ class Name( object ):
     def name( self ):
         '''Name using the default spelling'''
 
-        # TODO: Implement this
-        pass
+        return self.name_data['Default Spelling'].values.sum()
 
     ########################################################################
     # Methods

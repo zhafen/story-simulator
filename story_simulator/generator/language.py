@@ -25,13 +25,11 @@ class GeneratedLanguage( object ):
     def __init__(
         self,
         name = None,
-        n_p_min = None,
-        n_p_max = None,
+        n_p_min = [ 1, 2 ],
+        n_p_max = [ 1, 7 ],
         vowel_chain = None,
         consonant_chain = None,
         phonemes = None,
-        n_p_min_range = [ 1, 2 ],
-        n_p_max_range = [ 1, 7 ],
         n_available_vowels = [ 2, 20 ],
         n_available_consonants = [ 2, 20 ],
         phonemes_dir = None,
@@ -88,6 +86,18 @@ class GeneratedLanguage( object ):
 
     def generate_language( self ):
         '''Actual generating function.'''
+
+        # Generate minimum and maximum number of phonemes
+        if not isinstance( self.n_p_min, int ):
+            self.n_p_min = np.random.randint(
+                self.n_p_min[0],
+                self.n_p_min[1],
+            )
+        if not isinstance( self.n_p_max, int ):
+            self.n_p_max = np.random.randint(
+                self.n_p_max[0],
+                self.n_p_max[1],
+            )
 
         if self.name is None:
             self.name = name_generator.Name(

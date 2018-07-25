@@ -18,7 +18,8 @@ import story_simulator.generator.language as language_generator
 
 class TestGeneratedLanguage( unittest.TestCase ):
 
-    def test_generated_language_all_passed( self ):
+    def test_generated_language_all_args_passed( self ):
+        '''Make sure we can make it work in its most basic form.'''
 
         language = language_generator.GeneratedLanguage(
             n_p_min = 2,
@@ -27,5 +28,14 @@ class TestGeneratedLanguage( unittest.TestCase ):
             consonant_chain = [ 0.4, 0.05 ],
         )
 
-        assert type( language.name ) is str
+        actual = language.name.name_data['Default Spelling'].values.sum() 
+        assert isinstance( actual, basestring )
 
+    ########################################################################
+
+    def test_works_no_n_ps( self ):
+
+        language = language_generator.GeneratedLanguage(
+            vowel_chain = [ 0.05, ],
+            consonant_chain = [ 0.4, 0.05 ],
+        )

@@ -14,6 +14,8 @@ import pandas as pd
 import hoard.utils.utilities as utilities
 import hoard.utils.probability_tools as prob_tools
 
+import story_simulator.generator.name as name_generator
+
 ########################################################################
 ########################################################################
 
@@ -85,9 +87,16 @@ class GeneratedLanguage( object ):
     ########################################################################
 
     def generate_language( self ):
+        '''Actual generating function.'''
 
-        # if self.name is None:
-        #     self.name = n
+        if self.name is None:
+            self.name = name_generator.Name(
+                n_p_min = self.n_p_min,
+                n_p_max = self.n_p_max,
+                vowel_chain = self.vowel_chain,
+                consonant_chain = self.consonant_chain,
+                phonemes = self.phonemes,
+                phonemes_dir = self.phonemes_dir,
+            )
 
-        pass
 

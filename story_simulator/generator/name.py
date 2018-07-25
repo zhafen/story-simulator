@@ -26,7 +26,6 @@ class Name( object ):
         n_p_max = 4,
         vowel_chain = [ 0.25, 0.05 ],
         consonant_chain = [ 0.5, 0.02 ],
-        chain_type = 'percents',
         phonemes_dir = None,
         phonemes = None,
     ):
@@ -142,8 +141,13 @@ class Name( object ):
                 # Vowel chain case
                 if chain_vowel:
 
+                    try:
+                        p_vowel = self.vowel_chain[j]
+                    except IndexError:
+                        p_vowel = 0.
+
                     # Vowel chain continues case
-                    if np.random.uniform() < self.vowel_chain[j]:
+                    if np.random.uniform() < p_vowel:
                         phoneme = get_phoneme( self.available_vowels )
 
                     # Vowel chain ends case
@@ -157,8 +161,13 @@ class Name( object ):
                 # Consonant chain case
                 else:
 
+                    try:
+                        p_consonant = self.consonant_chain[j]
+                    except IndexError:
+                        p_consonant = 0.
+
                     # Consonant chain continues case
-                    if np.random.uniform() < self.consonant_chain[j]:
+                    if np.random.uniform() < p_consonant:
                         phoneme = get_phoneme( self.available_consonants )
 
                     # Consonant chain ends case

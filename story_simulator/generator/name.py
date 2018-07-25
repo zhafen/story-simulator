@@ -26,8 +26,8 @@ class Name( object ):
         n_p_max = 4,
         vowel_chain = [ 0.25, 0.05 ],
         consonant_chain = [ 0.5, 0.02 ],
-        phonemes_dir = None,
         phonemes = None,
+        phonemes_dir = None,
     ):
         '''Constructor.
 
@@ -42,12 +42,12 @@ class Name( object ):
                 TODO: I'd really like to make it that s.t. these aren't conditional_probabililities,
                 but are the percentages of the time that we have particular words.
 
+            phonemes (str or array-like) :
+                List of phonemes to use.
+
             phonemes_dir (str) :
                 The directory the phonemes data is stored in. Defaults to the
                 directory this file is stored in.
-
-            phonemes (str or array-like) :
-                List of phonemes to use.
 
         Phonemes:
             What phonemes in particular to use?

@@ -55,6 +55,18 @@ class World( object ):
     ########################################################################
 
     @property
+    def languages( self ):
+
+        return utilities.generic_table_getter(
+            self,
+            'languages',
+            self.world_dir,
+            subfolders = [ 'world', 'languages' ]
+        )
+
+    ########################################################################
+
+    @property
     def characters( self ):
 
         return utilities.generic_table_getter(

@@ -17,12 +17,13 @@ import hoard.utils.probability_tools as prob_tools
 ########################################################################
 ########################################################################
 
-class World( object ):
+class Language( object ):
 
     @utilities.store_parameters
     def __init__(
         self,
-        world_dir,
+        name,
+        world,
     ):
         pass
 
@@ -31,65 +32,18 @@ class World( object ):
     ########################################################################
 
     @property
-    def historical_events( self ):
+    def attrs( self ):
 
-        return utilities.generic_table_getter(
-            self,
-            'historical_events',
-            self.world_dir,
-            subfolders = [ 'world' ]
-        )
+        return world.languages[name]
 
     ########################################################################
 
     @property
-    def events( self ):
+    def data( self ):
 
-        return utilities.generic_table_getter(
-            self,
-            'events',
-            self.world_dir,
-            subfolders = [ 'world' ]
-        )
+        if not hasattr( self, '_data' ):
 
-    ########################################################################
+            filepath = os.path.join( world.world_dir, 'world', 'languages', '{}.hdf5'.format( name ) )
+            self._data = h5py.File( filepath, 'a' )
 
-    @property
-    def characters( self ):
-
-        return utilities.generic_table_getter(
-            self,
-            'characters',
-            self.world_dir,
-            subfolders = [ 'world', 'characters' ]
-        )
-
-    ########################################################################
-
-    @property
-    def nodes( self ):
-
-        return utilities.generic_table_getter(
-            self,
-            'nodes',
-            self.world_dir,
-            subfolders = [ 'world', 'settings' ]
-        )
-
-    ########################################################################
-    # Methods
-    ########################################################################
-
-    def sample_part( self, part_name, n_samples=1 ):
-
-        part = getattr( self, part_name )
-
-        ind = prob_tools.sample_discrete_probabilities(
-            part['Likelihood'].values,
-            normalize = True
-        )
-
-        if n_samples == 1:
-            return part.loc[ind]
-        else:
-            raise Exception( "Multiple samples not implemented yet." )
+        return self._data

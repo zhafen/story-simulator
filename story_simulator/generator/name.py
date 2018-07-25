@@ -141,6 +141,7 @@ class Name( object ):
                 # Vowel chain case
                 if chain_vowel:
 
+                    # Account for chains ending early
                     try:
                         p_vowel = self.vowel_chain[j]
                     except IndexError:
@@ -161,6 +162,7 @@ class Name( object ):
                 # Consonant chain case
                 else:
 
+                    # Account for chains ending early
                     try:
                         p_consonant = self.consonant_chain[j]
                     except IndexError:
@@ -178,7 +180,7 @@ class Name( object ):
                         j0 = i
                         chain_vowel = phoneme['Vowel']
 
-
+            # Store the phoneme
             self.name_data.append( phoneme )
         
         # Put it all together

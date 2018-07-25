@@ -209,3 +209,23 @@ class TestName( unittest.TestCase ):
             vowel_chain = vowel_c,
             consonant_chain = consonant_c,
         )
+
+    ########################################################################
+
+    def test_works_when_phonemes_provided( self ):
+
+        # Parameters
+        n_letters = 4
+        vowel_c = [ 0.1, 1., ]
+        consonant_c = [ 1., 1., 0.1 ]
+
+        phonemes = [ '/A/', '/a/', '/b/', ]
+
+        # Initial name draw to allow us to calc the probabilities
+        name = name_generator.Name(
+            n_p_min = n_letters,
+            n_p_max = n_letters,
+            vowel_chain = vowel_c,
+            consonant_chain = consonant_c,
+            phonemes = phonemes,
+        )

@@ -1,1 +1,3 @@
-{}
+{
+  "test_language.py::TestGeneratedLanguage::test_gen_phonemes": true
+}

@@ -48,3 +48,15 @@ class TestGeneratedLanguage( unittest.TestCase ):
             n_p_min = 2,
             n_p_max = 5,
         )
+
+    ########################################################################
+
+    def test_gen_phonemes( self ):
+
+        language = language_generator.GeneratedLanguage(
+            n_available_vowels = 5,
+            n_available_consonants = 6,
+        )
+
+        assert len( language.name.available_vowels ) == 5
+        assert len( language.name.available_consonants ) == 6

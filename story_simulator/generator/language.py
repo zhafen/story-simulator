@@ -30,6 +30,7 @@ class GeneratedLanguage( object ):
         vowel_chain = None,
         consonant_chain = None,
         phonemes = None,
+        generate_phonemes = True,
         n_available_vowels = [ 2, 20 ],
         n_available_consonants = [ 2, 20 ],
         phonemes_dir = None,
@@ -107,6 +108,7 @@ class GeneratedLanguage( object ):
             chain_length = np.random.randint( 0, 3 )
             self.consonant_chain = [ np.random.uniform() * ( 1. + chain_length - i )**-2. for i in range( chain_length) ]
 
+        # Generate a name if not given
         if self.name is None:
             self.name = name_generator.Name(
                 n_p_min = self.n_p_min,

@@ -39,3 +39,12 @@ class TestGeneratedLanguage( unittest.TestCase ):
             vowel_chain = [ 0.05, ],
             consonant_chain = [ 0.4, 0.05 ],
         )
+
+    ########################################################################
+
+    def test_works_no_chains( self ):
+
+        language = language_generator.GeneratedLanguage(
+            n_p_min = 2,
+            n_p_max = 5,
+        )

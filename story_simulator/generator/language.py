@@ -99,6 +99,14 @@ class GeneratedLanguage( object ):
                 self.n_p_max[1],
             )
 
+        # Generate chain probabilities
+        if self.vowel_chain is None:
+            chain_length = np.random.randint( 0, 3 )
+            self.vowel_chain = [ np.random.uniform() * ( i + 1. )**-2. for i in range( chain_length) ]
+        if self.consonant_chain is None:
+            chain_length = np.random.randint( 0, 3 )
+            self.consonant_chain = [ np.random.uniform() * ( 1. + chain_length - i )**-2. for i in range( chain_length) ]
+
         if self.name is None:
             self.name = name_generator.Name(
                 n_p_min = self.n_p_min,
@@ -108,5 +116,4 @@ class GeneratedLanguage( object ):
                 phonemes = self.phonemes,
                 phonemes_dir = self.phonemes_dir,
             )
-
 

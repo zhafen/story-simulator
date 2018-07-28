@@ -60,3 +60,13 @@ class TestGeneratedLanguage( unittest.TestCase ):
 
         assert len( language.available_vowels ) == 5
         assert len( language.available_consonants ) == 6
+
+        assert len( language.name.available_vowels ) == 5
+        assert len( language.name.available_consonants ) == 6
+
+    ########################################################################
+
+    def test_language_defaults( self ):
+        '''Test that it works with no args.'''
+
+        language = language_generator.GeneratedLanguage()

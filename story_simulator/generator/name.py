@@ -76,6 +76,9 @@ class Name( read_language_data.LanguageDataReader ):
         # Actually generate the name
         self.generate_name()
 
+    def __repr__( self ):
+        return self.name
+
     ########################################################################
     # Properties
     ########################################################################
@@ -84,7 +87,7 @@ class Name( read_language_data.LanguageDataReader ):
     def name( self ):
         '''Name using the default spelling'''
 
-        return self.name_data['Default Spelling'].values.sum()
+        return self.name_data['Default Spelling'].values.sum().capitalize()
 
     ########################################################################
     # Methods

@@ -64,6 +64,16 @@ class World( object ):
             subfolders = [ 'world', 'languages' ]
         )
 
+    @languages.setter
+    def languages( self, value ):
+        utilities.generic_table_setter(
+            self,
+            'languages',
+            value,
+            self.world_dir,
+            subfolders = [ 'world', 'languages' ]
+        )
+
     ########################################################################
 
     @property

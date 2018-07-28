@@ -26,13 +26,13 @@ class GeneratedLanguage( read_language_data.LanguageDataReader ):
     def __init__(
         self,
         name = None,
-        n_p_min = [ 1, 2 ],
-        n_p_max = [ 1, 7 ],
+        n_p_min = [ 2, 3 ],
+        n_p_max = [ 3, 9 ],
         vowel_chain = None,
         consonant_chain = None,
         choose_phonemes = True,
-        n_available_vowels = [ 2, 10 ],
-        n_available_consonants = [ 2, 10 ],
+        n_available_vowels = [ 4, 10 ],
+        n_available_consonants = [ 4, 10 ],
         **kwargs
     ):
         '''Constructor.
@@ -64,6 +64,32 @@ class GeneratedLanguage( read_language_data.LanguageDataReader ):
         self.generate_language()
 
     ########################################################################
+
+    def __repr__( self ):
+
+        out_str = "GeneratedLanguage, {\n"
+
+        for key in self.language_parameters.keys():
+
+            def get_print_obj( obj ):
+                try:
+                    print_obj = obj.__repr__()
+                except:
+                    print_obj = obj
+                return print_obj
+
+            out_str += "{} : {},\n".format(
+                get_print_obj( key ),
+                get_print_obj( self.language_parameters[key] ),
+            )
+
+        out_str += "}\n"
+
+        return out_str
+
+        #return self.language_parameters.__repr__()
+
+    ########################################################################
     # Properties
     ########################################################################
 
@@ -77,6 +103,21 @@ class GeneratedLanguage( read_language_data.LanguageDataReader ):
             root_folder = self.phonemes_dir,
             index_col = 0,
         )
+
+    ########################################################################
+
+    @property
+    def language_parameters( self ):
+
+        return {
+            'Name' : self.name.name,
+            'Min Phonemes' : self.n_p_min,
+            'Max Phonemes' : self.n_p_max,
+            'Vowel Chain' : self.vowel_chain,
+            'Consonant Chain' : self.consonant_chain,
+            'Phonemes' : self.phonemes,
+            'Phonemes Dir' : self.phonemes_dir,
+        }
 
     ########################################################################
     # Methods
@@ -99,13 +140,13 @@ class GeneratedLanguage( read_language_data.LanguageDataReader ):
 
         # Generate chain probabilities
         if self.vowel_chain is None:
-            chain_length = np.random.randint( 0, 3 )
+            chain_length = np.random.randint( 0, 4 )
             self.vowel_chain = [
                 np.random.uniform() * ( i + 1. )**-2. \
                 for i in range( chain_length)
             ]
         if self.consonant_chain is None:
-            chain_length = np.random.randint( 0, 3 )
+            chain_length = np.random.randint( 0, 4 )
             self.consonant_chain = [
                 np.random.uniform() * ( 1. + chain_length - i )**-2. \
                 for i in range( chain_length)
@@ -178,3 +219,24 @@ class GeneratedLanguage( read_language_data.LanguageDataReader ):
         phonemes = np.concatenate( [ vowels, consonants ] )
 
         return phonemes
+
+    ########################################################################
+
+    def save_language( self, world, description=None ):
+        '''Store the language.
+
+        Args:
+            world (World object) : The world to save this to.
+
+            description (str) : A description of the language.
+        '''
+
+        # Format the data
+        values = copy.deepcopy( self.language_parameters )
+        values['Description'] = description
+        series = pd.Series( values )
+
+        world.languages = world.languages.append(
+            series,
+            ignore_index = True,
+        )

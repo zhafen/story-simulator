@@ -11,13 +11,15 @@ import numpy as np
 import os
 import pandas as pd
 
+import story_simulator.read_data.language as read_language_data
+
 import hoard.utils.utilities as utilities
 import hoard.utils.probability_tools as prob_tools
 
 ########################################################################
 ########################################################################
 
-class Name( object ):
+class Name( read_language_data.LanguageDataReader ):
 
     @utilities.store_parameters
     def __init__(
@@ -26,8 +28,7 @@ class Name( object ):
         n_p_max = 4,
         vowel_chain = [ 0.25, 0.05 ],
         consonant_chain = [ 0.5, 0.02 ],
-        phonemes = None,
-        phonemes_dir = None,
+        **kwargs
     ):
         '''Constructor.
 
@@ -36,69 +37,30 @@ class Name( object ):
                 Minimum/maximum number of phonemes in the name.
 
             vowel_chain, consonant_chain (array-like) :
-                The ith index is the probability that there will be a chain of i+2 vowels/consonants,
-                given that there is already a chain of i+1 vowels/consonants.
+                The ith index is the probability that there will be a chain of
+                i+2 vowels/consonants, given that there is already a chain of
+                i+1 vowels/consonants.
                 If the ith index doesn't exist, the probability is zero.
-                TODO: I'd really like to make it that s.t. these aren't conditional_probabililities,
-                but are the percentages of the time that we have particular words.
+                TODO: I'd really like to make it that s.t. these aren't
+                conditional_probabililities, but are the percentages of the
+                time that we have particular words.
 
+        Kwargs:
             phonemes (str or array-like) :
                 List of phonemes to use.
 
             phonemes_dir (str) :
                 The directory the phonemes data is stored in. Defaults to the
                 directory this file is stored in.
-
-        Phonemes:
-            What phonemes in particular to use?
         '''
 
-        if phonemes_dir is None:
-            self.phonemes_dir = os.path.dirname( os.path.realpath( __file__ ) )
+        super( Name, self ).__init__( **kwargs )
 
         # Actually generate the name
         self.generate_name()
 
     ########################################################################
     # Properties
-    ########################################################################
-
-    @property
-    def phonemes_table( self ):
-        '''Data used to create words.'''
-
-        return utilities.generic_table_getter(
-            self,
-            property_name = 'phonemes_table',
-            root_folder = self.phonemes_dir,
-            index_col = 0,
-        )
-
-    ########################################################################
-
-    @property
-    def available_phonemes( self ):
-        '''Actual data used'''
-
-        if self.phonemes is None:
-            return self.phonemes_table
-
-        # Case where particular phonemes are selected
-        else:
-            if not hasattr( self, '_available_phonemes' ):
-                self._available_phonemes = self.phonemes_table.loc[self.phonemes]
-            return self._available_phonemes
-
-    ########################################################################
-
-    @property
-    def available_vowels( self ):
-        return self.available_phonemes.loc[self.available_phonemes['Vowel']]
-
-    @property
-    def available_consonants( self ):
-        return self.available_phonemes.loc[np.invert(self.available_phonemes['Vowel'])]
-
     ########################################################################
 
     @property

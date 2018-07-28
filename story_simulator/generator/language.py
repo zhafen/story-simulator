@@ -15,11 +15,12 @@ import hoard.utils.utilities as utilities
 import hoard.utils.probability_tools as prob_tools
 
 import story_simulator.generator.name as name_generator
+import story_simulator.read_data.language as read_language_data
 
 ########################################################################
 ########################################################################
 
-class GeneratedLanguage( object ):
+class GeneratedLanguage( read_language_data.LanguageDataReader ):
 
     @utilities.store_parameters
     def __init__(
@@ -29,11 +30,10 @@ class GeneratedLanguage( object ):
         n_p_max = [ 1, 7 ],
         vowel_chain = None,
         consonant_chain = None,
-        phonemes = None,
         generate_phonemes = True,
         n_available_vowels = [ 2, 20 ],
         n_available_consonants = [ 2, 20 ],
-        phonemes_dir = None,
+        **kwargs
     ):
         '''Constructor.
 
@@ -49,19 +49,16 @@ class GeneratedLanguage( object ):
                 given that there is already a chain of i+1 vowels/consonants.
                 If the ith index doesn't exist, the probability is zero.
 
+        Kwargs:
             phonemes (str or array-like) :
                 List of phonemes to use.
 
             phonemes_dir (str) :
                 The directory the phonemes data is stored in. Defaults to the
                 directory this file is stored in.
-
-        Phonemes:
-            What phonemes in particular to use?
         '''
 
-        if phonemes_dir is None:
-            self.phonemes_dir = os.path.dirname( os.path.realpath( __file__ ) )
+        super( GeneratedLanguage, self ).__init__( **kwargs )
 
         # Actually generate the name
         self.generate_language()
@@ -103,10 +100,26 @@ class GeneratedLanguage( object ):
         # Generate chain probabilities
         if self.vowel_chain is None:
             chain_length = np.random.randint( 0, 3 )
-            self.vowel_chain = [ np.random.uniform() * ( i + 1. )**-2. for i in range( chain_length) ]
+            self.vowel_chain = [
+                np.random.uniform() * ( i + 1. )**-2. \
+                for i in range( chain_length)
+            ]
         if self.consonant_chain is None:
             chain_length = np.random.randint( 0, 3 )
-            self.consonant_chain = [ np.random.uniform() * ( 1. + chain_length - i )**-2. for i in range( chain_length) ]
+            self.consonant_chain = [
+                np.random.uniform() * ( 1. + chain_length - i )**-2. \
+                for i in range( chain_length)
+            ]
+
+        # Generate phonemes
+        if self.generate_phonemes:
+            phonemes = self.generate_phonemes()
+        else:
+            self.phonemes = phonemes
+        if self.phonemes is not None and self.generate_phonemes:
+            raise Exception(
+                "Cannot both generate phonemes and take in a list of phonemes"
+            )
 
         # Generate a name if not given
         if self.name is None:
@@ -115,7 +128,26 @@ class GeneratedLanguage( object ):
                 n_p_max = self.n_p_max,
                 vowel_chain = self.vowel_chain,
                 consonant_chain = self.consonant_chain,
-                phonemes = self.phonemes,
+                phonemes = phonemes,
                 phonemes_dir = self.phonemes_dir,
             )
 
+    ########################################################################
+
+    def generate_phonemes( self ):
+
+        # Generate phonemes
+        def choose_n_available( vowels_or_consonants ):
+            if isinstance( self.n_available_vowels, list ):
+                return np.random.randint(
+                    self.n_available_vowels[0],
+                    self.n_available_vowels[1] + 1,
+                )
+            else:
+                return vowels_or_consonants
+        n_available_vowels = choose_n_available(
+            self.n_available_vowels
+        )
+        n_available_consonants = choose_n_available(
+            self.n_available_consonants
+        )

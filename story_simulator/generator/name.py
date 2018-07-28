@@ -28,6 +28,7 @@ class Name( read_language_data.LanguageDataReader ):
         n_p_max = 4,
         vowel_chain = [ 0.25, 0.05 ],
         consonant_chain = [ 0.5, 0.02 ],
+        language = None,
         **kwargs
     ):
         '''Constructor.
@@ -45,6 +46,9 @@ class Name( read_language_data.LanguageDataReader ):
                 conditional_probabililities, but are the percentages of the
                 time that we have particular words.
 
+            language (object) :
+                If given, create words from this language.
+
         Kwargs:
             phonemes (str or array-like) :
                 List of phonemes to use.
@@ -53,6 +57,19 @@ class Name( read_language_data.LanguageDataReader ):
                 The directory the phonemes data is stored in. Defaults to the
                 directory this file is stored in.
         '''
+
+        # Load parameters from the language, if it's given
+        if language is not None:
+            language_attrs = [
+                'n_p_min',
+                'n_p_max',
+                'vowel_chain',
+                'consonant_chain',
+            ]
+            for attr in language_attrs:
+                setattr( self, attr, getattr( language, attr ) )
+            kwargs['phonemes'] = language.phonemes
+            kwargs['phonemes_dir'] = language.phonemes_dir
 
         super( Name, self ).__init__( **kwargs )
 

@@ -12,6 +12,7 @@ import os
 import unittest
 
 import story_simulator.generator.name as name_generator
+import story_simulator.generator.language as language_generator
 
 ########################################################################
 ########################################################################
@@ -229,3 +230,13 @@ class TestName( unittest.TestCase ):
             consonant_chain = consonant_c,
             phonemes = phonemes,
         )
+
+    ########################################################################
+
+    def test_works_with_language_provided( self ):
+
+        language = language_generator.GeneratedLanguage()
+
+        name = name_generator.Name( language=language )
+
+        npt.assert_array_equal( name.phonemes, language.phonemes )

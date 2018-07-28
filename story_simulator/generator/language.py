@@ -30,9 +30,9 @@ class GeneratedLanguage( read_language_data.LanguageDataReader ):
         n_p_max = [ 1, 7 ],
         vowel_chain = None,
         consonant_chain = None,
-        generate_phonemes = True,
-        n_available_vowels = [ 2, 20 ],
-        n_available_consonants = [ 2, 20 ],
+        choose_phonemes = True,
+        n_available_vowels = [ 2, 10 ],
+        n_available_consonants = [ 2, 10 ],
         **kwargs
     ):
         '''Constructor.
@@ -112,14 +112,14 @@ class GeneratedLanguage( read_language_data.LanguageDataReader ):
             ]
 
         # Generate phonemes
-        if self.generate_phonemes:
-            phonemes = self.generate_phonemes()
-        else:
-            self.phonemes = phonemes
-        if self.phonemes is not None and self.generate_phonemes:
+        if self.phonemes is not None and self.choose_phonemes:
             raise Exception(
                 "Cannot both generate phonemes and take in a list of phonemes"
             )
+        if self.choose_phonemes:
+            self.phonemes = self.generate_phonemes()
+        else:
+            self.phonemes = phonemes
 
         # Generate a name if not given
         if self.name is None:
@@ -128,26 +128,53 @@ class GeneratedLanguage( read_language_data.LanguageDataReader ):
                 n_p_max = self.n_p_max,
                 vowel_chain = self.vowel_chain,
                 consonant_chain = self.consonant_chain,
-                phonemes = phonemes,
+                phonemes = self.phonemes,
                 phonemes_dir = self.phonemes_dir,
             )
 
     ########################################################################
 
     def generate_phonemes( self ):
+        '''Choose what phonemes are used in the language.'''
 
         # Generate phonemes
-        def choose_n_available( vowels_or_consonants ):
+        def choose_n_available( vowels_or_consonants, table ):
+            '''Helper function for choosing the number available.'''
+
             if isinstance( self.n_available_vowels, list ):
-                return np.random.randint(
+                n_available = np.random.randint(
                     self.n_available_vowels[0],
                     self.n_available_vowels[1] + 1,
                 )
             else:
-                return vowels_or_consonants
+                n_available = vowels_or_consonants
+
+            # We can't choose more than are available
+            n_table = len( table )
+            if n_available > n_table:
+                n_available = n_table
+            return n_available
+
         n_available_vowels = choose_n_available(
-            self.n_available_vowels
+            self.n_available_vowels,
+            self.vowels,
         )
         n_available_consonants = choose_n_available(
-            self.n_available_consonants
+            self.n_available_consonants,
+            self.consonants,
         )
+
+        # Get the actual phonemes
+        vowels = np.random.choice(
+            self.vowels.index,
+            size = n_available_vowels,
+            replace = False,
+        )
+        consonants = np.random.choice(
+            self.consonants.index,
+            size = n_available_consonants,
+            replace = False,
+        )
+        phonemes = np.concatenate( [ vowels, consonants ] )
+
+        return phonemes

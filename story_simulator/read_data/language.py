@@ -64,6 +64,18 @@ class LanguageDataReader( object ):
     ########################################################################
 
     @property
+    def vowels( self ):
+        return self.phonemes_table.loc[self.phonemes_table['Vowel']]
+
+    @property
+    def consonants( self ):
+        return self.phonemes_table.loc[
+            np.invert(self.phonemes_table['Vowel'])
+        ]
+
+    ########################################################################
+
+    @property
     def available_phonemes( self ):
         '''Actual data used'''
 
@@ -73,7 +85,8 @@ class LanguageDataReader( object ):
         # Case where particular phonemes are selected
         else:
             if not hasattr( self, '_available_phonemes' ):
-                self._available_phonemes = self.phonemes_table.loc[self.phonemes]
+                self._available_phonemes = \
+                    self.phonemes_table.loc[self.phonemes]
             return self._available_phonemes
 
     ########################################################################

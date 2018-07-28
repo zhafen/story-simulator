@@ -1,6 +1,1 @@
-{
-  "tests/test_generator/test_language.py::TestGeneratedLanguage::test_gen_phonemes": true, 
-  "tests/test_generator/test_language.py::TestGeneratedLanguage::test_generated_language_all_args_passed": true, 
-  "tests/test_generator/test_language.py::TestGeneratedLanguage::test_works_no_chains": true, 
-  "tests/test_generator/test_language.py::TestGeneratedLanguage::test_works_no_n_ps": true
-}
+{}

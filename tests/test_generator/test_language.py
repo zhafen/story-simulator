@@ -58,5 +58,5 @@ class TestGeneratedLanguage( unittest.TestCase ):
             n_available_consonants = 6,
         )
 
-        assert len( language.name.available_vowels ) == 5
-        assert len( language.name.available_consonants ) == 6
+        assert len( language.available_vowels ) == 5
+        assert len( language.available_consonants ) == 6

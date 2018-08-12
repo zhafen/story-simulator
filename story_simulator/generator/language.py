@@ -45,9 +45,10 @@ class GeneratedLanguage( read_language_data.LanguageDataReader ):
                 Minimum/maximum number of phonemes in the name.
 
             vowel_chain, consonant_chain (array-like) :
-                The ith index is the probability that there will be a chain of i+2 vowels/consonants,
-                given that there is already a chain of i+1 vowels/consonants.
-                If the ith index doesn't exist, the probability is zero.
+                The ith index is the probability that there will be a chain of
+                i+2 vowels/consonants, given that there is already a chain of
+                i+1 vowels/consonants. If the ith index doesn't exist, the
+                probability is zero.
 
         Kwargs:
             phonemes (str or array-like) :

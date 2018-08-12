@@ -29,6 +29,7 @@ class Name( read_language_data.LanguageDataReader ):
         vowel_chain = [ 0.25, 0.05 ],
         consonant_chain = [ 0.5, 0.02 ],
         language = None,
+        generated_language = None,
         **kwargs
     ):
         '''Constructor.
@@ -46,7 +47,10 @@ class Name( read_language_data.LanguageDataReader ):
                 conditional_probabililities, but are the percentages of the
                 time that we have particular words.
 
-            language (object) :
+            language (pd.Series):
+                If given, create words from this language.
+
+            generated_language (object) :
                 If given, create words from this language.
 
         Kwargs:
@@ -59,17 +63,31 @@ class Name( read_language_data.LanguageDataReader ):
         '''
 
         # Load parameters from the language, if it's given
+        language_attrs = [
+            'n_p_min',
+            'n_p_max',
+            'vowel_chain',
+            'consonant_chain',
+        ]
         if language is not None:
-            language_attrs = [
-                'n_p_min',
-                'n_p_max',
-                'vowel_chain',
-                'consonant_chain',
-            ]
+            def read_chain( chain ):
+                l = chain[1:-1].split(', ')
+                return [ float( item ) for item in l ]
+            self.vowel_chain = read_chain( language['Vowel Chain'] )
+            self.consonant_chain = read_chain( language['Consonant Chain'] )
+            phonemes = language['Phonemes'][1:-1]
+            phonemes = phonemes.replace( "'\n '", "' '" )
+            phonemes = phonemes.split( "' '" )
+            phonemes[0] = phonemes[0][1:]
+            phonemes[-1] = phonemes[-1][:-1]
+            kwargs['phonemes'] = phonemes
+            kwargs['phonemes_dir'] = language['Phonemes Dir']
+
+        if generated_language is not None:
             for attr in language_attrs:
-                setattr( self, attr, getattr( language, attr ) )
-            kwargs['phonemes'] = language.phonemes
-            kwargs['phonemes_dir'] = language.phonemes_dir
+                setattr( self, attr, getattr( generated_language, attr ) )
+            kwargs['phonemes'] = generated_language.phonemes
+            kwargs['phonemes_dir'] = generated_language.phonemes_dir
 
         super( Name, self ).__init__( **kwargs )
 

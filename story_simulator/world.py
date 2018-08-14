@@ -99,6 +99,18 @@ class World( object ):
         )
 
     ########################################################################
+
+    @property
+    def magic_archetypes( self ):
+
+        return utilities.generic_table_getter(
+            self,
+            'archetypes',
+            self.world_dir,
+            subfolders = [ 'world', 'magic' ]
+        )
+
+    ########################################################################
     # Methods
     ########################################################################
 

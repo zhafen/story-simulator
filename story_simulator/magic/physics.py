@@ -51,6 +51,22 @@ def thermal_energy( mass, temperature ):
 
 ########################################################################
 
+def temp_change_to_energy( mass, final_temp, initial_temp, medium='air', ):
+    '''Energy needed to heat a substance.
+    '''
+
+    specific_heat_capacities = {
+        'air' : 1.012,
+        'water' : 4.1813,
+    }
+    s = specific_heat_capacities[medium] * unyt.J / unyt.g / unyt.K
+
+    dtemp = ( final_temp - initial_temp ).to( 'K' )
+
+    return ( mass * dtemp * s ).to( 'J' )
+
+########################################################################
+
 def gravitational_energy( mass1, mass2, distance ):
     '''Estimate the gravitational energy between two objects
 

@@ -233,10 +233,10 @@ class TestName( unittest.TestCase ):
 
     ########################################################################
 
-    def test_works_with_language_provided( self ):
+    def test_works_with_generated_language_provided( self ):
 
         language = language_generator.GeneratedLanguage()
 
-        name = name_generator.Name( language=language )
+        name = name_generator.Name( generated_language=language )
 
         npt.assert_array_equal( name.phonemes, language.phonemes )

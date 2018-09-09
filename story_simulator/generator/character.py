@@ -26,6 +26,9 @@ class GeneratedCharacter( object ):
         self,
         world,
         data_dir = ss_config.DATA_DIR,
+        n_pos_traits = 2,
+        n_neg_traits = 2,
+        n_quirks = 2,
     ):
         '''Constructor.
 
@@ -81,34 +84,34 @@ class GeneratedCharacter( object ):
     # Methods
     ########################################################################
 
-    def generate_positive_traits( self, n ):
-        '''Generate n positive traits.'''
+    def generate_positive_traits( self, ):
+        '''Generate positive traits.'''
 
         self.pos_traits = prob_tools.sample_table(
             self.pos_traits_table,
-            n,
+            self.n_pos_traits,
         )
 
         return self.pos_traits
 
-    def generate_negative_traits( self, n ):
+    def generate_negative_traits( self, ):
         '''Generate n negative traits.'''
 
         self.neg_traits = prob_tools.sample_table(
             self.neg_traits_table,
-            n,
+            self.n_neg_traits,
         )
 
         return self.neg_traits
 
     ########################################################################
 
-    def generate_quirks( self, n ):
+    def generate_quirks( self, ):
         '''Generate n quirks.'''
 
         self.quirks = prob_tools.sample_table(
             self.quirks_table,
-            n,
+            self.n_quirks,
         )
 
         return self.quirks
@@ -118,4 +121,9 @@ class GeneratedCharacter( object ):
     def generate_character( self ):
         '''Actual generating function for generating a character.'''
 
-        pass
+        # Generate traits
+        self.generate_positive_traits()
+        self.generate_negative_traits()
+
+        # Generate quirks
+        self.generate_quirks()

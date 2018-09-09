@@ -14,7 +14,6 @@ import pandas as pd
 import story_simulator.read_data.language as read_language_data
 
 import hoard.utils.utilities as utilities
-import hoard.utils.probability_tools as prob_tools
 
 ########################################################################
 ########################################################################

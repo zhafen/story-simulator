@@ -55,6 +55,16 @@ class GeneratedCharacter( object ):
             root_folder = self.data_dir,
         )
 
+    @property
+    def pos_traits_table( self ):
+
+        return self.traits_table[self.traits_table['Positivity'] > 0.]
+
+    @property
+    def neg_traits_table( self ):
+
+        return self.traits_table[self.traits_table['Positivity'] < 0.]
+
     ########################################################################
 
     @property
@@ -69,6 +79,33 @@ class GeneratedCharacter( object ):
 
     ########################################################################
     # Methods
+    ########################################################################
+
+    def generate_positive_traits( self, n ):
+        '''Generate n positive traits.'''
+
+        self.pos_traits = prob_tools.sample_table(
+            self.pos_traits_table,
+            n,
+        )
+
+        return self.pos_traits
+
+    def generate_negative_traits( self, n ):
+        '''Generate n negative traits.'''
+
+        self.neg_traits = prob_tools.sample_table(
+            self.neg_traits_table,
+            n,
+        )
+
+        return self.neg_traits
+
+    ########################################################################
+
+    def generate_quirks( self, n ):
+        '''Generate n quirks.'''
+
     ########################################################################
 
     def generate_character( self ):

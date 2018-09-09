@@ -106,6 +106,13 @@ class GeneratedCharacter( object ):
     def generate_quirks( self, n ):
         '''Generate n quirks.'''
 
+        self.quirks = prob_tools.sample_table(
+            self.quirks_table,
+            n,
+        )
+
+        return self.quirks
+
     ########################################################################
 
     def generate_character( self ):

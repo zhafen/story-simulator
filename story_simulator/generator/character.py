@@ -127,3 +127,4 @@ class GeneratedCharacter( object ):
 
         # Generate quirks
         self.generate_quirks()
+

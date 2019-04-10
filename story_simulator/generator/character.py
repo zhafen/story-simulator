@@ -15,6 +15,8 @@ import hoard.utils.utilities as utilities
 import hoard.utils.probability_tools as prob_tools
 
 import story_simulator.config as ss_config
+import story_simulator.utils.utils as utils
+import story_simulator.generator.utils as gen_utils
 
 ########################################################################
 ########################################################################
@@ -115,6 +117,24 @@ class GeneratedCharacter( object ):
         )
 
         return self.quirks
+
+    ########################################################################
+
+    def generate_eye_color( self, ):
+
+        self.eye_color = gen_utils.generate_color()
+
+    ########################################################################
+
+    def generate_hair_color( self, ):
+
+        self.hair_color = gen_utils.generate_color()
+
+    ########################################################################
+
+    def generate_skin_tone( self, ):
+
+        self.skin_tone = gen_utils.generate_color()
 
     ########################################################################
 

@@ -138,6 +138,18 @@ class GeneratedCharacter( object ):
 
     ########################################################################
 
+    def generate_height( self, avg_height=175., sigma_height=50. ):
+
+        self.height = np.random.normal( avg_height, sigma_height )
+
+        print( 'height = {:.3g} cm ({:.3g} feet)'.format(
+                self.height,
+                self.height*0.0328084,
+            )
+        )
+
+    ########################################################################
+
     def generate_character( self ):
         '''Actual generating function for generating a character.'''
 

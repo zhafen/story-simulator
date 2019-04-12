@@ -14,8 +14,10 @@ import pandas as pd
 import hoard.utils.utilities as utilities
 import hoard.utils.probability_tools as prob_tools
 
+import story_simulator.language as language
 import story_simulator.config as ss_config
 import story_simulator.utils.utils as utils
+import story_simulator.generator.name as gen_name
 import story_simulator.generator.utils as gen_utils
 
 ########################################################################
@@ -86,6 +88,19 @@ class GeneratedCharacter( object ):
     # Methods
     ########################################################################
 
+    def generate_name( self, language_name=None, **kwargs ):
+
+        if language_name is not None:
+            l = language.Language( language_name, self.world, )
+        else:
+            l = None
+
+        self.name = gen_name.Name( language=l, **kwargs )
+
+        print( 'Name = {}'.format( self.name ) )
+
+    ########################################################################
+
     def generate_positive_traits( self, ):
         '''Generate positive traits.'''
 
@@ -151,12 +166,25 @@ class GeneratedCharacter( object ):
     ########################################################################
 
     def generate_character( self ):
-        '''Actual generating function for generating a character.'''
+        '''Actual generating function for generating a character.
+        Usually it's preferable not to use this, and instead create a character
+        interactively in a notebook.
+        '''
 
-        # Generate traits
+        # Generate personality traits and quirks
         self.generate_positive_traits()
         self.generate_negative_traits()
-
-        # Generate quirks
         self.generate_quirks()
+
+        # Generate physical traits
+        self.generate_eye_color()
+        self.generate_hair_color()
+        self.generate_skin_tone()
+        self.generate_height()
+
+    ########################################################################
+
+    def save( self ):
+
+        pass
 

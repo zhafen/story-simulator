@@ -43,7 +43,7 @@ class Language( object ):
 
         if not hasattr( self, '_data' ):
 
-            filepath = os.path.join( world.world_dir, 'world', 'languages', '{}.hdf5'.format( name ) )
+            filepath = os.path.join( self.world.world_dir, 'world', 'languages', '{}.hdf5'.format( self.name ) )
             self._data = h5py.File( filepath, 'a' )
 
         return self._data

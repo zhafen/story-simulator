@@ -14,6 +14,7 @@ import pandas as pd
 import hoard.utils.utilities as utilities
 import hoard.utils.probability_tools as prob_tools
 
+import story_simulator.character as character
 import story_simulator.language as language
 import story_simulator.config as ss_config
 import story_simulator.utils.utils as utils
@@ -45,8 +46,7 @@ class GeneratedCharacter( object ):
                 Defaults to the story_simulator overall data dir
         '''
 
-        # Generate the character.
-        self.generate_character()
+        pass
 
     ########################################################################
     # Properties
@@ -184,7 +184,9 @@ class GeneratedCharacter( object ):
 
     ########################################################################
 
-    def save( self ):
+    def save( self, char_dir ):
 
-        pass
+        char = character.Character.from_generated_character( char_dir, self )
+
+        return char
 

@@ -189,4 +189,3 @@ class GeneratedCharacter( object ):
         char = character.Character.from_generated_character( char_dir, self )
 
         return char
-

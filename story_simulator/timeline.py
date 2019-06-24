@@ -21,6 +21,13 @@ class Timeline( object ):
     def __init__(
         self,
         world_dir,
+        filename,
         data,
     ):
+        pass
+
+    ########################################################################
+
+    def save( self ):
+
         pass

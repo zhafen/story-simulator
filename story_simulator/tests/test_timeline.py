@@ -2,6 +2,7 @@
 '''Testing for Timeline objects.
 '''
 
+import h5py
 import numpy as np
 import numpy.testing as npt
 import os
@@ -16,6 +17,8 @@ class TestTimeline( unittest.TestCase ):
 
     def setUp( self ):
 
+        world_dir = './tests/world_test_data/generic_tline_data'
+        filename = 'test.tld'
         d = {
             'A': {
                 'x': np.array([ 1, 5, 3 ]),
@@ -32,9 +35,15 @@ class TestTimeline( unittest.TestCase ):
         }
 
         self.tl = tline.Timeline(
-            './tests/world_test_data/generic_tline_data',
-            data = d,
+            world_dir,
+            filename,
+            d,
         )
+
+        # Remove any existing files
+        self.test_file = os.path.join( world_dir, filename )
+        if os.path.isfile( self.test_file ):
+            os.remove( self.test_file )
 
     ########################################################################
 
@@ -42,3 +51,11 @@ class TestTimeline( unittest.TestCase ):
         '''If the setUp goes okay, this passes.'''
 
         pass
+
+    ########################################################################
+
+    def test_saves( self ):
+
+        self.tl.save()
+
+        f = h5py.File( self.test_file, 'r' )

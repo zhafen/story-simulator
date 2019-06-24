@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-'''Main story simulation
+'''Main story simulation.
 
 @author: Zach Hafen
 @contact: zachary.h.hafen@gmail.com
@@ -17,4 +17,8 @@ class Simulation( object ):
         world_dir,
     ):
         pass
+
+        # Things to include:
+        # - Characters
+        # - Setting
 

@@ -118,7 +118,6 @@ class Character( object ):
             subfolders = [ 'data', ],
         )
 
-
     ########################################################################
 
     @classmethod

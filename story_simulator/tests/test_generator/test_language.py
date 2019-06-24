@@ -29,7 +29,7 @@ class TestGeneratedLanguage( unittest.TestCase ):
         )
 
         actual = language.name.name_data['Default Spelling'].values.sum() 
-        assert isinstance( actual, basestring )
+        assert isinstance( actual, str )
 
     ########################################################################
 

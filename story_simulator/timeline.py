@@ -3,6 +3,9 @@
 characters/places/objects.
 '''
 
+import os
+
+import verdict
 import hoard.utils.utilities as utilities
 
 ########################################################################
@@ -29,5 +32,16 @@ class Timeline( object ):
     ########################################################################
 
     def save( self ):
+        '''Save the raw Timeline data.
+        '''
 
-        pass
+        # Set up the filepath
+        filepath = os.path.join(
+            self.world_dir,
+            self.filename,
+        )
+
+        # Save
+        v_d = verdict.Dict( self.data )
+        v_d.to_hdf5( filepath )
+        

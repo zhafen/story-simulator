@@ -19,25 +19,27 @@ class TestTimeline( unittest.TestCase ):
 
         world_dir = './tests/world_test_data/generic_tline_data'
         filename = 'test.tld'
-        d = {
+        self.d = {
             'A': {
                 'x': np.array([ 1, 5, 3 ]),
                 't': np.array([ 0., 2., 5. ]),
             },
-            'B': {
-                'x': [ 'red', 'blue' ],
-                't': np.array([ 0., 4. ]),
-            },
-            'C': {
-                'x': [ 'large and long', 'small and straight' ],
-                't': np.array([ 2., 4. ]),
+            'outer': {
+                'B': {
+                    'x': [ 'red', 'blue' ],
+                    't': np.array([ 0., 4. ]),
+                },
+                'C': {
+                    'x': [ 'large and long', 'small and straight' ],
+                    't': np.array([ 2., 4. ]),
+                },
             },
         }
 
         self.tl = tline.Timeline(
             world_dir,
             filename,
-            d,
+            self.d,
         )
 
         # Remove any existing files
@@ -58,4 +60,7 @@ class TestTimeline( unittest.TestCase ):
 
         self.tl.save()
 
+        # Check contents
         f = h5py.File( self.test_file, 'r' )
+        npt.assert_allclose( self.d['A']['x'], f['A']['x'][...] )
+        assert self.d['outer']['B']['x'][0] == f['outer']['B']['x'][...][0]

@@ -64,3 +64,18 @@ class TestTimeline( unittest.TestCase ):
         f = h5py.File( self.test_file, 'r' )
         npt.assert_allclose( self.d['A']['x'], f['A']['x'][...] )
         assert self.d['outer']['B']['x'][0] == f['outer']['B']['x'][...][0]
+
+    ########################################################################
+
+    def test_get_state( self ):
+
+        expected = {
+            'A': 1,
+            'outer': {
+                'B': 'red',
+                'C': np.nan,
+            },
+        }
+        actual = self.tl.get_state( 0. )
+
+        assert expected == actual

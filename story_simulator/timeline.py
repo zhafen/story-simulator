@@ -3,6 +3,7 @@
 characters/places/objects.
 '''
 
+import numpy as np
 import os
 
 import verdict
@@ -26,6 +27,7 @@ class Timeline( object ):
         world_dir,
         filename,
         data,
+        time_error = 0.1,
     ):
         pass
 
@@ -45,3 +47,28 @@ class Timeline( object ):
         v_d = verdict.Dict( self.data )
         v_d.to_hdf5( filepath )
         
+    ########################################################################
+
+    def get_state( self, t ):
+
+        def get_state_or_go_deeper( item ):
+            '''Recursive function for getting the state.'''
+
+            if list( item.keys() ) == [ 'x', 't' ]:
+
+                # Allow some room for error
+                t_sufficient = t + self.time_error >= item['t']
+                if t_sufficient.sum() == 0:
+                    return np.nan
+
+                ind = np.argmax( t_sufficient )
+                return item['x'][ind]
+
+            else:
+                result = {}
+                for i_key, i_item in item.items():
+                     result[i_key] = get_state_or_go_deeper( i_item )
+
+                return result
+
+        return get_state_or_go_deeper( self.data )

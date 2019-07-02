@@ -56,13 +56,13 @@ class Timeline( object ):
 
             if list( item.keys() ) == [ 'x', 't' ]:
 
-                # Allow some room for error
-                t_sufficient = t + self.time_error >= item['t']
-                if t_sufficient.sum() == 0:
-                    return np.nan
+                inds, x_vals = self.get_ind_and_val(
+                    t,
+                    item['t'],
+                    item['x'],
+                )
 
-                ind = np.argmax( t_sufficient )
-                return item['x'][ind]
+                return x_vals
 
             else:
                 result = {}
@@ -72,3 +72,51 @@ class Timeline( object ):
                 return result
 
         return get_state_or_go_deeper( self.data )
+
+    ########################################################################
+
+    def get_ind_and_val( self, t, item_t, item_x ):
+
+        # Treat t as a list, one way or another.
+        if hasattr(t, "__len__"):
+            t_in_arr = t
+        else:
+            t_in_arr = np.array( [ t, ] )
+
+        def numba_get_ind_and_val( t_in_arr, t_arr, x_arr, time_error ):
+            '''Function for finding the appropriate time in the timeline.'''
+
+            ind_result = np.full( t_in_arr.shape, np.nan )
+            x_result = np.full( t_in_arr.shape, np.nan, dtype=type( x_arr ) )
+
+            # Loop through t_ins
+            for i, t_in in enumerate( t_in_arr ):
+
+                # Loop through t_arrs to find minimum time
+                ind = 0
+                while t_in + time_error < t_arr[ind]:
+                        
+                    ind += 1
+
+                    # Stop when we go past the end of the array
+                    if ind == len( t_arr ):
+                        break
+
+                if ind == len( t_arr ):
+                    continue
+
+                ind_result[i] = ind
+                x_result[i] = x_arr[ind]
+
+            if len( x_result ) == 1:
+                return ind_result[0], x_result[0]
+
+            return ind_result, x_result
+
+        return numba_get_ind_and_val(
+            t_in_arr,
+            item_t,
+            item_x,
+            self.time_error
+        )
+            

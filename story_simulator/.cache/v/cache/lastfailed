@@ -1,1 +1,3 @@
-{}
+{
+  "tests/test_timeline.py::TestTimeline::test_get_state": true
+}

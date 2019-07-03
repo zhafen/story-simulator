@@ -78,7 +78,9 @@ class TestTimeline( unittest.TestCase ):
                         assert a[key] == b[key]
                     elif hasattr( a[key], '__len__' ):
                         for i, a_val in enumerate( a[key] ):
-                            if np.isnan( a_val) and np.isnan( b[key][i] ):
+                            if isinstance( a_val, str ):
+                                assert a_val == b[key][i]
+                            elif np.isnan( a_val ) and np.isnan( b[key][i] ):
                                 continue
                             else:
                                 assert a_val == b[key][i]
@@ -100,19 +102,19 @@ class TestTimeline( unittest.TestCase ):
 
         # Test for t arrays
         expected = {
-            'A': np.array([ np.nan, 1, 5, 5, 3, ]),
+            'A': np.array([ np.nan, 1, 5, 5, 3, ], dtype=object),
             'outer': {
-                'B': np.array([ np.nan, 'red', 'red', 'blue', 'blue' ]),
+                'B': np.array(
+                    [ np.nan, 'red', 'red', 'blue', 'blue' ],
+                    dtype=object
+                ),
                 'C': np.array([
                     np.nan, np.nan, 'large and long', 'small and straight',
                     'small and straight'
-                ]),
+                ], dtype=object),
             },
         }
         actual = self.tl.get_state(
             np.array([ -0.5, -0.05, 3., 4.5, np.inf ])
         )
-
-        #DEBUG
-        import pdb; pdb.set_trace()
         assert_dict_equal( expected, actual )

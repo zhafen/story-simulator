@@ -89,20 +89,28 @@ class Timeline( object ):
             ind_result = np.full( t_in_arr.shape, np.nan )
             x_result = np.full( t_in_arr.shape, np.nan, dtype=type( x_arr ) )
 
+            # if t_in_arr.size > 1:
+            #     #DEBUG
+            #     import pdb; pdb.set_trace()
+
             # Loop through t_ins
             for i, t_in in enumerate( t_in_arr ):
 
-                # Loop through t_arrs to find minimum time
-                ind = 0
+                # Loop through t_arrs to find maximum time that fits
+                ind = len( t_arr ) - 1
                 while t_in + time_error < t_arr[ind]:
-                        
-                    ind += 1
+
+                    # if t_in_arr.size > 1:
+                    #     #DEBUG
+                    #     import pdb; pdb.set_trace()
+                                
+                    ind -= 1
 
                     # Stop when we go past the end of the array
-                    if ind == len( t_arr ):
+                    if ind == -1:
                         break
 
-                if ind == len( t_arr ):
+                if ind == -1:
                     continue
 
                 ind_result[i] = ind

@@ -119,7 +119,23 @@ class Timeline( object ):
         else:
             t_in_arr = np.array( [ t, ] )
 
-        @numba.njit( 'int64[:](int64[:], float64[:], float64[:], float64)' )
+        def conditional_njit( condition, *args, **kwargs ):
+            '''Only turn njit on under particular conditions, e.g. if the array
+            is large enough.
+            '''
+            
+            def wrapper( function ):
+                if condition:
+                    return numba.njit( *args, **kwargs )(function)
+                else:
+                    return function
+
+            return wrapper
+
+        @conditional_njit(
+            len( t_in_arr ) > 100,
+            'int64[:](int64[:], float64[:], float64[:], float64)',
+        )
         def numba_get_ind(
             ind_result,
             t_in_arr,

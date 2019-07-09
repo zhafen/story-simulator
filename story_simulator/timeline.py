@@ -3,6 +3,7 @@
 characters/places/objects.
 '''
 
+import numba
 import numpy as np
 import os
 
@@ -50,17 +51,30 @@ class Timeline( object ):
     ########################################################################
 
     def get_state( self, t ):
+        '''Get the state of the timeline at time(s) t.
+
+        Args:
+            t (float or np.ndarray):
+                Time(s) at which you want to get the state of the timeline.
+
+        Returns:
+            dict : State of the timeline at time(s) t, i.e. a dictionary
+            containing the most up-to-date values of the timeline prior to t.
+        '''
 
         def get_state_or_go_deeper( item ):
             '''Recursive function for getting the state.'''
 
             if list( item.keys() ) == [ 'x', 't' ]:
 
-                inds, x_vals = self.get_ind_and_val(
+                inds, x_vals = self.get_ind(
                     t,
                     item['t'],
                     item['x'],
                 )
+
+                if len( x_vals ) == 1:
+                    return x_vals[0]
 
                 return x_vals
 
@@ -75,7 +89,29 @@ class Timeline( object ):
 
     ########################################################################
 
-    def get_ind_and_val( self, t, item_t, item_x ):
+    def get_ind( self, t, item_t, item_x=None ):
+        '''For a time or series of times, get the corresponding indices
+        of the stored times that are the most recent prior times in item_t.
+        Can also retrieve the corresponding value at the most recent prior
+        times.
+
+        Args:
+            t (float or np.ndarray):
+                Times at which you want to find the corresponding indices
+                (and optionally values).
+
+            item_t (np.ndarray):
+                Times at which data exists.
+
+            item_x (np.ndarray, optional):
+                Values of the data at the times given by item_t.
+
+        Returns:
+            np.ndarray or tuple of ndarrays: The indices of the times
+            closest to, but still before, the values given by t. If
+            item_x is passed this is a tuple, and the second array gives the
+            values of x at those times.
+        '''
 
         # Treat t as a list, one way or another.
         if hasattr(t, "__len__"):
@@ -83,15 +119,14 @@ class Timeline( object ):
         else:
             t_in_arr = np.array( [ t, ] )
 
-        def numba_get_ind_and_val( t_in_arr, t_arr, x_arr, time_error ):
+        @numba.njit( 'int64[:](int64[:], float64[:], float64[:], float64)' )
+        def numba_get_ind(
+            ind_result,
+            t_in_arr,
+            t_arr,
+            time_error,
+        ):
             '''Function for finding the appropriate time in the timeline.'''
-
-            ind_result = np.full( t_in_arr.shape, np.nan )
-            x_result = np.full( t_in_arr.shape, np.nan, dtype=type( x_arr ) )
-
-            # if t_in_arr.size > 1:
-            #     #DEBUG
-            #     import pdb; pdb.set_trace()
 
             # Loop through t_ins
             for i, t_in in enumerate( t_in_arr ):
@@ -100,10 +135,6 @@ class Timeline( object ):
                 ind = len( t_arr ) - 1
                 while t_in + time_error < t_arr[ind]:
 
-                    # if t_in_arr.size > 1:
-                    #     #DEBUG
-                    #     import pdb; pdb.set_trace()
-                                
                     ind -= 1
 
                     # Stop when we go past the end of the array
@@ -114,17 +145,26 @@ class Timeline( object ):
                     continue
 
                 ind_result[i] = ind
-                x_result[i] = x_arr[ind]
 
-            if len( x_result ) == 1:
-                return ind_result[0], x_result[0]
+            return ind_result
 
-            return ind_result, x_result
-
-        return numba_get_ind_and_val(
+        fill_value = -9999999999
+        ind_result = np.full( t_in_arr.shape, fill_value )
+        ind_result = numba_get_ind(
+            ind_result,
             t_in_arr,
             item_t,
-            item_x,
             self.time_error
         )
-            
+
+        # Simple case
+        if item_x is None:
+            return ind_result
+
+        # Case where we want to return x's as well
+        x_result = np.full( t_in_arr.shape, np.nan, dtype=object )
+        valid_inds = ind_result != fill_value
+        x_result[valid_inds] = np.array( item_x )[ind_result[valid_inds]]
+
+        return ind_result, x_result
+        

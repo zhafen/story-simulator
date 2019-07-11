@@ -3,6 +3,7 @@
 characters/places/objects.
 '''
 
+import copy
 import numba
 import numpy as np
 import os
@@ -81,11 +82,63 @@ class Timeline( object ):
             else:
                 result = {}
                 for i_key, i_item in item.items():
-                     result[i_key] = get_state_or_go_deeper( i_item )
+                    result[i_key] = get_state_or_go_deeper( i_item )
 
                 return result
 
         return get_state_or_go_deeper( self.data )
+
+    ########################################################################
+
+    def save_state( self, state, t ):
+        '''Save the state (or a substate) of the system at time t.
+        This will update the timeline data accordingly.
+
+        Args:
+            state (dict):
+                Dictionary containing values you want to record at time t.
+
+            t (float):
+                Time at which you want to update the state of the timeline.
+        '''
+
+        def save_state_or_go_deeper( state_item, data_item ):
+            '''Recursive function for saving the state.'''
+
+            if not isinstance( state_item, dict ):
+
+                new_item = copy.deepcopy( data_item )
+
+                inds, = self.get_ind(
+                    t,
+                    data_item['t'],
+                )
+
+                # We want to place after, not before
+                inds += 1
+
+                new_item['t'] = np.insert( data_item['t'], inds, t )
+                new_item['x'] = np.insert( data_item['x'], inds, state_item )
+
+                return new_item
+
+            else:
+                result = {}
+                for i_key, i_item in data_item.items():
+
+                    # Try to update the state, but if that key isn't added then
+                    # just preserve the existing system
+                    try:
+                        result[i_key] = save_state_or_go_deeper(
+                            state_item[i_key],
+                            i_item,
+                        )
+                    except KeyError:
+                        result[i_key] = i_item
+
+                return result
+
+        self.data = save_state_or_go_deeper( state, self.data )
 
     ########################################################################
 

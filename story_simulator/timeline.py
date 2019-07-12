@@ -126,24 +126,51 @@ class Timeline( object ):
                             '<U{}'.format( len_s_item )
                         )
 
+                # Make the new items.
                 new_item['t'] = np.insert( data_item['t'], inds, t )
                 new_item['x'] = np.insert( data_item['x'], inds, state_item )
 
                 return new_item
 
             else:
-                result = {}
-                for i_key, i_item in data_item.items():
 
-                    # Try to update the state, but if that key isn't added then
-                    # just preserve the existing system
-                    try:
+                # Combine the data keys to cover everything
+                state_keys = set( state_item.keys() )
+                data_keys = set( data_item.keys() )
+                all_keys = state_keys.union( data_keys )
+
+                result = {}
+                for i_key in all_keys:
+
+                    in_state = i_key in state_keys
+                    in_data = i_key in data_keys
+
+                    # Account for all ways of mixing and matching keys
+                    if in_state and in_data:
                         result[i_key] = save_state_or_go_deeper(
                             state_item[i_key],
-                            i_item,
+                            data_item[i_key],
                         )
-                    except KeyError:
-                        result[i_key] = i_item
+
+                    if in_data and not in_state:
+                        result[i_key] = data_item[i_key]
+
+                    if in_state and not in_data:
+
+                        def format_state( item ):
+                            '''Recursive function to format state'''
+                            result = {}
+                            for ii_key, ii_item in item.items():
+                                if isinstance( ii_item, dict ):
+                                    result[ii_key] = format_state( ii_item )
+                                else:
+                                    result[ii_key] = {
+                                        'x': np.array([ ii_item ]),
+                                        't': np.array([ t ]),
+                                    }
+                            return result
+
+                        result[i_key] = format_state( state_item[i_key] )
 
                 return result
 

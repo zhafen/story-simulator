@@ -139,6 +139,12 @@ class TestTimeline( unittest.TestCase ):
             'x': np.array([ 'red', 'green', 'blue' ]),
             't': np.array([ 0., 0.5, 4. ]),
         }
+        expected['new'] = {
+            'D': {
+                'x': np.array([ 'x' ]),
+                't': np.array([ 0.5 ]),
+            }
+        }
 
         # Single addition
         self.tl.save_state(
@@ -147,6 +153,9 @@ class TestTimeline( unittest.TestCase ):
                 'A': 2,
                 'outer': {
                     'B': 'green',
+                },
+                'new': {
+                    'D': 'x',
                 },
             }
         )

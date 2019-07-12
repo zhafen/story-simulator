@@ -49,11 +49,13 @@ class TestTimeline( unittest.TestCase ):
             },
             'outer': {
                 'B': {
-                    'x': [ 'red', 'blue' ],
+                    'x': np.array([ 'red', 'blue' ]),
                     't': np.array([ 0., 4. ]),
                 },
                 'C': {
-                    'x': [ 'large and long', 'small and straight' ],
+                    'x': np.array(
+                        [ 'large and long', 'small and straight' ],
+                    ),
                     't': np.array([ 2., 4. ]),
                 },
             },
@@ -133,11 +135,19 @@ class TestTimeline( unittest.TestCase ):
             'x': np.array([ 1, 2, 5, 3 ]),
             't': np.array([ 0., 0.5, 2., 5. ]),
         }
+        expected['outer']['B'] = {
+            'x': np.array([ 'red', 'green', 'blue' ]),
+            't': np.array([ 0., 0.5, 4. ]),
+        }
 
         # Single addition
         self.tl.save_state(
             t = 0.5,
-            state = { 'A': 2 }
+            state = {
+                'A': 2,
+                'outer': {
+                    'B': 'green',
+                },
+            }
         )
-
         assert_dict_equal( expected, self.tl.data )

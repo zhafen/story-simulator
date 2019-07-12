@@ -117,6 +117,15 @@ class Timeline( object ):
                 # We want to place after, not before
                 inds += 1
 
+                # Increase the size of string arrays when necessary.
+                if isinstance( state_item, str ):
+                    current_arr_lim = data_item['x'].dtype.itemsize // 4
+                    len_s_item = len( state_item )
+                    if len_s_item > current_arr_lim:
+                        data_item['x'] = data_item['x'].astype(
+                            '<U{}'.format( len_s_item )
+                        )
+
                 new_item['t'] = np.insert( data_item['t'], inds, t )
                 new_item['x'] = np.insert( data_item['x'], inds, state_item )
 

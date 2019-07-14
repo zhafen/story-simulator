@@ -12,25 +12,18 @@ import pandas as pd
 
 import hoard.utils.utilities as utilities
 
+from . import timeline
+
 ########################################################################
 ########################################################################
 
-class Character( object ):
-
-    @utilities.store_parameters
-    def __init__(
-        self,
-        char_dir,
-    ):
-        pass
+class Character( timeline.Timeline ):
 
     ########################################################################
 
     @classmethod
     def from_generated_character( cls, char_dir, gen_char ):
         '''Retrieve from a generated character.'''
-
-        c = cls( char_dir )
 
         # Copy and save personality traits and quirks
         c.pos_traits = gen_char.pos_traits

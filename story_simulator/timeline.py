@@ -41,7 +41,7 @@ class Timeline( object ):
     ########################################################################
 
     @classmethod
-    def from_hdf5(
+    def load(
         cls,
         data_dir,
         filename,

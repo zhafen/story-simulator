@@ -92,9 +92,9 @@ class TestTimeline( unittest.TestCase ):
 
     ########################################################################
 
-    def test_from_hdf5( self ):
+    def test_loads( self ):
 
-        tl = tline.Timeline.from_hdf5(
+        tl = tline.Timeline.load(
             self.data_dir,
             'test_loads.tld'
         )

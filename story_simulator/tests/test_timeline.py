@@ -40,8 +40,8 @@ class TestTimeline( unittest.TestCase ):
 
     def setUp( self ):
 
-        world_dir = './tests/world_test_data/generic_tline_data'
-        filename = 'test.tld'
+        self.data_dir = './tests/world_test_data/generic_tline_data'
+        self.filename = 'test.tld'
         self.d = {
             'A': {
                 'x': np.array([ 1, 5, 3 ]),
@@ -62,13 +62,13 @@ class TestTimeline( unittest.TestCase ):
         }
 
         self.tl = tline.Timeline(
-            world_dir,
-            filename,
+            self.data_dir,
+            self.filename,
             self.d,
         )
 
         # Remove any existing files
-        self.test_file = os.path.join( world_dir, filename )
+        self.test_file = os.path.join( self.data_dir, self.filename )
         if os.path.isfile( self.test_file ):
             os.remove( self.test_file )
 
@@ -89,6 +89,17 @@ class TestTimeline( unittest.TestCase ):
         f = h5py.File( self.test_file, 'r' )
         npt.assert_allclose( self.d['A']['x'], f['A']['x'][...] )
         assert self.d['outer']['B']['x'][0] == f['outer']['B']['x'][...][0]
+
+    ########################################################################
+
+    def test_from_hdf5( self ):
+
+        tl = tline.Timeline.from_hdf5(
+            self.data_dir,
+            'test_loads.tld'
+        )
+
+        npt.assert_allclose( tl.params['time_error'], 0.001 )
 
     ########################################################################
 
@@ -126,7 +137,7 @@ class TestTimeline( unittest.TestCase ):
 
     ########################################################################
 
-    def test_save_state( self ):
+    def test_store_state( self ):
         '''Test save a state or substate.
         '''
 
@@ -147,7 +158,7 @@ class TestTimeline( unittest.TestCase ):
         }
 
         # Single addition
-        self.tl.save_state(
+        self.tl.store_state(
             t = 0.5,
             state = {
                 'A': 2,

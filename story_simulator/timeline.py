@@ -26,12 +26,47 @@ class Timeline( object ):
     @utilities.store_parameters
     def __init__(
         self,
-        world_dir,
+        data_dir,
         filename,
         data,
         time_error = 0.1,
     ):
+
+        self.params = {
+            'time_error': time_error,
+        }
+
         pass
+
+    ########################################################################
+
+    @classmethod
+    def from_hdf5(
+        cls,
+        data_dir,
+        filename,
+    ):
+
+        # Set up the filepath
+        filepath = os.path.join(
+            data_dir,
+            filename,
+        )
+
+        result = verdict.Dict.from_hdf5( filepath, unpack=True )
+
+        if isinstance( result, tuple ):
+            v_d, params = result
+        else:
+            v_d = result
+            params = {}
+
+        return Timeline(
+            data_dir,
+            filename,
+            v_d._storage,
+            **params
+        )
 
     ########################################################################
 
@@ -41,13 +76,13 @@ class Timeline( object ):
 
         # Set up the filepath
         filepath = os.path.join(
-            self.world_dir,
+            self.data_dir,
             self.filename,
         )
 
         # Save
         v_d = verdict.Dict( self.data )
-        v_d.to_hdf5( filepath )
+        v_d.to_hdf5( filepath, attributes=self.params )
         
     ########################################################################
 
@@ -90,7 +125,7 @@ class Timeline( object ):
 
     ########################################################################
 
-    def save_state( self, state, t ):
+    def store_state( self, state, t ):
         '''Save the state (or a substate) of the system at time t.
         This will update the timeline data accordingly.
 
@@ -102,7 +137,7 @@ class Timeline( object ):
                 Time at which you want to update the state of the timeline.
         '''
 
-        def save_state_or_go_deeper( state_item, data_item ):
+        def store_state_or_go_deeper( state_item, data_item ):
             '''Recursive function for saving the state.'''
 
             if not isinstance( state_item, dict ):
@@ -147,7 +182,7 @@ class Timeline( object ):
 
                     # Account for all ways of mixing and matching keys
                     if in_state and in_data:
-                        result[i_key] = save_state_or_go_deeper(
+                        result[i_key] = store_state_or_go_deeper(
                             state_item[i_key],
                             data_item[i_key],
                         )
@@ -174,7 +209,7 @@ class Timeline( object ):
 
                 return result
 
-        self.data = save_state_or_go_deeper( state, self.data )
+        self.data = store_state_or_go_deeper( state, self.data )
 
     ########################################################################
 

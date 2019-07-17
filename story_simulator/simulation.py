@@ -6,6 +6,8 @@
 @status: Development
 '''
 
+import hoard.utils.utilities as utilities
+
 ########################################################################
 ########################################################################
 
@@ -18,7 +20,4 @@ class Simulation( object ):
     ):
         pass
 
-        # Things to include:
-        # - Characters
-        # - Setting
 

@@ -6,6 +6,8 @@
 @status: Development
 '''
 
+import numpy as np
+
 import hoard.utils.utilities as utilities
 
 ########################################################################
@@ -20,4 +22,10 @@ class Simulation( object ):
     ):
         pass
 
+    ########################################################################
 
+    def identify_seq_to_advance( self ):
+
+        seq_id = np.argmin( self.sequences['t_update'] )
+
+        return seq_id

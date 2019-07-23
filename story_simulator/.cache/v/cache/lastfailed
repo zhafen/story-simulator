@@ -1,5 +1,1 @@
-{
-  "tests/test_actions/test_generic.py::TestWalk::test_time_to_completion": true,
-  "tests/test_actions/test_generic.py::TestWalk::test_upon_completion": true,
-  "tests/test_actions/test_generic.py::TestWalk::test_upon_interruption": true
-}
+{}

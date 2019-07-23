@@ -8,6 +8,7 @@ import numpy as np
 import numpy.testing as npt
 import os
 import unittest
+import unyt
 
 import story_simulator.actions.generic as generic_actions
 
@@ -48,11 +49,11 @@ class TestWalk( unittest.TestCase ):
 
     ########################################################################
 
-    def test_time_to_completion():
+    def test_time_to_complete( self ):
 
-        actual = self.action.time_to_completion()
+        actual = self.action.time_to_complete()
 
-        expected = 4. / 1.5
+        expected = ( 4. / 1.5 )
 
         npt.assert_allclose( expected, actual )
 

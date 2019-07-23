@@ -46,6 +46,19 @@ class Timeline( object ):
         data_dir,
         filename,
     ):
+        '''Create a Timeline object by loading from a file.
+
+        Args:
+            data_dir (str):
+                Directory containing the timeline data.
+
+            filename (str):
+                Filename of the file containing the timeline data.
+                Timeline files usually end in *.tld .
+
+        Returns:
+            Timeline: A timeline instance.
+        '''
 
         # Set up the filepath
         filepath = os.path.join(

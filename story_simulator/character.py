@@ -19,11 +19,20 @@ from . import timeline
 
 class Character( timeline.Timeline ):
 
+    # Attributes to implement
+    # action_queue
+    # current_actions
+    # processing_power
+    # t_update
+    # parameters that decide abilities to do actions
+
     ########################################################################
 
     @classmethod
     def from_generated_character( cls, char_dir, gen_char ):
         '''Retrieve from a generated character.'''
+
+        assert False, 'Fix this.'
 
         # Copy and save personality traits and quirks
         c.pos_traits = gen_char.pos_traits

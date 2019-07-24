@@ -46,3 +46,19 @@ class Walk( object ):
         t = self.displacement / self.speed
 
         return t.to( 's' ).value
+
+    ########################################################################
+
+    def upon_completion( self ):
+
+        actor_state = {
+            'position': {
+                'description': 'right side of room',
+            },
+        }
+
+        other_states = {}
+
+        aux_info = {}
+
+        return actor_state, other_states, aux_info

@@ -53,12 +53,30 @@ class Walk( object ):
 
         actor_state = {
             'position': {
-                'description': 'right side of room',
+                'description': self.new_position,
             },
         }
 
         other_states = {}
 
         aux_info = {}
+
+        return actor_state, other_states, aux_info
+
+    ########################################################################
+
+    def upon_interruption( self, elapsed_time ):
+
+        actor_state = {
+            'position': {
+                'description': 'CREATE',
+            },
+        }
+
+        other_states = {}
+
+        aux_info = {
+            'meters_walked': ( self.speed * elapsed_time * unyt.s ).to( 'm' )
+        }
 
         return actor_state, other_states, aux_info

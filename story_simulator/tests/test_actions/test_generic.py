@@ -21,6 +21,8 @@ def assert_dict_equal( a, b ):
         else:
             if isinstance( a[key], str ):
                 assert a[key] == b[key]
+            elif isinstance( a[key], unyt.unyt_quantity ):
+                npt.assert_allclose( a[key], b[key] )
             elif hasattr( a[key], '__len__' ):
                 for i, a_val in enumerate( a[key] ):
                     if isinstance( a_val, str ):
@@ -65,13 +67,13 @@ class TestWalk( unittest.TestCase ):
 
         expected_actor_state = {
             'position': {
-                'description': 'right side of room'
+                'description': 'right side of the room'
             }
         }
         assert_dict_equal( expected_actor_state, actual[0] )
 
-        expected_others_state = {}
-        assert_dict_equal( expected_aux_info, actual[1] )
+        expected_other_states = {}
+        assert_dict_equal( expected_other_states, actual[1] )
 
         expected_aux_info = {}
         assert_dict_equal( expected_aux_info, actual[2] )
@@ -91,10 +93,10 @@ class TestWalk( unittest.TestCase ):
         }
         assert_dict_equal( expected_actor_state, actual[0] )
 
-        expected_others_state = {}
-        assert_dict_equal( expected_aux_info, actual[1] )
+        expected_other_states = {}
+        assert_dict_equal( expected_other_states, actual[1] )
 
         expected_aux_info = {
-            'meters_walked': 1.5 * elapsed_time
+            'meters_walked': 1.5 * elapsed_time * unyt.m
         }
         assert_dict_equal( expected_aux_info, actual[2] )

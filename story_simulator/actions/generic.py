@@ -50,6 +50,18 @@ class Walk( object ):
     ########################################################################
 
     def upon_completion( self ):
+        '''Result of action upon completion.
+
+        Returns:
+            tuple: tuple containing:
+                actor_state (dict):
+                    Updated state of actor upon completion of action.
+                other_states (dict):
+                    Updated states of other elements upon completion.
+                    A dictionary of states, with the key as the element name.
+                aux_info (dict):
+                    Dictionary of miscellanious additional info.
+        '''
 
         actor_state = {
             'position': {
@@ -66,6 +78,18 @@ class Walk( object ):
     ########################################################################
 
     def upon_interruption( self, elapsed_time ):
+        '''Result of action upon interruption.
+
+        Returns:
+            tuple: tuple containing:
+                actor_state (dict):
+                    Updated state of actor upon interruption of action.
+                other_states (dict):
+                    Updated states of other elements upon interruption.
+                    A dictionary of states, with the key as the element name.
+                aux_info (dict):
+                    Dictionary of miscellanious additional info.
+        '''
 
         actor_state = {
             'position': {

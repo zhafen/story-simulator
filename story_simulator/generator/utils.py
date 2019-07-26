@@ -15,10 +15,13 @@ import story_simulator.utils.utils as utils
 ########################################################################
 ########################################################################
 
-def generate_color():
+def generate_color( request_user_input=True ):
     '''Generate a random color.'''
 
     color = np.random.random( 3 )
+
+    if not request_user_input:
+        return color
 
     accept_color = False
     while not accept_color:

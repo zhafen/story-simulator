@@ -26,26 +26,34 @@ class Character( timeline.Timeline ):
     # t_update
     # parameters that decide abilities to do actions
 
+    def __init__(
+        self,
+        world,
+        name,
+        **kwargs
+    ):
+
+       super( Character, self ).__init__(
+            data_dir = world.get_character_dir( name ),
+            filename = world.get_character_timeline_filename( name ),
+            **kwargs
+        )
+
     ########################################################################
 
     @classmethod
-    def from_generated_character( cls, char_dir, gen_char ):
+    def from_generated_character( cls, gen_char, t ):
         '''Retrieve from a generated character.'''
 
-        assert False, 'Fix this.'
+        c = Character(
+            world = gen_char.world,
+            name = gen_char.data['name'],
+            data = {},
+        )
 
-        # Copy and save personality traits and quirks
-        c.pos_traits = gen_char.pos_traits
-        c.neg_traits = gen_char.neg_traits
-        c.quirks = gen_char.quirks
-
-        # Copy physical traits
-        physical_traits = {}
-        physical_traits['eye_color'] = gen_char.eye_color
-        physical_traits['hair_color'] = gen_char.hair_color
-        physical_traits['skin_tone'] = gen_char.skin_tone
-        physical_traits['height'] = gen_char.height
-        c.physical_traits = pd.Series( physical_traits )
+        #DEBUG
+        import pdb; pdb.set_trace()
+        c.store_state( gen_char.data, t )
 
         return c
 

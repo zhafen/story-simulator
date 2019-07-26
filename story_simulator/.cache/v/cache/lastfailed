@@ -1,1 +1,3 @@
-{}
+{
+  "tests/test_character.py::TestConstructors::test_from_generated_chacter": true
+}

@@ -111,6 +111,24 @@ class World( object ):
         )
 
     ########################################################################
+    # File Management
+    ########################################################################
+
+    def get_character_dir( self, name ):
+        '''Get the directory a character's data is stored in.
+        '''
+
+        return os.path.join( self.world_dir, 'world', 'characters', name )
+
+    ########################################################################
+
+    def get_character_timeline_filename( self, name ):
+        '''Get the filename for a character's timeline.
+        '''
+
+        return '{}.tld'.format( name )
+
+    ########################################################################
     # Methods
     ########################################################################
 

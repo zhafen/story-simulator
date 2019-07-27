@@ -24,6 +24,13 @@ def assert_dict_equal( a, b ):
                 for i, a_val in enumerate( a[key] ):
                     if isinstance( a_val, str ):
                         assert a_val == b[key][i]
+                    elif isinstance( a_val, np.ndarray ):
+                        try:
+                            npt.assert_allclose( a[key], b[key] )
+                        except TypeError:
+                            for i in range( a[key].shape[0] ):
+                                for j in range( a[key].shape[1] ):
+                                    assert a[key][i,j] == b[key][i,j]
                     elif np.isnan( a_val ) and np.isnan( b[key][i] ):
                         continue
                     else:
@@ -183,7 +190,7 @@ class TestTimeline( unittest.TestCase ):
         '''Test we can store a state that' an array.
         '''
 
-        # Simple addition
+        # Simple inclusion
         expected = copy.deepcopy( self.tl.data )
         expected['A_arr'] = {
             'x': np.array([ [ 1., 1., ], ]),
@@ -195,12 +202,32 @@ class TestTimeline( unittest.TestCase ):
         )
         assert_dict_equal( expected, self.tl.data )
 
-        # expected['outer_arr']['B_arr'] = {
-        #     'x': np.array([
-        #         [ 'red', 'also_red', 'NaN', ],
-        #         [ 'green', 'also_green', 'yeah_its_green', ],
-        #         [ 'blue', 'also_blue', 'NaN' ],
-        #     ]),
-        #     't': np.array([  16., 17., 18., ]),
-        # }
-        # assert_dict_equal( expected, self.tl.data )
+        # More complicated case
+        expected['outer_arr'] = {}
+        expected['outer_arr']['B_arr'] = {
+            'x': np.array([
+                [ 'red', 'also_red', 'nan', ],
+                [ 'green', 'also_green', 'yeah_its_green', ],
+                [ 'blue', 'also_blue', 'nan' ],
+            ]),
+            't': np.array([  16., 17., 18., ]),
+        }
+        self.tl.store_state(
+            t = 16.,
+            state = { 'outer_arr': {
+                'B_arr': [ 'red', 'also_red', ],
+            }}
+        )
+        self.tl.store_state(
+            t = 18.,
+            state = { 'outer_arr': {
+                'B_arr': [ 'blue', 'also_blue', ],
+            }}
+        )
+        self.tl.store_state(
+            t = 17.,
+            state = { 'outer_arr': {
+                'B_arr': [ 'green', 'also_green', 'yeah_its_green', ],
+            }}
+        )
+        assert_dict_equal( expected, self.tl.data )

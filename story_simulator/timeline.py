@@ -166,9 +166,11 @@ class Timeline( object ):
                 inds += 1
 
                 # Increase the size of string arrays when necessary.
-                if isinstance( state_item, str ):
-                    current_arr_lim = data_item['x'].dtype.itemsize // 4
-                    len_s_item = len( state_item )
+                x_dtype_str = data_item['x'].dtype.str
+                if x_dtype_str[:-1] == '<U':
+                    current_arr_lim = int( x_dtype_str[2:] )
+                    state_item_dtype_str = np.array( state_item ).dtype.str
+                    len_s_item = int( state_item_dtype_str[2:] )
                     if len_s_item > current_arr_lim:
                         data_item['x'] = data_item['x'].astype(
                             '<U{}'.format( len_s_item )
@@ -176,7 +178,29 @@ class Timeline( object ):
 
                 # Make the new items.
                 new_item['t'] = np.insert( data_item['t'], inds, t )
-                new_item['x'] = np.insert( data_item['x'], inds, state_item )
+                try:
+                    new_item['x'] = np.insert(
+                        data_item['x'],
+                        inds,
+                        state_item,
+                        axis = 0
+                    )
+
+                # Sometimes we need to expand the array
+                except ValueError:
+                    # TODO: Optimization opportunity (too much copying)
+                    new_shape = ( data_item['x'].shape[0], len( state_item ) )
+                    new_item['x'] = np.full(
+                        new_shape,
+                        fill_value = np.nan,
+                    ).astype( data_item['x'].dtype )
+                    new_item['x'][:,:data_item['x'].shape[1]] = data_item['x']
+                    new_item['x'] = np.insert(
+                        new_item['x'],
+                        inds,
+                        state_item,
+                        axis = 0
+                    )
 
                 return new_item
 

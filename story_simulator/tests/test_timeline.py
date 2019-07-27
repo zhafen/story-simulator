@@ -186,7 +186,7 @@ class TestTimeline( unittest.TestCase ):
 
     ########################################################################
 
-    def test_store_state_array( self ):
+    def test_store_and_get_state_array( self ):
         '''Test we can store a state that' an array.
         '''
 
@@ -231,3 +231,28 @@ class TestTimeline( unittest.TestCase ):
             }}
         )
         assert_dict_equal( expected, self.tl.data )
+
+        # Get state
+        actual = self.tl.get_state( 16.5 )
+        expected_A_arr = np.array([1., 1.,])
+        npt.assert_allclose( expected_A_arr, actual['A_arr'].astype( float ) )
+        expected_B_arr = np.array([ 'red', 'also_red', 'nan' ])
+        for i, val in enumerate( expected_B_arr ):
+            assert val == actual['outer_arr']['B_arr'][i]
+        assert 3 == actual['A']
+
+        # Get state for multiple t values
+        actual = self.tl.get_state( np.array([ 16.5, 17.5, ]) )
+        expected_A_arr = np.array([1., 1.,])
+        actual_A_arr = actual['A_arr'][0].astype( float )
+        npt.assert_allclose( expected_A_arr, actual_A_arr )
+        actual_A_arr = actual['A_arr'][1].astype( float )
+        npt.assert_allclose( expected_A_arr, actual_A_arr )
+        expected_B_arr = np.array([ 'red', 'also_red', 'nan' ])
+        for i, val in enumerate( expected_B_arr ):
+            assert val == actual['outer_arr']['B_arr'][0][i]
+        expected_B_arr = np.array([ 'green', 'also_green', 'yeah_its_green', ])
+        for i, val in enumerate( expected_B_arr ):
+            assert val == actual['outer_arr']['B_arr'][1][i]
+        assert 3 == actual['A'][0]
+        assert 3 == actual['A'][1]

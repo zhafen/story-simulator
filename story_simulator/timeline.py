@@ -157,7 +157,8 @@ class Timeline( object ):
 
                 new_item = copy.deepcopy( data_item )
 
-                inds, = self.get_ind(
+
+                inds = self.get_ind(
                     t,
                     data_item['t'],
                 )
@@ -339,7 +340,12 @@ class Timeline( object ):
             return ind_result
 
         # Case where we want to return x's as well
-        x_result = np.full( t_in_arr.shape, np.nan, dtype=object )
+        if len( item_x.shape ) > 1:
+            # This is in case we have stored an array in the timeline
+            x_shape = ( t_in_arr.size, item_x.shape[1] )
+        else:
+            x_shape = t_in_arr.shape
+        x_result = np.full( x_shape, np.nan, dtype=object )
         valid_inds = ind_result != fill_value
         x_result[valid_inds] = np.array( item_x )[ind_result[valid_inds]]
 

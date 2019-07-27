@@ -156,6 +156,10 @@ class TestTimeline( unittest.TestCase ):
                 't': np.array([ 0.5 ]),
             }
         }
+        expected['unknown'] = {
+            'x': np.array([ 1e17 ]),
+            't': np.array([ 0.5 ]),
+        }
 
         # Single addition
         self.tl.store_state(
@@ -168,6 +172,35 @@ class TestTimeline( unittest.TestCase ):
                 'new': {
                     'D': 'x',
                 },
+                'unknown': 1e17,
             }
         )
         assert_dict_equal( expected, self.tl.data )
+
+    ########################################################################
+
+    def test_store_state_array( self ):
+        '''Test we can store a state that' an array.
+        '''
+
+        # Simple addition
+        expected = copy.deepcopy( self.tl.data )
+        expected['A_arr'] = {
+            'x': np.array([ [ 1., 1., ], ]),
+            't': np.array([ 15., ]),
+        }
+        self.tl.store_state(
+            t = 15.,
+            state = { 'A_arr': np.array([ 1., 1., ]) },
+        )
+        assert_dict_equal( expected, self.tl.data )
+
+        # expected['outer_arr']['B_arr'] = {
+        #     'x': np.array([
+        #         [ 'red', 'also_red', 'NaN', ],
+        #         [ 'green', 'also_green', 'yeah_its_green', ],
+        #         [ 'blue', 'also_blue', 'NaN' ],
+        #     ]),
+        #     't': np.array([  16., 17., 18., ]),
+        # }
+        # assert_dict_equal( expected, self.tl.data )

@@ -207,15 +207,15 @@ class Timeline( object ):
 
                         def format_state( item ):
                             '''Recursive function to format state'''
-                            result = {}
-                            for ii_key, ii_item in item.items():
-                                if isinstance( ii_item, dict ):
+                            if isinstance( item, dict ):
+                                result = {}
+                                for ii_key, ii_item in item.items():
                                     result[ii_key] = format_state( ii_item )
-                                else:
-                                    result[ii_key] = {
-                                        'x': np.array([ ii_item ]),
-                                        't': np.array([ t ]),
-                                    }
+                            else:
+                                result = {
+                                    'x': np.array([ item ]),
+                                    't': np.array([ t ]),
+                                }
                             return result
 
                         result[i_key] = format_state( state_item[i_key] )

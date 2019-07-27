@@ -60,12 +60,12 @@ class TestConstructors( unittest.TestCase ):
         # Try opening data that should be stored
         actual = c.get_state( 1. )
         print( actual['name'] )
-        print( actual['personality']['personality_traits'] )
-        print( actual['personality']['quirks'] )
-        print( actual['physical_description']['eye_color'] )
-        print( actual['physical_description']['hair_color'] )
-        print( actual['physical_description']['skin_tone'] )
-        print( actual['physical_description']['height'] )
+        print( actual['mental_state']['personality_traits'] )
+        print( actual['mental_state']['quirks'] )
+        print( actual['physical_state']['eye_color'] )
+        print( actual['physical_state']['hair_color'] )
+        print( actual['physical_state']['skin_tone'] )
+        print( actual['physical_state']['height'] )
 
 ########################################################################
 

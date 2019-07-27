@@ -50,9 +50,6 @@ class Character( timeline.Timeline ):
             name = gen_char.data['name'],
             data = {},
         )
-
-        #DEBUG
-        import pdb; pdb.set_trace()
         c.store_state( gen_char.data, t )
 
         return c

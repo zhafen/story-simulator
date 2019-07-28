@@ -48,6 +48,8 @@ class GeneratedCharacter( object ):
         '''
 
         self.data = {}
+        self.data['mental_state'] = {}
+        self.data['physical_state'] = {}
 
     ########################################################################
     # Properties
@@ -127,23 +129,28 @@ class GeneratedCharacter( object ):
     def combine_and_store_traits( self, ):
         '''Store the traits in the data dict.'''
 
-        self.data['personality_traits'] = {}
-        for key, item in self.pos_traits.items():
-            self.data['personality_traits'][key] = item
-        for key, item in self.neg_traits.items():
-            self.data['personality_traits'][key] = item
+        self.data['mental_state']['personality_traits'] = {}
+        for trait in self.pos_traits['Description'].values:
+            self.data['mental_state']['personality_traits'][trait] = 1
+        for trait in self.neg_traits['Description'].values:
+            self.data['mental_state']['personality_traits'][trait] = 1
 
     ########################################################################
 
     def generate_quirks( self, ):
         '''Generate n quirks.'''
 
-        self.data['quirks'] = prob_tools.sample_table(
+        self.quirks = prob_tools.sample_table(
             self.quirks_table,
             self.n_quirks,
         )
 
-        return self.data['quirks']
+        # Store quirks in a timeline-like format
+        self.data['mental_state']['quirks'] = {}
+        for quirk in self.quirks['Description'].values:
+            self.data['mental_state']['quirks'][quirk] = 1
+
+        return self.quirks
 
     ########################################################################
 
@@ -151,7 +158,7 @@ class GeneratedCharacter( object ):
 
         eye_color = gen_utils.generate_color( self.request_user_input )
 
-        self.data['eye_color'] = eye_color 
+        self.data['physical_state']['eye_color'] = eye_color 
 
     ########################################################################
 
@@ -159,7 +166,7 @@ class GeneratedCharacter( object ):
 
         hair_color = gen_utils.generate_color( self.request_user_input )
 
-        self.data['hair_color'] = hair_color 
+        self.data['physical_state']['hair_color'] = hair_color 
 
     ########################################################################
 
@@ -167,7 +174,7 @@ class GeneratedCharacter( object ):
 
         skin_tone = gen_utils.generate_color( self.request_user_input )
 
-        self.data['skin_tone'] = skin_tone 
+        self.data['physical_state']['skin_tone'] = skin_tone 
 
     ########################################################################
 
@@ -175,7 +182,7 @@ class GeneratedCharacter( object ):
 
         height = np.random.normal( avg_height, sigma_height )
 
-        self.data['height'] = height 
+        self.data['physical_state']['height'] = height 
 
         print( 'height = {:.3g} cm ({:.3g} feet)'.format(
                 height,
@@ -194,12 +201,13 @@ class GeneratedCharacter( object ):
         # Name, ofc
         self.generate_name()
 
-        # Generate personality traits and quirks
+        # Generate mental state
         self.generate_positive_traits()
         self.generate_negative_traits()
+        self.combine_and_store_traits()
         self.generate_quirks()
 
-        # Generate physical traits
+        # Generate physical state
         self.generate_eye_color()
         self.generate_hair_color()
         self.generate_skin_tone()

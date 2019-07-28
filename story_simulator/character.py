@@ -56,3 +56,10 @@ class Character( timeline.Timeline ):
 
     ########################################################################
 
+    @classmethod
+    def load( cls, world, name ):
+
+        data_dir = world.get_character_dir( name )
+        filename = world.get_character_timeline_filename( name )
+        
+        return super( Character, cls ).load( data_dir, filename )

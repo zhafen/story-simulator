@@ -66,7 +66,11 @@ class Timeline( object ):
             filename,
         )
 
-        result = verdict.Dict.from_hdf5( filepath, unpack=True )
+        result = verdict.Dict.from_hdf5(
+            filepath,
+            unpack = True,
+            unpack_name = 'unpack_name'
+        )
 
         if isinstance( result, tuple ):
             v_d, params = result

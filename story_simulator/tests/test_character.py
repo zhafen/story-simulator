@@ -71,7 +71,17 @@ class TestConstructors( unittest.TestCase ):
 
 class TestCharacter( unittest.TestCase ):
 
+    def setUp( self ):
+
+        self.w = world.World( './tests/world_test_data' )
+
+        c = character.Character.load( self.w, 'Ohh' )
+    
+    ########################################################################
+
     def test_begin_action( self ):
 
+        #DEBUG
+        import pdb; pdb.set_trace()
+
         assert False
-    

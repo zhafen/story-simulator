@@ -10,6 +10,7 @@ import copy
 import numpy as np
 import os
 import pandas as pd
+import scipy.stats
 
 import hoard.utils.utilities as utilities
 import hoard.utils.probability_tools as prob_tools
@@ -190,6 +191,121 @@ class GeneratedCharacter( object ):
             )
         )
 
+        return height
+
+    ########################################################################
+
+    def generate_gender( self, m_to_w_ratio=1.06 ):
+        '''Generate the gender of the character.
+        TODO: Update this to include intersex.
+
+        Args:
+            m_to_w_ratio (float):
+                Ratio of men to women in the population this
+                character comes from.
+
+        Returns:
+            str:
+                A string indicating the gender, typically male or female.
+        '''
+
+        ps = np.array( [ m_to_w_ratio, 1. ] )
+        ind = prob_tools.sample_discrete_probabilities( ps )
+        
+        self.gender = [ 'male', 'female' ][ind]
+
+        self.data['physical_state']['gender'] = self.gender
+
+        return self.gender
+
+    ########################################################################
+
+    def generate_gender_identity( self, frac_transgender=0.02 ):
+        '''Generate the gender identity of the character.
+        TODO: Update this to include agender, bigender, and generally a more
+        fluid definition.
+
+        Args:
+            frac_transgender (float):
+                The fraction of transgender individuals in the population this
+                character comes from.
+
+        Returns:
+            str:
+                A string indicating the gender identity,
+                typically male or female.
+        '''
+
+        ps = np.array( [ 1. - frac_transgender, frac_transgender ] )
+        ind = prob_tools.sample_discrete_probabilities( ps )
+
+        # Dictionary for mapping gender allignment
+        ordered_genders = {
+            'female': [ 'female', 'male', ],
+            'male': [ 'male', 'female', ],
+        }
+        ordered_gender_list = ordered_genders[self.gender]
+        self.gender_identity = ordered_gender_list[ind]
+
+        self.data['mental_state']['gender_identity'] = self.gender_identity
+
+        # We also store the ordered gender list for use in determining
+        # sexual orientation
+        self.ordered_gender_list = ordered_genders[self.gender_identity]
+
+        return self.gender_identity
+
+    ########################################################################
+
+    def generate_sexual_orientation(
+        self,
+        mean_frac_attr_same = 0.1,
+        scale_same = 2.,
+        mean_frac_attr_opp = 'from_frac_same',
+        scale_opp = 2.,
+    ):
+        '''
+        '''
+
+        # We find the center of the distribution by noting that a value of 0
+        # is the breakpoint between being more attracted than not to a gender
+        # (with positive being more attracted), so we can correspond that
+        # to the number of sigma the location should be away from 0
+        frac_not_attr = 1. - mean_frac_attr_same 
+        n_sigma_loc_same = -1. * scipy.stats.norm.ppf( frac_not_attr )
+        loc_same = n_sigma_loc_same * scale_same
+ 
+        # Similar for opposite gender
+        if mean_frac_attr_opp == 'from_frac_same':
+            frac_not_attr = mean_frac_attr_same
+        else:
+            frac_not_attr = 1. - mean_frac_attr_opp
+        n_sigma_loc_opp = -1. * scipy.stats.norm.ppf( frac_not_attr )
+        loc_opp = n_sigma_loc_opp * scale_opp
+
+        # Now draw from those distributions
+        ori_same = np.random.normal( loc=loc_same, scale=scale_same )
+        ori_opp = np.random.normal( loc=loc_opp, scale=scale_opp )
+
+        # Scale these (which range from -inf to +inf) to 0 to 1
+        def map_to_0_to_1( x ):
+            return 1. / ( 1. + np.exp( -x ) )
+        ori_same = map_to_0_to_1( ori_same )
+        ori_opp = map_to_0_to_1( ori_opp )
+
+        # Actual dictionary
+        self.sexual_orientation = {}
+        # Same sex attraction
+        self.sexual_orientation[self.ordered_gender_list[0]] = ori_same
+        # Opposite sex attraction
+        self.sexual_orientation[self.ordered_gender_list[1]] = ori_opp
+
+        self.data['mental_state']['sexual_orientation'] = (
+            self.sexual_orientation
+        )
+
+        return self.sexual_orientation
+
     ########################################################################
 
     def generate_character( self ):
@@ -212,6 +328,11 @@ class GeneratedCharacter( object ):
         self.generate_hair_color()
         self.generate_skin_tone()
         self.generate_height()
+
+        # Gender, gender identity, and sexual orientation
+        self.generate_gender()
+        self.generate_gender_identity()
+        self.generate_sexual_orientation()
 
     ########################################################################
 

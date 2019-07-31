@@ -46,7 +46,7 @@ class TestConstructors( unittest.TestCase ):
 
     ########################################################################
 
-    def test_from_generated_chacter( self ):
+    def test_from_generated_character( self ):
         '''This also acts as a test for the character generator.'''
 
         g_char = character_generator.GeneratedCharacter(
@@ -66,6 +66,11 @@ class TestConstructors( unittest.TestCase ):
         print( actual['physical_state']['hair_color'] )
         print( actual['physical_state']['skin_tone'] )
         print( actual['physical_state']['height'] )
+        print( actual['physical_state']['gender'] )
+        print( actual['mental_state']['gender_identity'] )
+        print( actual['mental_state']['sexual_orientation'] )
+
+        assert False, "Need to make sure the statistics of gender and sexual orientation look right."
 
 ########################################################################
 

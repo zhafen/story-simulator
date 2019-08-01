@@ -70,8 +70,6 @@ class TestConstructors( unittest.TestCase ):
         print( actual['mental_state']['gender_identity'] )
         print( actual['mental_state']['sexual_orientation'] )
 
-        assert False, "Need to make sure the statistics of gender and sexual orientation look right."
-
 ########################################################################
 
 class TestCharacter( unittest.TestCase ):
@@ -80,13 +78,11 @@ class TestCharacter( unittest.TestCase ):
 
         self.w = world.World( './tests/world_test_data' )
 
-        c = character.Character.load( self.w, 'Ohh' )
+        # Load our standard test character
+        c = character.Character.load( self.w, 'Pau' )
     
     ########################################################################
 
     def test_begin_action( self ):
-
-        #DEBUG
-        import pdb; pdb.set_trace()
 
         assert False

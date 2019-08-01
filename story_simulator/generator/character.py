@@ -179,15 +179,15 @@ class GeneratedCharacter( object ):
 
     ########################################################################
 
-    def generate_height( self, avg_height=175., sigma_height=50. ):
+    def generate_height( self, avg_height=1.75, sigma_height=0.50 ):
 
         height = np.random.normal( avg_height, sigma_height )
 
         self.data['physical_state']['height'] = height 
 
-        print( 'height = {:.3g} cm ({:.3g} feet)'.format(
+        print( 'height = {:.3g} m ({:.3g} feet)'.format(
                 height,
-                height*0.0328084,
+                height*3.28084,
             )
         )
 
@@ -197,6 +197,7 @@ class GeneratedCharacter( object ):
 
     def generate_gender( self, m_to_w_ratio=1.06 ):
         '''Generate the gender of the character.
+
         TODO: Update this to include intersex.
 
         Args:
@@ -221,7 +222,9 @@ class GeneratedCharacter( object ):
     ########################################################################
 
     def generate_gender_identity( self, frac_transgender=0.02 ):
-        '''Generate the gender identity of the character.
+        '''Generate the gender identity of the character. The gender of the
+        character must be set first.
+
         TODO: Update this to include agender, bigender, and generally a more
         fluid definition.
 
@@ -259,12 +262,50 @@ class GeneratedCharacter( object ):
 
     def generate_sexual_orientation(
         self,
-        mean_frac_attr_same = 0.1,
-        scale_same = 2.,
-        mean_frac_attr_opp = 'from_frac_same',
-        scale_opp = 2.,
+        mean_frac_attr_same = 0.25,
+        scale_same = 1.5,
+        mean_frac_attr_opp = 0.8,
+        scale_opp = 1.0,
     ):
-        '''
+        '''Generate the sexual orientation of the character. The gender and
+        gender identity must be set first.
+
+        The default values for the distributions from which sexual orientation
+        are drawn are loosely based on extrapolating the reported fraction
+        of LGBT+ in the US (~10%). While under the default parameters 25% of
+        the generated characters feel some noticeable level of attraction to
+        the same sex, only ~10% of the generated characters have values greater
+        than 0.8. There is also an asexual population, as a result.
+
+        TODO: In the current distribution, attraction to the same and opposite
+        gender identity are independent, which means that there's a much higher
+        fraction of bisexual characters than lesbian or gay characters. It's
+        not clear if this is correct.
+
+        Args:
+            mean_frac_attr_same (float):
+                The fraction of characters that are more attracted than
+                unattracted to characters of the same gender identity.
+
+            scale_same (float):
+                The width of the distribution for same gender identity
+                attraction. Higher values mean more extreme levels of
+                attraction.
+
+            mean_frac_attr_opp (float):
+                The fraction of characters that are more attracted than
+                unattracted to characters of the opposite gender identity.
+
+            scale_opp (float):
+                The width of the distribution for opposite gender identity
+                attraction. Higher values mean more extreme levels of
+                attraction.
+
+        Returns:
+            dict:
+                A dictionary with each entry containing a value from 0 to 1
+                indicating how attracted the character is to individuals of
+                that gender, with 0 being no attraction and 1 being enamored.
         '''
 
         # We find the center of the distribution by noting that a value of 0

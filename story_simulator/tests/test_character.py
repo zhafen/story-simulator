@@ -9,6 +9,7 @@ import numpy.testing as npt
 import os
 import unittest
 
+import story_simulator.actions.generic as gen_actions
 import story_simulator.character as character
 import story_simulator.world as world
 import story_simulator.generator.character as character_generator
@@ -79,10 +80,30 @@ class TestCharacter( unittest.TestCase ):
         self.w = world.World( './tests/world_test_data' )
 
         # Load our standard test character
-        c = character.Character.load( self.w, 'Pau' )
+        self.c = character.Character.load( self.w, 'Pau' )
     
     ########################################################################
 
     def test_begin_action( self ):
+
+        # Setup
+        action = gen_actions.Walk(
+            new_position = 'across the room',
+            displacement = 10.,
+        )
+        self.c.t_update = 1.
+        self.c.action_queue.put( action )
+
+        self.c.begin_action( 1. )
+
+        # Check results
+        npt.assert_allclose( self.c.t_update, 1. + 10./1.4 )
+        assert self.c.action_queue.empty()
+        assert self.c.ongoing_action == action
+        npt.assert_allclose( self.c.ongoing_action.t_start, 1. )
+
+    ########################################################################
+
+    def test_resolve_action( self ):
 
         assert False

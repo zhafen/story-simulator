@@ -9,6 +9,7 @@
 import numpy as np
 import os
 import pandas as pd
+import queue
 
 import hoard.utils.utilities as utilities
 
@@ -33,12 +34,16 @@ class Character( timeline.Timeline ):
         **kwargs
     ):
 
-       super( Character, self ).__init__(
+        super( Character, self ).__init__(
             data_dir = world.get_character_dir( name ),
             filename = world.get_character_timeline_filename( name ),
             **kwargs
         )
 
+        self.action_queue = queue.Queue()
+
+    ########################################################################
+    # Constructors
     ########################################################################
 
     @classmethod
@@ -58,8 +63,53 @@ class Character( timeline.Timeline ):
 
     @classmethod
     def load( cls, world, name ):
+        '''Load a character from an existing file.
+
+        Args:
+            world (World object):
+                The object representing the world this character exists in.
+
+            name (str):
+                Name of the character.
+        '''
 
         data_dir = world.get_character_dir( name )
         filename = world.get_character_timeline_filename( name )
         
-        return super( Character, cls ).load( data_dir, filename )
+        tl = super( Character, cls ).load( data_dir, filename )
+        c = Character(
+            world = world,
+            name = name,
+            data = tl.data,
+            **tl.params
+        )
+
+        return c
+
+    ########################################################################
+    # Related to actions
+    ########################################################################
+
+    def begin_action( self, t ):
+        '''Begin the next action in the queue.
+
+        Args:
+            t (float):
+                Time (universal time in seconds) at which to begin the action.
+        '''
+
+        # Get the next action
+        next_action = self.action_queue.get()
+
+        # Update the expected time to finish at
+        self.t_update += next_action.time_to_complete()
+
+        # Add the action to the list of ongoing actions
+        next_action.t_start =  t
+        self.ongoing_action = next_action
+
+    ########################################################################
+
+    def resolve_action( self, t ):
+
+        pass

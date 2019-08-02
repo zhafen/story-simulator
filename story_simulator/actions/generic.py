@@ -34,18 +34,47 @@ class Walk( object ):
 
     ########################################################################
 
+    @property
     def time_to_complete( self ):
         '''Determine how long the action will take to complete. This is a
-        standard function for actions.
+        standard property for actions.
 
         Returns:
             float:
                 The time to complete this action in seconds.
         '''
 
-        t = self.displacement / self.speed
+        if not hasattr( self, '_time_to_complete' ):
 
-        return t.to( 's' ).value
+            t = self.displacement / self.speed
+            self._time_to_complete = t.to( 's' ).value
+
+        return self._time_to_complete
+
+    ########################################################################
+
+    def result_of_action( self, elapsed_time ):
+        '''Result of the action given a time elapsed
+
+        Args:
+            elapsed_time (float):
+                Time (in seconds) since the action started.
+
+        Returns:
+            tuple: tuple containing:
+                actor_state (dict):
+                    Updated state of actor upon completion of action.
+                other_states (dict):
+                    Updated states of other elements upon completion.
+                    A dictionary of states, with the key as the element name.
+                aux_info (dict):
+                    Dictionary of miscellanious additional info.
+        '''
+
+        if elapsed_time < self.time_to_complete:
+            return self.upon_interruption( elapsed_time )
+        else:
+            return self.upon_completion()
 
     ########################################################################
 
@@ -79,6 +108,10 @@ class Walk( object ):
 
     def upon_interruption( self, elapsed_time ):
         '''Result of action upon interruption.
+
+        Args:
+            elapsed_time (float):
+                Time (in seconds) since the action started.
 
         Returns:
             tuple: tuple containing:

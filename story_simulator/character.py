@@ -102,14 +102,23 @@ class Character( timeline.Timeline ):
         next_action = self.action_queue.get()
 
         # Update the expected time to finish at
-        self.t_update += next_action.time_to_complete()
+        self.t_update += next_action.time_to_complete
 
         # Add the action to the list of ongoing actions
-        next_action.t_start =  t
         self.ongoing_action = next_action
+        self.ongoing_action_start_time = t
 
     ########################################################################
 
-    def resolve_action( self, t ):
+    def get_result_of_ongoing_action( self, t ):
+        '''Get the results of the ongoing action, if it was to stop at
+        time t.
 
-        pass
+        Args:
+            t (float):
+                Time (universal time in seconds) to get action results.
+        '''
+
+        elapsed_time = t - self.ongoing_action_start_time
+
+        return self.ongoing_action.result_of_action( elapsed_time )

@@ -8,6 +8,7 @@ import numpy as np
 import numpy.testing as npt
 import os
 import unittest
+import unyt
 
 import story_simulator.actions.generic as gen_actions
 import story_simulator.character as character
@@ -23,6 +24,8 @@ def assert_dict_equal( a, b ):
         else:
             if isinstance( a[key], str ):
                 assert a[key] == b[key]
+            elif isinstance( a[key], unyt.unyt_quantity ):
+                npt.assert_allclose( a[key], b[key] )
             elif hasattr( a[key], '__len__' ):
                 for i, a_val in enumerate( a[key] ):
                     if isinstance( a_val, str ):
@@ -100,10 +103,46 @@ class TestCharacter( unittest.TestCase ):
         npt.assert_allclose( self.c.t_update, 1. + 10./1.4 )
         assert self.c.action_queue.empty()
         assert self.c.ongoing_action == action
-        npt.assert_allclose( self.c.ongoing_action.t_start, 1. )
+        npt.assert_allclose( self.c.ongoing_action_start_time, 1. )
 
     ########################################################################
 
-    def test_resolve_action( self ):
+    def test_get_action_result( self ):
 
-        assert False
+        # Setup
+        action = gen_actions.Walk(
+            new_position = 'across the room',
+            displacement = 10.,
+        )
+        self.c.ongoing_action = action
+        self.c.ongoing_action_start_time = 1.
+        self.c.t_update = 1. + 10./1.4
+
+        # Completion case
+        actual = self.c.get_result_of_ongoing_action( self.c.t_update + 0.01 )
+        expected_actor_state = {
+            'position': {
+                'description': 'across the room'
+            }
+        }
+        assert_dict_equal( expected_actor_state, actual[0] )
+        expected_other_states = {}
+        assert_dict_equal( expected_other_states, actual[1] )
+        expected_aux_info = {}
+        assert_dict_equal( expected_aux_info, actual[2] )
+
+        # Interruption case
+        elapsed_time = 2.
+        actual = self.c.get_result_of_ongoing_action( 1. + elapsed_time )
+        expected_actor_state = {
+            'position': {
+                'description': 'CREATE'
+            }
+        }
+        assert_dict_equal( expected_actor_state, actual[0] )
+        expected_other_states = {}
+        assert_dict_equal( expected_other_states, actual[1] )
+        expected_aux_info = {
+            'meters_walked': 1.4 * elapsed_time * unyt.m
+        }
+        assert_dict_equal( expected_aux_info, actual[2] )

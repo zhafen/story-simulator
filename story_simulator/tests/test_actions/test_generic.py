@@ -53,7 +53,7 @@ class TestWalk( unittest.TestCase ):
 
     def test_time_to_complete( self ):
 
-        actual = self.action.time_to_complete()
+        actual = self.action.time_to_complete
 
         expected = ( 4. / 1.5 )
 

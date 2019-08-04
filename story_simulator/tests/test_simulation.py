@@ -44,6 +44,19 @@ class TestSimulation( unittest.TestCase ):
         self.s = ss.Simulation(
             self.world_dir,
         )
+        self.s.scenes = {
+            'characters': np.array([
+                [ 'Rue', ],
+                [ 'Pau', 'Dau', 'Jshoh', ],
+                [ 'uRue', ],
+            ]),
+            'settings': np.array([
+                'Test Room A',
+                'Test Room B',
+                'Test Room C',
+            ]),
+            't_update': np.array([ 5., 1., 25. ]),
+        }
 
     ########################################################################
 
@@ -54,19 +67,44 @@ class TestSimulation( unittest.TestCase ):
 
     ########################################################################
 
-    def test_identify_seq_to_advance( self ):
+    def test_identify_scene_to_advance( self ):
 
         # Test case
-        self.s.sequences = {
+        self.s.scenes = {
             't_update': np.array([ 3.5, 0.1, 3600., 3., ]),
         }
-        seq_id = self.s.identify_seq_to_advance()
-        assert seq_id == 1
+        scene_id = self.s.identify_scene_to_advance()
+        assert scene_id == 1
 
     ########################################################################
 
-    def test_advance_seq( self ):
+    def test_advance_scene( self ):
 
-        # Advance a sequence
-        assert False
+        # Setup
+        scene_id = 1
+
+        # Advance a scene
+        actor_state, other_states = self.s.start_advancing_scene( scene_id )
+        assert actor_state['position']['description'] == 'CREATE'
+        actor_state['position']['description'] = 'half way across the room'
+        self.s.finish_advancing_scene( scene_id, actor_state, other_states )
+
+        # Check that a variety of results are as expected
+        expected = np.array([ 5., 2., 25. ])
+        npt.assert_allclose( expected, self.s.scenes['t_update'] )
+        e_pau_state = self.s.current_scene['Pau'].get_state( 1. )
+        assert e_pau_state['position']['description'] == 'half way across room'
+        assert e_pau_state['mental_state']['gender_identity'] == 'female'
+        npt.assert_allclose(
+            self.s.current_scene['Pau'].t_update,
+            1. + 5./1.4,
+        )
+        npt.assert_allclose(
+            self.s.current_scene['Dau'].t_update,
+            2.,
+        )
+        npt.assert_allclose(
+            self.s.current_scene['Jshoh'].t_update,
+            20.,
+        )
         

@@ -367,6 +367,7 @@ class Timeline( object ):
 
     @property
     def params( self ):
+        '''Important parameters for the timeline, all in one spot.'''
 
         return {
             't_update': self.t_update,

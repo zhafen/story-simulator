@@ -24,14 +24,21 @@ class Simulation( object ):
 
     ########################################################################
 
-    def identify_seq_to_advance( self ):
+    def identify_scene_to_advance( self ):
+        '''Determine which scene to advance.
 
-        seq_id = np.argmin( self.sequences['t_update'] )
+        Returns:
+            int:
+                The index for the scene that will be advanced.
+        '''
 
-        return seq_id
+        scene_id = np.argmin( self.scenes['t_update'] )
+
+        return scene_id
 
     ########################################################################
 
-    def advance_sequence( self, seq_id ):
+    def start_advancing_scene( self, scene_id ):
 
-        pass
+        # Load the scene
+        self.load_scene( scene_id )

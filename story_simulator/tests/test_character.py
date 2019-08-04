@@ -73,6 +73,7 @@ class TestConstructors( unittest.TestCase ):
         print( actual['physical_state']['gender'] )
         print( actual['mental_state']['gender_identity'] )
         print( actual['mental_state']['sexual_orientation'] )
+        print( c.t_update, 0.1 )
 
 ########################################################################
 

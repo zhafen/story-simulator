@@ -56,9 +56,17 @@ class TestSimulation( unittest.TestCase ):
 
     def test_identify_seq_to_advance( self ):
 
-        # Test case 1
+        # Test case
         self.s.sequences = {
             't_update': np.array([ 3.5, 0.1, 3600., 3., ]),
         }
         seq_id = self.s.identify_seq_to_advance()
         assert seq_id == 1
+
+    ########################################################################
+
+    def test_advance_seq( self ):
+
+        # Advance a sequence
+        assert False
+        

@@ -30,11 +30,8 @@ class Timeline( object ):
         filename,
         data,
         time_error = 0.1,
+        t_update = 'Not set',
     ):
-
-        self.params = {
-            'time_error': time_error,
-        }
 
         pass
 
@@ -87,8 +84,13 @@ class Timeline( object ):
 
     ########################################################################
 
-    def save( self ):
+    def save( self, attrs={} ):
         '''Save the raw Timeline data.
+
+        Args:
+            attrs (dict):
+                Attributes to save (beyond particular parameters that will
+                be stored for sure, like t_update).
         '''
 
         # Set up the filepath
@@ -97,9 +99,13 @@ class Timeline( object ):
             self.filename,
         )
 
+        # Set up attributes
+        full_attrs = self.params.copy()
+        full_attrs.update( attrs )
+
         # Save
         v_d = verdict.Dict( self.data )
-        v_d.to_hdf5( filepath, attributes=self.params )
+        v_d.to_hdf5( filepath, attributes=full_attrs )
         
     ########################################################################
 
@@ -354,4 +360,16 @@ class Timeline( object ):
         x_result[valid_inds] = np.array( item_x )[ind_result[valid_inds]]
 
         return ind_result, x_result
+        
+    ########################################################################
+    # Properties (focusing on parameters)
+    ########################################################################
+
+    @property
+    def params( self ):
+
+        return {
+            't_update': self.t_update,
+            'time_error': self.time_error,
+        }
         

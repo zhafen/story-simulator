@@ -29,3 +29,9 @@ class Simulation( object ):
         seq_id = np.argmin( self.sequences['t_update'] )
 
         return seq_id
+
+    ########################################################################
+
+    def advance_sequence( self, seq_id ):
+
+        pass

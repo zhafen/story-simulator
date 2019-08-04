@@ -31,6 +31,7 @@ class Character( timeline.Timeline ):
         self,
         world,
         name,
+        t_update = None,
         **kwargs
     ):
 
@@ -40,6 +41,7 @@ class Character( timeline.Timeline ):
             **kwargs
         )
 
+        self.t_update = t_update
         self.action_queue = queue.Queue()
 
     ########################################################################
@@ -54,6 +56,7 @@ class Character( timeline.Timeline ):
             world = gen_char.world,
             name = gen_char.data['name'],
             data = {},
+            t_update = t,
         )
         c.store_state( gen_char.data, t )
 
@@ -90,6 +93,21 @@ class Character( timeline.Timeline ):
     # Related to actions
     ########################################################################
 
+    def get_result_of_ongoing_action( self, t ):
+        '''Get the results of the ongoing action, if it was to stop at
+        time t.
+
+        Args:
+            t (float):
+                Time (universal time in seconds) to get action results.
+        '''
+
+        elapsed_time = t - self.ongoing_action_start_time
+
+        return self.ongoing_action.result_of_action( elapsed_time )
+
+    ########################################################################
+
     def begin_action( self, t ):
         '''Begin the next action in the queue.
 
@@ -107,18 +125,3 @@ class Character( timeline.Timeline ):
         # Add the action to the list of ongoing actions
         self.ongoing_action = next_action
         self.ongoing_action_start_time = t
-
-    ########################################################################
-
-    def get_result_of_ongoing_action( self, t ):
-        '''Get the results of the ongoing action, if it was to stop at
-        time t.
-
-        Args:
-            t (float):
-                Time (universal time in seconds) to get action results.
-        '''
-
-        elapsed_time = t - self.ongoing_action_start_time
-
-        return self.ongoing_action.result_of_action( elapsed_time )

@@ -124,7 +124,8 @@ class Timeline( object ):
         def get_state_or_go_deeper( item ):
             '''Recursive function for getting the state.'''
 
-            if list( item.keys() ) == [ 'x', 't' ]:
+            keys = list( item.keys() )
+            if ( keys == [ 'x', 't' ] ) or ( keys == [ 't', 'x' ] ):
 
                 inds, x_vals = self.get_ind(
                     t,

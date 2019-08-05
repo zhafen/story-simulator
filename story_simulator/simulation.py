@@ -7,8 +7,11 @@
 '''
 
 import numpy as np
+import verdict
 
 import hoard.utils.utilities as utilities
+from . import setting
+from . import character
 
 ########################################################################
 ########################################################################
@@ -18,9 +21,42 @@ class Simulation( object ):
     @utilities.store_parameters
     def __init__(
         self,
-        world_dir,
+        world,
     ):
         pass
+
+        self.loaded_scene_id = None
+
+    ########################################################################
+
+    def load_scene( self, scene_id ):
+
+        # Don't reload if already loaded
+        if self.loaded_scene_id == scene_id:
+            return
+
+        # Create base structure
+        self.loaded_scene = {}
+
+        # Load Setting
+        self.loaded_scene['setting'] = setting.Setting.load(
+            self.world,
+            self.scenes['settings'][scene_id],
+        )
+
+        # Load Characters
+        cs = {}
+        for c_name in self.scenes['characters'][scene_id]:
+            cs[c_name] = character.Character.load(
+                self.world,
+                c_name,
+            )
+        self.loaded_scene['characters'] = cs
+
+        # Turn into a verdict Dict for easier manipulation
+        self.loaded_scene = verdict.Dict( self.loaded_scene )
+
+        self.loaded_scene_id = scene_id
 
     ########################################################################
 

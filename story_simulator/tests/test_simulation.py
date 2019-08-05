@@ -10,6 +10,7 @@ import os
 import unittest
 
 import story_simulator.simulation as ss
+import story_simulator.world as world
 
 ########################################################################
 
@@ -41,8 +42,9 @@ class TestSimulation( unittest.TestCase ):
     def setUp( self ):
 
         self.world_dir = './tests/world_test_data/'
+        self.w = world.World( self.world_dir )
         self.s = ss.Simulation(
-            self.world_dir,
+            self.w,
         )
         self.s.scenes = {
             'characters': np.array([
@@ -64,6 +66,27 @@ class TestSimulation( unittest.TestCase ):
         '''If the setUp goes okay, this passes.'''
 
         pass
+
+    ########################################################################
+
+    def test_load_scene( self ):
+
+        self.s.load_scene( 1 )
+
+        # Check of at least one of the characters loaded properly
+        j = self.s.loaded_scene['characters']['Jshoh']
+        j_state = j.get_state( 1. )
+        assert j_state['position']['description'] == 'SE corner of the room.'
+        assert j.ongoing_action.__repr__ == 'Walk'
+
+        # Test that the room loaded properly
+        r = self.s.loaded_scene['setting']
+        r_state = r.get_state( 1. )
+        assert r_state['name'] == 'Test Room B'
+        npt.assert_allclose(
+            r.t_update,
+            ( 1. * unyt.year ).to( 's' ),
+        )
 
     ########################################################################
 
@@ -92,19 +115,19 @@ class TestSimulation( unittest.TestCase ):
         # Check that a variety of results are as expected
         expected = np.array([ 5., 2., 25. ])
         npt.assert_allclose( expected, self.s.scenes['t_update'] )
-        e_pau_state = self.s.current_scene['Pau'].get_state( 1. )
+        e_pau_state = self.s.loaded_scene['Pau'].get_state( 1. )
         assert e_pau_state['position']['description'] == 'half way across room'
         assert e_pau_state['mental_state']['gender_identity'] == 'female'
         npt.assert_allclose(
-            self.s.current_scene['Pau'].t_update,
+            self.s.loaded_scene['Pau'].t_update,
             1. + 5./1.4,
         )
         npt.assert_allclose(
-            self.s.current_scene['Dau'].t_update,
+            self.s.loaded_scene['Dau'].t_update,
             2.,
         )
         npt.assert_allclose(
-            self.s.current_scene['Jshoh'].t_update,
+            self.s.loaded_scene['Jshoh'].t_update,
             20.,
         )
         

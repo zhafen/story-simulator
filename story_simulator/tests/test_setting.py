@@ -92,6 +92,10 @@ class TestConstructors( unittest.TestCase ):
                     'x': np.array([ 'An empty white room.', ]),
                     't': np.array([ 0. ]),
                 },
+                'dimensions': {
+                    'x': np.array([ [ 5., 5., 5., ] ]),
+                    't': np.array([ 0. ]),
+                },
             }
             self.set = setting.Setting(
                 self.w,
@@ -110,6 +114,10 @@ class TestConstructors( unittest.TestCase ):
             state = self.set.get_state( 1. )
             assert state['name'] == name
             assert state['description'] == 'An empty white room.'
+            npt.assert_allclose(
+                np.array([ 5., 5., 5. ]),
+                state['dimensions'].astype( float )
+            )
 
             self.set.save()
             self.set.load(

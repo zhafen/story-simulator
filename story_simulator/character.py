@@ -31,17 +31,15 @@ class Character( timeline.Timeline ):
         self,
         world,
         name,
-        t_update = None,
         **kwargs
     ):
 
         super( Character, self ).__init__(
-            data_dir = world.get_character_dir( name ),
-            filename = world.get_character_timeline_filename( name ),
+            data_dir = world.get_element_dir( name, 'characters' ),
+            filename = world.get_element_timeline_filename( name ),
             **kwargs
         )
 
-        self.t_update = t_update
         self.action_queue = queue.Queue()
 
     ########################################################################
@@ -76,8 +74,8 @@ class Character( timeline.Timeline ):
                 Name of the character.
         '''
 
-        data_dir = world.get_character_dir( name )
-        filename = world.get_character_timeline_filename( name )
+        data_dir = world.get_element_dir( name, 'characters' )
+        filename = world.get_element_timeline_filename( name )
         
         tl = super( Character, cls ).load( data_dir, filename )
         c = Character(

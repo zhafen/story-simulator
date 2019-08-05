@@ -114,19 +114,20 @@ class World( object ):
     # File Management
     ########################################################################
 
-    def get_character_dir( self, name ):
-        '''Get the directory a character's data is stored in.
+    def get_element_dir( self, name, element_type ):
+        '''Get the directory a story element's data is stored in.
         '''
 
-        return os.path.join( self.world_dir, 'world', 'characters', name )
+        name_str = name.replace( ' ', '_' )
+        return os.path.join( self.world_dir, 'world', element_type, name_str )
 
     ########################################################################
 
-    def get_character_timeline_filename( self, name ):
-        '''Get the filename for a character's timeline.
+    def get_element_timeline_filename( self, name ):
+        '''Get the filename for a story element's timeline.
         '''
 
-        return '{}.tld'.format( name )
+        return '{}.tld'.format( name.replace( ' ', '_' ) )
 
     ########################################################################
     # Methods

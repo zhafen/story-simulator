@@ -118,6 +118,7 @@ class TestSimulation( unittest.TestCase ):
         e_pau_state = self.s.loaded_scene['Pau'].get_state( 1. )
         assert e_pau_state['position']['description'] == 'half way across room'
         assert e_pau_state['mental_state']['gender_identity'] == 'female'
+        assert e_pau_state['actions'] == 'generic.Walk'
         npt.assert_allclose(
             self.s.loaded_scene['Pau'].t_update,
             1. + 5./1.4,

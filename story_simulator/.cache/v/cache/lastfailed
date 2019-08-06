@@ -1,3 +1,3 @@
 {
-  "tests/test_simulation.py::TestSimulation::test_load_scene": true
+  "tests/test_character.py::TestCharacter::test_save_and_load_action_queue": true
 }

@@ -84,7 +84,7 @@ class Timeline( object ):
 
     ########################################################################
 
-    def save( self, attrs={} ):
+    def save( self ):
         '''Save the raw Timeline data.
 
         Args:
@@ -99,13 +99,9 @@ class Timeline( object ):
             self.filename,
         )
 
-        # Set up attributes
-        full_attrs = self.params.copy()
-        full_attrs.update( attrs )
-
         # Save
         v_d = verdict.Dict( self.data )
-        v_d.to_hdf5( filepath, attributes=full_attrs )
+        v_d.to_hdf5( filepath, attributes=self.params )
         
     ########################################################################
 

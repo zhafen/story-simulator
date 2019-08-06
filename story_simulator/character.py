@@ -6,6 +6,7 @@
 @status: Development
 '''
 
+import hickle as hkl
 import numpy as np
 import os
 import pandas as pd
@@ -86,6 +87,18 @@ class Character( timeline.Timeline ):
         )
 
         return c
+
+    ########################################################################
+
+    def save( self ):
+
+        action_queue_filepath = os.path.join(
+            self.data_dir,
+            'action_queue.hkl'
+        )
+        hkl.dump( self.action_queue, action_queue_filepath, 'w' )
+
+        super( Character, self ).save()
 
     ########################################################################
     # Related to actions

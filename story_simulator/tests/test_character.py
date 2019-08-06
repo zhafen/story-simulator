@@ -7,6 +7,7 @@ import h5py
 import numpy as np
 import numpy.testing as npt
 import os
+import queue
 import unittest
 import unyt
 
@@ -85,26 +86,38 @@ class TestCharacter( unittest.TestCase ):
 
         # Load our standard test character
         self.c = character.Character.load( self.w, 'Pau' )
+
+    ########################################################################
+
+    def test_save_and_load_action_queue( self ):
+
+        # Setup
+        self.c.action_queue = queue.Queue()
+        action = gen_actions.Walk(
+            new_position = 'across the room',
+            displacement = 10.,
+        )
+        self.c.t_update = 0.1
+        self.c.action_queue.put( action )
+
+        self.c.save()
+
+        loaded_c = character.Character.load( self.w, 'Pau' )
+        assert self.c.action_queue == loaded_c.action_queue
     
     ########################################################################
 
     def test_begin_action( self ):
 
-        # Setup
-        action = gen_actions.Walk(
-            new_position = 'across the room',
-            displacement = 10.,
-        )
-        self.c.t_update = 1.
-        self.c.action_queue.put( action )
+        assert False, "Fails with empty queue."
 
-        self.c.begin_action( 1. )
+        self.c.begin_action( 0.1 )
 
         # Check results
-        npt.assert_allclose( self.c.t_update, 1. + 10./1.4 )
+        npt.assert_allclose( self.c.t_update, 0.1 + 10./1.4 )
         assert self.c.action_queue.empty()
         assert self.c.ongoing_action == action
-        npt.assert_allclose( self.c.ongoing_action_start_time, 1. )
+        npt.assert_allclose( self.c.ongoing_action_start_time, 0.1 )
 
     ########################################################################
 
@@ -116,8 +129,8 @@ class TestCharacter( unittest.TestCase ):
             displacement = 10.,
         )
         self.c.ongoing_action = action
-        self.c.ongoing_action_start_time = 1.
-        self.c.t_update = 1. + 10./1.4
+        self.c.ongoing_action_start_time = 0.1
+        self.c.t_update = 0.1 + 10./1.4
 
         # Completion case
         actual = self.c.get_result_of_ongoing_action( self.c.t_update + 0.01 )
@@ -134,7 +147,7 @@ class TestCharacter( unittest.TestCase ):
 
         # Interruption case
         elapsed_time = 2.
-        actual = self.c.get_result_of_ongoing_action( 1. + elapsed_time )
+        actual = self.c.get_result_of_ongoing_action( 0.1 + elapsed_time )
         expected_actor_state = {
             'position': {
                 'description': 'CREATE'

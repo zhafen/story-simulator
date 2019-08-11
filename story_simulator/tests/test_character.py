@@ -99,6 +99,7 @@ class TestCharacter( unittest.TestCase ):
             new_position = new_pos,
             displacement = dis,
         )
+        self.c.ongoing_action = action
         self.c.action_queue = collections.deque([ action ])
         self.c.t_update = 0.1
 
@@ -107,6 +108,7 @@ class TestCharacter( unittest.TestCase ):
         loaded_c = character.Character.load( self.w, 'Pau' )
         assert loaded_c.action_queue[0].new_position == new_pos
         assert loaded_c.action_queue[0].displacement == dis
+        assert loaded_c.ongoing_action.new_position == new_pos
     
     ########################################################################
 

@@ -2,6 +2,7 @@
 '''Testing for Timeline objects.
 '''
 
+import collections
 import copy
 import h5py
 import numpy as np
@@ -92,18 +93,20 @@ class TestCharacter( unittest.TestCase ):
     def test_save_and_load_action_queue( self ):
 
         # Setup
-        self.c.action_queue = queue.Queue()
+        new_pos = 'across the room'
+        dis = 10.
         action = gen_actions.Walk(
-            new_position = 'across the room',
-            displacement = 10.,
+            new_position = new_pos,
+            displacement = dis,
         )
+        self.c.action_queue = collections.deque([ action ])
         self.c.t_update = 0.1
-        self.c.action_queue.put( action )
 
         self.c.save()
 
         loaded_c = character.Character.load( self.w, 'Pau' )
-        assert self.c.action_queue == loaded_c.action_queue
+        assert loaded_c.action_queue[0].new_position == new_pos
+        assert loaded_c.action_queue[0].displacement == dis
     
     ########################################################################
 

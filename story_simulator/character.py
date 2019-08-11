@@ -10,7 +10,8 @@ import hickle as hkl
 import numpy as np
 import os
 import pandas as pd
-import queue
+import pickle
+import collections
 
 import hoard.utils.utilities as utilities
 
@@ -41,7 +42,7 @@ class Character( timeline.Timeline ):
             **kwargs
         )
 
-        self.action_queue = queue.Queue()
+        self.action_queue = collections.deque()
 
     ########################################################################
     # Constructors
@@ -86,17 +87,26 @@ class Character( timeline.Timeline ):
             **tl.params
         )
 
+        # Load the action queue
+        action_queue_filepath = os.path.join(
+            data_dir,
+            'action_queue.hkl'
+        )
+        c.action_queue = collections.deque( hkl.load( action_queue_filepath ) )
+
         return c
 
     ########################################################################
 
     def save( self ):
 
+        # Save the action queue
         action_queue_filepath = os.path.join(
             self.data_dir,
             'action_queue.hkl'
         )
-        hkl.dump( self.action_queue, action_queue_filepath, 'w' )
+        l = list( self.action_queue )
+        hkl.dump( l, action_queue_filepath, 'w' )
 
         super( Character, self ).save()
 

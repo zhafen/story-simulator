@@ -157,7 +157,7 @@ class Character( timeline.Timeline ):
         '''
 
         # Get the next action
-        next_action = self.action_queue.get()
+        next_action = self.action_queue.popleft()
 
         # Update the expected time to finish at
         self.t_update += next_action.time_to_complete

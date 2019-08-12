@@ -1,5 +1,3 @@
 {
-  "tests/test_character.py::TestCharacter::test_begin_action": true,
-  "tests/test_simulation.py::TestSimulation::test_advance_scene": true,
   "tests/test_simulation.py::TestSimulation::test_load_scene": true
 }

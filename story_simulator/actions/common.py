@@ -32,6 +32,10 @@ class Walk( object ):
         if not isinstance( self.speed, unyt.unyt_quantity ):
             self.speed *= unyt.m / unyt.s
 
+    def __repr__( self ):
+
+        return 'actions.common.Walk'
+
     ########################################################################
 
     @property

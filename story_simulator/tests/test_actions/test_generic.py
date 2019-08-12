@@ -10,7 +10,7 @@ import os
 import unittest
 import unyt
 
-import story_simulator.actions.generic as generic_actions
+import story_simulator.actions.common as common_acts
 
 ########################################################################
 
@@ -43,7 +43,7 @@ class TestWalk( unittest.TestCase ):
 
     def setUp( self ):
 
-        self.action = generic_actions.Walk(
+        self.action = common_acts.Walk(
             new_position = 'right side of the room',
             displacement = 4.,
             speed = 1.5,

@@ -12,7 +12,7 @@ import queue
 import unittest
 import unyt
 
-import story_simulator.actions.generic as gen_actions
+import story_simulator.actions.common as common_acts
 import story_simulator.character as character
 import story_simulator.world as world
 import story_simulator.generator.character as character_generator
@@ -95,7 +95,7 @@ class TestCharacter( unittest.TestCase ):
         # Setup
         new_pos = 'across the room'
         dis = 10.
-        action = gen_actions.Walk(
+        action = common_acts.Walk(
             new_position = new_pos,
             displacement = dis,
         )
@@ -129,7 +129,7 @@ class TestCharacter( unittest.TestCase ):
     def test_get_action_result( self ):
 
         # Setup
-        action = gen_actions.Walk(
+        action = common_acts.Walk(
             new_position = 'across the room',
             displacement = 10.,
         )

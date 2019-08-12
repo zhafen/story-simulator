@@ -8,9 +8,11 @@ import numpy as np
 import numpy.testing as npt
 import os
 import unittest
+import unyt
 
 import story_simulator.simulation as ss
 import story_simulator.world as world
+import story_simulator.actions.common as common_acts
 
 ########################################################################
 
@@ -77,7 +79,7 @@ class TestSimulation( unittest.TestCase ):
         j = self.s.loaded_scene['characters']['Jshoh']
         j_state = j.get_state( 1. )
         assert j_state['position']['description'] == 'SE corner of the room.'
-        assert j.ongoing_action.__repr__ == 'Walk'
+        assert j.ongoing_action.__repr__() == 'actions.common.Walk'
 
         # Test that the room loaded properly
         r = self.s.loaded_scene['setting']
@@ -118,7 +120,7 @@ class TestSimulation( unittest.TestCase ):
         e_pau_state = self.s.loaded_scene['Pau'].get_state( 1. )
         assert e_pau_state['position']['description'] == 'half way across room'
         assert e_pau_state['mental_state']['gender_identity'] == 'female'
-        assert e_pau_state['actions'] == 'generic.Walk'
+        assert e_pau_state['actions'] == 'actions.common.Walk'
         npt.assert_allclose(
             self.s.loaded_scene['Pau'].t_update,
             1. + 5./1.4,

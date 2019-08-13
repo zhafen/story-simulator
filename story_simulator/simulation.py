@@ -30,6 +30,11 @@ class Simulation( object ):
     ########################################################################
 
     def load_scene( self, scene_id ):
+        '''Load all the elements of a scene into memory.
+
+        Args:
+            scene_id (int): Index for the scene to load.
+        '''
 
         # Don't reload if already loaded
         if self.loaded_scene_id == scene_id:
@@ -78,3 +83,8 @@ class Simulation( object ):
 
         # Load the scene
         self.load_scene( scene_id )
+
+        # Advance the scene
+
+        #DEBUG
+        import pdb; pdb.set_trace()

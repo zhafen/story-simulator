@@ -85,10 +85,6 @@ class TestSimulation( unittest.TestCase ):
         r = self.s.loaded_scene['setting']
         r_state = r.get_state( 1. )
         assert r_state['name'] == 'Test Room B'
-        npt.assert_allclose(
-            r.t_update,
-            ( 1. * unyt.year ).to( 's' ),
-        )
 
     ########################################################################
 
@@ -110,27 +106,26 @@ class TestSimulation( unittest.TestCase ):
 
         # Advance a scene
         actor_state, other_states = self.s.start_advancing_scene( scene_id )
-        assert actor_state['position']['description'] == 'CREATE'
-        actor_state['position']['description'] = 'half way across the room'
+        assert actor_state['position']['description'] == 'Middle of the room.'
         self.s.finish_advancing_scene( scene_id, actor_state, other_states )
 
         # Check that a variety of results are as expected
-        expected = np.array([ 5., 2., 25. ])
+        expected = np.array([ 5., 3.67142, 25. ])
         npt.assert_allclose( expected, self.s.scenes['t_update'] )
         e_pau_state = self.s.loaded_scene['Pau'].get_state( 1. )
-        assert e_pau_state['position']['description'] == 'half way across room'
+        assert e_pau_state['position']['description'] == 'NW corner of the room.'
         assert e_pau_state['mental_state']['gender_identity'] == 'female'
         assert e_pau_state['actions'] == 'actions.common.Walk'
         npt.assert_allclose(
             self.s.loaded_scene['Pau'].t_update,
-            1. + 5./1.4,
+            0.1 + 5./1.4,
         )
         npt.assert_allclose(
             self.s.loaded_scene['Dau'].t_update,
-            2.,
+            0.1 + 5./1.4,
         )
         npt.assert_allclose(
             self.s.loaded_scene['Jshoh'].t_update,
-            20.,
+            0.1 + 10.*np.sqrt( 2. )/1.4,
         )
         

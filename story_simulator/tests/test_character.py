@@ -90,25 +90,29 @@ class TestCharacter( unittest.TestCase ):
 
     ########################################################################
 
-    def test_save_and_load_action_queue( self ):
+    def test_save_and_load_actions( self ):
+        '''Loads the test character data and then saves it again to check for
+        problems with the process
+        '''
 
         # Setup
-        new_pos = 'across the room'
-        dis = 10.
-        action = common_acts.Walk(
-            new_position = new_pos,
-            displacement = dis,
-        )
-        self.c.ongoing_action = action
-        self.c.action_queue = collections.deque([ action ])
-        self.c.t_update = 0.1
+        # new_pos = 'across the room'
+        # dis = 10.
+        # action = common_acts.Walk(
+        #     new_position = new_pos,
+        #     displacement = dis,
+        # )
+        # self.c.ongoing_action = action
+        # self.c.action_queue = collections.deque([ action ])
+        # self.c.t_update = 0.1
+        # self.c.ongoing_action_start_time = 0.1
 
         self.c.save()
 
         loaded_c = character.Character.load( self.w, 'Pau' )
-        assert loaded_c.action_queue[0].new_position == new_pos
-        assert loaded_c.action_queue[0].displacement == dis
-        assert loaded_c.ongoing_action.new_position == new_pos
+        assert loaded_c.action_queue == self.c.action_queue
+        assert loaded_c.action_queue == self.c.action_queue
+        assert loaded_c.ongoing_action.new_position == self.c.ongoing_action.new_position
     
     ########################################################################
 

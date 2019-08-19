@@ -6,12 +6,13 @@
 @status: Development
 '''
 
+import collections
 import hickle as hkl
 import numpy as np
 import os
 import pandas as pd
 import pickle
-import collections
+import verdict
 
 import hoard.utils.utilities as utilities
 
@@ -33,6 +34,7 @@ class Character( timeline.Timeline ):
         self,
         world,
         name,
+        ongoing_action_start_time = 'Not set',
         **kwargs
     ):
 
@@ -44,6 +46,7 @@ class Character( timeline.Timeline ):
 
         self.action_queue = collections.deque()
         self.ongoing_action = None
+        self.ongoing_action_start_time = ongoing_action_start_time
 
     ########################################################################
     # Constructors
@@ -79,13 +82,25 @@ class Character( timeline.Timeline ):
 
         data_dir = world.get_element_dir( name, 'characters' )
         filename = world.get_element_timeline_filename( name )
-        
-        tl = super( Character, cls ).load( data_dir, filename )
+
+        # Load the raw data
+        result = verdict.Dict.from_hdf5(
+            os.path.join( data_dir, filename ),
+            unpack = True,
+            unpack_name = 'unpack_name'
+        )
+        if isinstance( result, tuple ):
+            v_d, params = result
+        else:
+            v_d = result
+            params = {}
+
+        # Create the main class
         c = Character(
             world = world,
             name = name,
-            data = tl.data,
-            **tl.params
+            data = v_d._storage,
+            **params
         )
 
         # Load the action queue
@@ -165,3 +180,21 @@ class Character( timeline.Timeline ):
         # Add the action to the list of ongoing actions
         self.ongoing_action = next_action
         self.ongoing_action_start_time = t
+
+    ########################################################################
+    # Properties
+    ########################################################################
+
+    @property
+    def params( self ):
+        '''Important parameters for the character, all in one spot.'''
+
+        # Start with the parameters of the parent class
+        params = super( Character, self ).params
+        
+        # Include other important parameters
+        params['ongoing_action_start_time'] = self.ongoing_action_start_time
+
+        return params
+        
+

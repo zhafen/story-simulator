@@ -94,6 +94,7 @@ class TestSimulation( unittest.TestCase ):
         self.s.scenes = {
             't_update': np.array([ 3.5, 0.1, 3600., 3., ]),
         }
+
         scene_id = self.s.identify_scene_to_advance()
         assert scene_id == 1
 
@@ -105,7 +106,9 @@ class TestSimulation( unittest.TestCase ):
         scene_id = 1
 
         # Advance a scene
-        actor_state, other_states = self.s.start_advancing_scene( scene_id )
+        actor_state, other_states, aux_info = self.s.start_advancing_scene(
+            scene_id
+        )
         assert actor_state['position']['description'] == 'Middle of the room.'
         self.s.finish_advancing_scene( scene_id, actor_state, other_states )
 

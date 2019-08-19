@@ -84,7 +84,12 @@ class Simulation( object ):
         # Load the scene
         self.load_scene( scene_id )
 
-        # Advance the scene
+        # Identify the character to advance
+        char_name, t = self.loaded_scene['characters'].t_update.keymin()
+
+        # Get the result of the ongoing action
+        char = self.loaded_scene['characters'][char_name]
 
         #DEBUG
         import pdb; pdb.set_trace()
+        return char.get_result_of_ongoing_action( t )

@@ -80,16 +80,67 @@ class Simulation( object ):
     ########################################################################
 
     def start_advancing_scene( self, scene_id ):
+        '''Starts moving a scene forward, stopping at the point where
+        manual feedback might be applied.
+
+        Args:
+            scene_id (int):
+                Index for the scene to advance.
+
+        Returns:
+            tuple: tuple containing:
+                actor_state (dict):
+                    Updated state of actor upon completion of action.
+                other_states (dict):
+                    Updated states of other elements upon completion.
+                    A dictionary of states, with the key as the element name.
+                aux_info (dict):
+                    Dictionary of miscellanious additional info.
+        '''
 
         # Load the scene
         self.load_scene( scene_id )
 
         # Identify the character to advance
-        char_name, t = self.loaded_scene['characters'].t_update.keymin()
+        char_name, self.t = self.loaded_scene['characters'].t_update.keymin()
 
-        # Get the result of the ongoing action
-        char = self.loaded_scene['characters'][char_name]
+        # Load the actor
+        self.actor = self.loaded_scene['characters'][char_name]
 
-        #DEBUG
-        import pdb; pdb.set_trace()
-        return char.get_result_of_ongoing_action( t )
+        return self.actor.get_result_of_ongoing_action( self.t )
+
+    ########################################################################
+
+    def finish_advancing_scene( self, scene_id, actor_state, other_states ):
+        '''Finishes advancing a scene_forward, potentially after taking in
+        manual input.
+
+
+        Args:
+            scene_id (int):
+                Index for the scene to advance.
+
+            actor_state (dict):
+                Updated state of actor upon completion of action.
+
+            other_states (dict):
+                Updated states of other elements upon completion.
+                A dictionary of states, with the key as the element name.
+        '''
+
+        # Load the scene
+        self.load_scene( scene_id )
+
+        # Finish advancing the actor
+        self.actor.store_state( actor_state, self.t )
+        self.actor.begin_action( self.t )
+
+        # Store the other states
+        for other_name, other_state in other_states.items():
+            other_element = self.loaded_scene['characters'][other_name]
+            other_element.store_state( other_state, self.t )
+
+        # Update t_update
+        self.scenes['t_update'][scene_id] = (
+            self.loaded_scene['characters'].t_update.keymin()[1]
+        )

@@ -43,10 +43,20 @@ class Character( timeline.Timeline ):
             filename = world.get_element_timeline_filename( name ),
             **kwargs
         )
+    
+        self.name = name
 
+        # Set up some initial action states
         self.action_queue = collections.deque()
         self.ongoing_action = None
         self.ongoing_action_start_time = ongoing_action_start_time
+
+    def __repr__( self ):
+
+        return 'Char {}; Ongoing action: {}'.format(
+            self.name,
+            self.ongoing_action
+        )
 
     ########################################################################
     # Constructors
@@ -155,6 +165,16 @@ class Character( timeline.Timeline ):
         Args:
             t (float):
                 Time (universal time in seconds) to get action results.
+
+        Returns:
+            tuple: tuple containing:
+                actor_state (dict):
+                    Updated state of actor upon completion of action.
+                other_states (dict):
+                    Updated states of other elements upon completion.
+                    A dictionary of states, with the key as the element name.
+                aux_info (dict):
+                    Dictionary of miscellanious additional info.
         '''
 
         elapsed_time = t - self.ongoing_action_start_time
@@ -175,7 +195,10 @@ class Character( timeline.Timeline ):
         next_action = self.action_queue.popleft()
 
         # Update the expected time to finish at
-        self.t_update += next_action.time_to_complete
+        self.t_update = t + next_action.time_to_complete
+
+        # Record the action as part of the log
+        self.store_state( { 'actions': [ str( next_action ) ] }, t )
 
         # Add the action to the list of ongoing actions
         self.ongoing_action = next_action

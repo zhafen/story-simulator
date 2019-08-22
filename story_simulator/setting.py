@@ -31,11 +31,16 @@ class Setting( timeline.Timeline ):
         self,
         world,
         name,
+        contained_in = [],
         **kwargs
     ):
 
         super( Setting, self ).__init__(
-            data_dir = world.get_element_dir( name, 'settings' ),
+            data_dir = world.get_element_dir(
+                name,
+                'settings',
+                subdirs = contained_in,
+            ),
             filename = world.get_element_timeline_filename( name ),
             **kwargs
         )
@@ -63,7 +68,7 @@ class Setting( timeline.Timeline ):
     ########################################################################
 
     @classmethod
-    def load( cls, world, name ):
+    def load( cls, world, name, contained_in=[] ):
         '''Load a setting from an existing file.
 
         Args:
@@ -74,7 +79,11 @@ class Setting( timeline.Timeline ):
                 Name of the setting.
         '''
 
-        data_dir = world.get_element_dir( name, 'settings' )
+        data_dir = world.get_element_dir(
+            name,
+            'settings',
+            subdirs = contained_in,
+        )
         filename = world.get_element_timeline_filename( name )
         
         tl = super( Setting, cls ).load( data_dir, filename )
@@ -87,3 +96,9 @@ class Setting( timeline.Timeline ):
 
         return c
 
+    ########################################################################
+
+    @property
+    def contained_settings( self ):
+
+        pass

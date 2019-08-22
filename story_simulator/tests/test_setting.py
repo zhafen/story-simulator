@@ -83,6 +83,8 @@ class TestConstructors( unittest.TestCase ):
 
             name = 'Test Room {}'.format( l )
 
+            contained_in = [ 'Testing Complex', ]
+
             data = {
                 'name': {
                     'x': np.array([ name, ]),
@@ -101,10 +103,11 @@ class TestConstructors( unittest.TestCase ):
                 self.w,
                 name,
                 data = data,
+                contained_in = contained_in,
             )
 
             expected_data_dir = (
-                './tests/world_test_data/world/settings/Test_Room_{}'.format(
+                './tests/world_test_data/world/settings/Testing_Complex/Test_Room_{}'.format(
                     l
                 )
             )
@@ -123,6 +126,7 @@ class TestConstructors( unittest.TestCase ):
             self.set.load(
                 self.w,
                 name,
+                contained_in = contained_in,
             )
 
 ########################################################################

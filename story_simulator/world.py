@@ -30,101 +30,135 @@ class World( object ):
     # Properties
     ########################################################################
 
-    @property
-    def historical_events( self ):
+    # @property
+    # def historical_events( self ):
 
-        return utilities.generic_table_getter(
-            self,
-            'historical_events',
-            self.world_dir,
-            subfolders = [ 'world' ]
-        )
-
-    ########################################################################
-
-    @property
-    def events( self ):
-
-        return utilities.generic_table_getter(
-            self,
-            'events',
-            self.world_dir,
-            subfolders = [ 'world' ]
-        )
+    #     return utilities.generic_table_getter(
+    #         self,
+    #         'historical_events',
+    #         self.world_dir,
+    #         subfolders = [ 'world' ]
+    #     )
 
     ########################################################################
 
-    @property
-    def languages( self ):
+    # @property
+    # def events( self ):
 
-        return utilities.generic_table_getter(
-            self,
-            'languages',
-            self.world_dir,
-            subfolders = [ 'world', 'languages' ]
-        )
-
-    @languages.setter
-    def languages( self, value ):
-        utilities.generic_table_setter(
-            self,
-            'languages',
-            value,
-            self.world_dir,
-            subfolders = [ 'world', 'languages' ]
-        )
+    #     return utilities.generic_table_getter(
+    #         self,
+    #         'events',
+    #         self.world_dir,
+    #         subfolders = [ 'world' ]
+    #     )
 
     ########################################################################
 
-    @property
-    def characters( self ):
+    # @property
+    # def languages( self ):
 
-        return utilities.generic_table_getter(
-            self,
-            'characters',
-            self.world_dir,
-            subfolders = [ 'world', 'characters' ]
-        )
+    #     return utilities.generic_table_getter(
+    #         self,
+    #         'languages',
+    #         self.world_dir,
+    #         subfolders = [ 'world', 'languages' ]
+    #     )
 
-    ########################################################################
-
-    @property
-    def nodes( self ):
-
-        return utilities.generic_table_getter(
-            self,
-            'nodes',
-            self.world_dir,
-            subfolders = [ 'world', 'settings' ]
-        )
+    # @languages.setter
+    # def languages( self, value ):
+    #     utilities.generic_table_setter(
+    #         self,
+    #         'languages',
+    #         value,
+    #         self.world_dir,
+    #         subfolders = [ 'world', 'languages' ]
+    #     )
 
     ########################################################################
 
-    @property
-    def magic_archetypes( self ):
+    # @property
+    # def characters( self ):
 
-        return utilities.generic_table_getter(
-            self,
-            'archetypes',
-            self.world_dir,
-            subfolders = [ 'world', 'magic' ]
-        )
+    #     return utilities.generic_table_getter(
+    #         self,
+    #         'characters',
+    #         self.world_dir,
+    #         subfolders = [ 'world', 'characters' ]
+    #     )
+
+    ########################################################################
+
+    # @property
+    # def nodes( self ):
+
+    #     return utilities.generic_table_getter(
+    #         self,
+    #         'nodes',
+    #         self.world_dir,
+    #         subfolders = [ 'world', 'settings' ]
+    #     )
+
+    ########################################################################
+
+    # @property
+    # def magic_archetypes( self ):
+
+    #     return utilities.generic_table_getter(
+    #         self,
+    #         'archetypes',
+    #         self.world_dir,
+    #         subfolders = [ 'world', 'magic' ]
+    #     )
 
     ########################################################################
     # File Management
     ########################################################################
 
-    def get_element_dir( self, name, element_type ):
+    def get_element_dir( self, name, element_type, subdirs=[] ):
         '''Get the directory a story element's data is stored in.
+
+        Args:
+            name (str): Name of the element.
+
+            element_type (str): Name of the type of object the element is.
+
+            subdirs (list of strs): Subdirectories within the element type.
+
+        Returns:
+            str:
+                Directory containing the data for the element.
         '''
 
-        name_str = name.replace( ' ', '_' )
-        return os.path.join( self.world_dir, 'world', element_type, name_str )
+        if len( subdirs ) == 0:
+            result = os.path.join(
+                self.world_dir,
+                'world',
+                element_type,
+                name
+            )
+        else:
+            subdirs_str = os.path.join( *subdirs )
+            result = os.path.join(
+                self.world_dir,
+                'world',
+                element_type,
+                subdirs_str,
+                name
+            )
+
+        return result.replace( ' ', '_' )
 
     ########################################################################
 
     def get_element_timeline_filename( self, name ):
         '''Get the filename for a story element's timeline.
+
+        Args:
+            name (str): Name of the element.
+
+        Returns:
+            str:
+                Filename for the timeline data.
         '''
 
         return '{}.tld'.format( name.replace( ' ', '_' ) )
@@ -133,16 +167,16 @@ class World( object ):
     # Methods
     ########################################################################
 
-    def sample_part( self, part_name, n_samples=1 ):
+    # def sample_part( self, part_name, n_samples=1 ):
 
-        part = getattr( self, part_name )
+    #     part = getattr( self, part_name )
 
-        ind = prob_tools.sample_discrete_probabilities(
-            part['Likelihood'].values,
-            normalize = True
-        )
+    #     ind = prob_tools.sample_discrete_probabilities(
+    #         part['Likelihood'].values,
+    #         normalize = True
+    #     )
 
-        if n_samples == 1:
-            return part.loc[ind]
-        else:
-            raise Exception( "Multiple samples not implemented yet." )
+    #     if n_samples == 1:
+    #         return part.loc[ind]
+    #     else:
+    #         raise Exception( "Multiple samples not implemented yet." )

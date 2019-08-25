@@ -100,5 +100,25 @@ class Setting( timeline.Timeline ):
 
     @property
     def contained_settings( self ):
+        '''Names of the settings inside this setting.
+        '''
 
-        pass
+        if not hasattr( self, '_contained_settings' ):
+
+            # List items
+            ls = os.listdir( self.data_dir )
+
+            # Select only contained settings, and get names
+            self._contained_settings = []
+            for item in ls:
+
+                # Skip non-settings
+                filepath = os.path.join( self.data_dir, item )
+                if not os.path.isdir( filepath ):
+                    continue
+
+                name = item.replace( '_', ' ' )
+
+                self._contained_settings.append( name )
+
+        return self._contained_settings

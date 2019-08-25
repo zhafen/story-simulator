@@ -1,1 +1,3 @@
-{}
+{
+  "tests/test_character.py::TestCharacter::test_begin_action": true
+}

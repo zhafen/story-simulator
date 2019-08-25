@@ -55,9 +55,9 @@ class TestSimulation( unittest.TestCase ):
                 [ 'uRue', ],
             ]),
             'settings': np.array([
-                'Test Room A',
-                'Test Room B',
-                'Test Room C',
+                'Testing Complex/Test Room A',
+                'Testing Complex/Test Room B',
+                'Testing Complex/Test Room C',
             ]),
             't_update': np.array([ 5., 1., 25. ]),
         }

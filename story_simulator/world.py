@@ -118,7 +118,9 @@ class World( object ):
         '''Get the directory a story element's data is stored in.
 
         Args:
-            name (str): Name of the element.
+            name (str):
+                Name of the element. Can have slashes indicating
+                separate directories.
 
             element_type (str): Name of the type of object the element is.
 
@@ -129,21 +131,38 @@ class World( object ):
                 Directory containing the data for the element.
         '''
 
-        if len( subdirs ) == 0:
+        # Copies to avoid altering the originals
+        used_name = copy.copy( name )
+        used_subdirs = copy.copy( subdirs )
+
+        # See if the name is pointing at a path
+        split_name = used_name.split( '/' )
+
+        # Extend the subdir list if appropriate
+        if len( split_name ) > 1:
+
+            # Split the name up
+            used_name = split_name[-1]
+            used_subdirs += split_name[:-1]
+
+            # Make sure formatting is correct
+            used_subdirs = [ x.replace( ' ', '_' ) for x in used_subdirs ]
+
+        if len( used_subdirs ) == 0:
             result = os.path.join(
                 self.world_dir,
                 'world',
                 element_type,
-                name
+                used_name
             )
         else:
-            subdirs_str = os.path.join( *subdirs )
+            subdirs_str = os.path.join( *used_subdirs )
             result = os.path.join(
                 self.world_dir,
                 'world',
                 element_type,
                 subdirs_str,
-                name
+                used_name
             )
 
         return result.replace( ' ', '_' )
@@ -160,6 +179,9 @@ class World( object ):
             str:
                 Filename for the timeline data.
         '''
+
+        # If the name is given as part of a directory, split it up
+        name = name.split( '/' )[-1]
 
         return '{}.tld'.format( name.replace( ' ', '_' ) )
 

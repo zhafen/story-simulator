@@ -78,6 +78,26 @@ class TestConstructors( unittest.TestCase ):
     def test_basic( self ):
         '''This also creates the basic test rooms.
         '''
+        data = {
+            'name': {
+                'x': np.array([ 'Testing Complex', ]),
+                't': np.array([ 0. ]),
+            },
+            'description': {
+                'x': np.array([ 'A building containing rooms for testing', ]),
+                't': np.array([ 0. ]),
+            },
+            'dimensions': {
+                'x': np.array([ [ 15., 10., 5., ] ]),
+                't': np.array([ 0. ]),
+            },
+        }
+        self.set = setting.Setting(
+            self.w,
+            'Testing Complex',
+            data = data,
+        )
+        self.set.save()
 
         for l in [ 'A', 'B', 'C' ]:
 
@@ -131,12 +151,18 @@ class TestConstructors( unittest.TestCase ):
 
 ########################################################################
 
-# class TestSetting( unittest.TestCase ):
-# 
-#     def setUp( self ):
-# 
-#         self.w = world.World( './tests/world_test_data' )
-# 
-#         # Load our standard test character
-#         self.set = seting.Setting.load( self.w, 'Test Room A' )
-#     
+class TestSetting( unittest.TestCase ):
+
+    def setUp( self ):
+
+        self.w = world.World( './tests/world_test_data' )
+
+        # Load our standard test character
+        self.set = setting.Setting.load( self.w, 'Testing Complex' )
+    
+    ########################################################################
+
+    def test_contained_settings( self ):
+
+        expected = [ 'Test Room A', 'Test Room B', 'Test Room C', ]
+        assert self.set.contained_settings == expected

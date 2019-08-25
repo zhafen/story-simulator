@@ -114,7 +114,13 @@ class World( object ):
     # File Management
     ########################################################################
 
-    def get_element_dir( self, name, element_type, subdirs=[] ):
+    def get_element_dir(
+        self,
+        name,
+        element_type,
+        subdirs = [],
+        element_type_ind = 2,
+    ):
         '''Get the directory a story element's data is stored in.
 
         Args:
@@ -125,6 +131,9 @@ class World( object ):
             element_type (str): Name of the type of object the element is.
 
             subdirs (list of strs): Subdirectories within the element type.
+
+            element_type_ind (int):
+                Index at which to place the element_type, within the subdirs.
 
         Returns:
             str:
@@ -148,22 +157,27 @@ class World( object ):
             # Make sure formatting is correct
             used_subdirs = [ x.replace( ' ', '_' ) for x in used_subdirs ]
 
+        # Put together the list of sub directories
+        # (excluding the element_type, which changes position)
         if len( used_subdirs ) == 0:
-            result = os.path.join(
+            dirs = [
                 self.world_dir,
                 'world',
-                element_type,
                 used_name
-            )
+            ]
         else:
             subdirs_str = os.path.join( *used_subdirs )
-            result = os.path.join(
+            dirs = [
                 self.world_dir,
                 'world',
-                element_type,
                 subdirs_str,
                 used_name
-            )
+            ]
+
+        # Put in the element type
+        dirs.insert( element_type_ind, element_type )
+
+        result = os.path.join( *dirs )
 
         return result.replace( ' ', '_' )
 

@@ -118,7 +118,7 @@ class TestCharacter( unittest.TestCase ):
 
     def test_begin_action( self ):
 
-        assert False, "Fails with empty queue."
+        # assert False, "Fails with empty queue."
 
         self.c.begin_action( 0.1 )
 

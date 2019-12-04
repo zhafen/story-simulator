@@ -192,7 +192,11 @@ class Character( timeline.Timeline ):
         '''
 
         # Get the next action
-        next_action = self.action_queue.popleft()
+        try:
+            next_action = self.action_queue.popleft()
+        # When there are no new planned actions
+        except IndexError:
+            next_action = self.determine_course_of_action()
 
         # Update the expected time to finish at
         self.t_update = t + next_action.time_to_complete

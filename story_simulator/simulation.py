@@ -132,7 +132,7 @@ class Simulation( object ):
         self.load_scene( scene_id )
 
         # Finish advancing the actor
-        self.actor.store_state( actor_state, self.t )
+        self.actor.finish_action( actor_state, self.t )
         self.actor.begin_action( self.t )
 
         # Store the other states

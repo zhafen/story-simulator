@@ -130,6 +130,12 @@ class TestCharacter( unittest.TestCase ):
 
     ########################################################################
 
+    def test_finish_action( self ):
+
+        assert False, "TBD"
+
+    ########################################################################
+
     def test_get_action_result( self ):
 
         # Setup

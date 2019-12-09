@@ -6,6 +6,7 @@
 @status: Development
 '''
 
+import copy
 import collections
 import hickle as hkl
 import numpy as np
@@ -209,6 +210,27 @@ class Character( timeline.Timeline ):
         self.ongoing_action_start_time = t
 
     ########################################################################
+
+    def finish_action( self, actor_state, t ):
+        '''Finish the current action.
+
+        Args:
+            actor_state (dict):
+                Updated state of actor upon completion of action.
+            t (float):
+                Time (universal time in seconds) the action is finished at.
+        '''
+
+        # TBD
+        # Case for when finishing surveying options
+
+        # TBD
+        # Case for when finishing determining course of action
+
+        # Default for non-special actions
+        self.store_state( actor_state, t )
+
+    ########################################################################
     # Properties
     ########################################################################
 
@@ -217,7 +239,7 @@ class Character( timeline.Timeline ):
         '''Important parameters for the character, all in one spot.'''
 
         # Start with the parameters of the parent class
-        params = super( Character, self ).params
+        params = copy.deepcopy( super( Character, self ).params )
         
         # Include other important parameters
         params['ongoing_action_start_time'] = self.ongoing_action_start_time

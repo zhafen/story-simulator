@@ -1,14 +1,28 @@
+import argparse
+
 from dotenv import load_dotenv
 
-from story_simulator.world import MirrorWorld
+from story_simulator.world import AgentWorld, MirrorWorld
 
 BANNER = "story-simulator REPL. Type /quit to exit."
 
+WORLDS = {
+    "agent": AgentWorld,
+    "mirror": MirrorWorld,
+}
 
-def main(world=None):
+
+def parse_args(argv=None):
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--world", choices=WORLDS, default="agent")
+    return parser.parse_args(argv)
+
+
+def main(world=None, argv=None):
     load_dotenv()
     if world is None:
-        world = MirrorWorld()
+        args = parse_args(argv)
+        world = WORLDS[args.world]()
     print(BANNER)
     while True:
         try:

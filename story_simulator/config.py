@@ -1,0 +1,2 @@
+AGENT_ID = "agent_01AxMwvbKDkfbVZd73DLNiAy"
+ENVIRONMENT_ID = "env_01Rhk13fhp1wwS3RgiDQcK2g"

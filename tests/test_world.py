@@ -15,19 +15,68 @@ def test_mirror_world_echoes_text():
     assert world.respond("hello there") == "hello there"
 
 
-def test_agent_world_sends_text_and_returns_response(monkeypatch):
+def _make_mock_client(session_id, events):
     text_block = MagicMock(type="text", text="hello back")
-    mock_response = MagicMock(content=[text_block])
+    message_event = MagicMock(type="agent.message", content=[text_block])
+    idle_event = MagicMock(type="session.status_idle", stop_reason=MagicMock(type="end_turn"))
+
+    mock_stream = MagicMock()
+    mock_stream.__enter__.return_value = events or [message_event, idle_event]
+    mock_stream.__exit__.return_value = False
+
     mock_client = MagicMock()
-    mock_client.messages.create.return_value = mock_response
+    mock_client.beta.sessions.create.return_value = MagicMock(id=session_id)
+    mock_client.beta.sessions.events.stream.return_value = mock_stream
+    return mock_client
+
+
+def test_agent_world_creates_session_and_returns_response(monkeypatch):
+    mock_client = _make_mock_client("sesn_test123", events=None)
     monkeypatch.setattr("story_simulator.world.anthropic.Anthropic", lambda: mock_client)
 
-    world = AgentWorld()
+    world = AgentWorld(agent_id="agent_test", environment_id="env_test")
     result = world.respond("hello there")
 
     assert result == "hello back"
-    mock_client.messages.create.assert_called_once_with(
+    mock_client.beta.sessions.create.assert_called_once_with(
+        agent="agent_test", environment_id="env_test"
+    )
+    mock_client.beta.sessions.events.send.assert_called_once_with(
+        session_id="sesn_test123",
+        events=[{"type": "user.message", "content": [{"type": "text", "text": "hello there"}]}],
+    )
+
+
+def test_agent_world_reuses_session_across_calls(monkeypatch):
+    mock_client = _make_mock_client("sesn_test123", events=None)
+    monkeypatch.setattr("story_simulator.world.anthropic.Anthropic", lambda: mock_client)
+
+    world = AgentWorld(agent_id="agent_test", environment_id="env_test")
+    world.respond("first")
+    world.respond("second")
+
+    mock_client.beta.sessions.create.assert_called_once()
+
+
+def test_agent_world_syncs_agent_config_from_repo_file(tmp_path, monkeypatch):
+    config_path = tmp_path / "agent.yaml"
+    config_path.write_text("name: Test Agent\nmodel: claude-haiku-4-5\nsystem: Be terse.\n")
+    monkeypatch.setattr("story_simulator.world.AGENT_CONFIG_PATH", config_path)
+
+    mock_client = _make_mock_client("sesn_test123", events=None)
+    mock_client.beta.agents.retrieve.return_value = MagicMock(version=3)
+    monkeypatch.setattr("story_simulator.world.anthropic.Anthropic", lambda: mock_client)
+
+    world = AgentWorld(agent_id="agent_test", environment_id="env_test")
+    world.respond("hello there")
+
+    mock_client.beta.agents.retrieve.assert_called_once_with("agent_test")
+    mock_client.beta.agents.update.assert_called_once_with(
+        "agent_test",
+        version=3,
+        name="Test Agent",
+        description="",
         model="claude-haiku-4-5",
-        max_tokens=1024,
-        messages=[{"role": "user", "content": "hello there"}],
+        system="Be terse.",
+        tools=[],
     )

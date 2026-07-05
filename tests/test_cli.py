@@ -28,3 +28,7 @@ def test_world_defaults_to_agent():
 
 def test_world_flag_selects_mirror():
     assert parse_args(["--world", "mirror"]).world == "mirror"
+
+
+def test_world_flag_selects_agent_test():
+    assert parse_args(["--world", "agent-test"]).world == "agent-test"

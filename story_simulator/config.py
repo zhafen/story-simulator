@@ -1,2 +1,3 @@
-AGENT_ID = "agent_01AxMwvbKDkfbVZd73DLNiAy"
+PROD_AGENT_ID = "agent_01AxMwvbKDkfbVZd73DLNiAy"
+TEST_AGENT_ID = "agent_01FVJeTDVA2mMkYHzkaYvZLo"
 ENVIRONMENT_ID = "env_01Rhk13fhp1wwS3RgiDQcK2g"

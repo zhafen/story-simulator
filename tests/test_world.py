@@ -61,13 +61,12 @@ def test_agent_world_reuses_session_across_calls(monkeypatch):
 def test_agent_world_syncs_agent_config_from_repo_file(tmp_path, monkeypatch):
     config_path = tmp_path / "agent.yaml"
     config_path.write_text("name: Test Agent\nmodel: claude-haiku-4-5\nsystem: Be terse.\n")
-    monkeypatch.setattr("story_simulator.world.AGENT_CONFIG_PATH", config_path)
 
     mock_client = _make_mock_client("sesn_test123", events=None)
     mock_client.beta.agents.retrieve.return_value = MagicMock(version=3)
     monkeypatch.setattr("story_simulator.world.anthropic.Anthropic", lambda: mock_client)
 
-    world = AgentWorld(agent_id="agent_test", environment_id="env_test")
+    world = AgentWorld(agent_id="agent_test", environment_id="env_test", config_path=config_path)
     world.respond("hello there")
 
     mock_client.beta.agents.retrieve.assert_called_once_with("agent_test")

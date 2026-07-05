@@ -4,9 +4,10 @@ from pathlib import Path
 import anthropic
 import yaml
 
-from story_simulator.config import AGENT_ID, ENVIRONMENT_ID
+from story_simulator.config import ENVIRONMENT_ID, PROD_AGENT_ID
 
-AGENT_CONFIG_PATH = Path(__file__).parent / "agent.yaml"
+PROD_AGENT_CONFIG_PATH = Path(__file__).parent / "agent.yaml"
+TEST_AGENT_CONFIG_PATH = Path(__file__).parent / "agent.test.yaml"
 
 
 class World(ABC):
@@ -21,14 +22,20 @@ class MirrorWorld(World):
 
 
 class AgentWorld(World):
-    def __init__(self, agent_id: str = AGENT_ID, environment_id: str = ENVIRONMENT_ID):
+    def __init__(
+        self,
+        agent_id: str = PROD_AGENT_ID,
+        environment_id: str = ENVIRONMENT_ID,
+        config_path: Path = PROD_AGENT_CONFIG_PATH,
+    ):
         self.client = anthropic.Anthropic()
         self.agent_id = agent_id
         self.environment_id = environment_id
+        self.config_path = config_path
         self.session_id = None
 
     def _sync_agent(self) -> None:
-        local = yaml.safe_load(AGENT_CONFIG_PATH.read_text())
+        local = yaml.safe_load(self.config_path.read_text())
         current = self.client.beta.agents.retrieve(self.agent_id)
         self.client.beta.agents.update(
             self.agent_id,

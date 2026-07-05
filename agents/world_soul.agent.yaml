@@ -1,0 +1,20 @@
+# World Soul — Managed Agent definition (version-controlled source of truth).
+#
+# Agent ID:       agent_01AxMwvbKDkfbVZd73DLNiAy
+# Environment ID: env_01Rhk13fhp1wwS3RgiDQcK2g
+#
+# This agent was created through the Anthropic Console quickstart, so its
+# actual config (model/system/tools) is not yet mirrored here.
+#
+# To pull the real config into this file, run one of:
+#
+#   world-soul --dump-config > agents/world_soul.agent.yaml
+#
+#   ant beta:agents retrieve --agent-id agent_01AxMwvbKDkfbVZd73DLNiAy --format yaml
+#
+# After editing this file, push changes back up with (bumps the version):
+#
+#   ant beta:agents update --agent-id agent_01AxMwvbKDkfbVZd73DLNiAy \
+#     --version <current-version> < agents/world_soul.agent.yaml
+#
+# TODO: replace this placeholder with the real agent config.

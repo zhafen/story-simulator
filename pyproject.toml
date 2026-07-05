@@ -9,6 +9,7 @@ dependencies = [
 
 [project.scripts]
 ask-agent = "story_simulator.agent:main"
+world-soul = "story_simulator.world_soul:main"
 
 [build-system]
 requires = ["setuptools>=61.0"]

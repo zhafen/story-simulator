@@ -87,10 +87,10 @@ class AgentWorld(World):
         return "".join(text_parts)
 
 
-class Chronicler(ABC):
+class Archivist(ABC):
     """Records a player/World Soul exchange as structured data.
 
-    Not yet implemented — a concrete Chronicler agent is coming soon.
+    Not yet implemented — a concrete Archivist agent is coming soon.
     """
 
     @abstractmethod
@@ -98,21 +98,21 @@ class Chronicler(ABC):
         raise NotImplementedError
 
 
-class MultiAgentWorld(World):
+class EnsembleWorld(World):
     """A world simulated by multiple interacting agents and systems.
 
     Each turn, the player's input is passed to the World Soul agent, which
-    narrates how the world responds; the Chronicler agent then records the
-    exchange as structured data. The Chronicler is optional for now since it
+    narrates how the world responds; the Archivist agent then records the
+    exchange as structured data. The Archivist is optional for now since it
     isn't implemented yet.
     """
 
-    def __init__(self, world_soul: World | None = None, chronicler: Chronicler | None = None):
+    def __init__(self, world_soul: World | None = None, archivist: Archivist | None = None):
         self.world_soul = world_soul or AgentWorld()
-        self.chronicler = chronicler
+        self.archivist = archivist
 
     def respond(self, text: str) -> str:
         response = self.world_soul.respond(text)
-        if self.chronicler is not None:
-            self.chronicler.record(text, response)
+        if self.archivist is not None:
+            self.archivist.record(text, response)
         return response

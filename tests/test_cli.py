@@ -17,4 +17,5 @@ def test_non_command_text_gets_response(monkeypatch, capsys):
     main()
 
     output = capsys.readouterr().out
-    assert len(output) > 0
+    # Check that there's more than just the banner
+    assert len(output) > len(BANNER) + 1

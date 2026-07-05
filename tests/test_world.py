@@ -79,3 +79,33 @@ def test_agent_world_syncs_agent_config_from_repo_file(tmp_path, monkeypatch):
         system="Be terse.",
         tools=[],
     )
+
+
+def test_agent_world_inherits_system_from_prod_config_when_omitted(tmp_path, monkeypatch):
+    prod_config_path = tmp_path / "agent.yaml"
+    prod_config_path.write_text(
+        "name: Prod Agent\nmodel: claude-opus-4-8\nsystem: Shared instructions.\n"
+    )
+    monkeypatch.setattr("story_simulator.world.PROD_AGENT_CONFIG_PATH", prod_config_path)
+
+    test_config_path = tmp_path / "agent.test.yaml"
+    test_config_path.write_text("name: Test Agent\nmodel: claude-haiku-4-5\n")
+
+    mock_client = _make_mock_client("sesn_test123", events=None)
+    mock_client.beta.agents.retrieve.return_value = MagicMock(version=1)
+    monkeypatch.setattr("story_simulator.world.anthropic.Anthropic", lambda: mock_client)
+
+    world = AgentWorld(
+        agent_id="agent_test", environment_id="env_test", config_path=test_config_path
+    )
+    world.respond("hello there")
+
+    mock_client.beta.agents.update.assert_called_once_with(
+        "agent_test",
+        version=1,
+        name="Test Agent",
+        description="",
+        model="claude-haiku-4-5",
+        system="Shared instructions.",
+        tools=[],
+    )

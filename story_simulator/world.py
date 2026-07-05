@@ -34,8 +34,14 @@ class AgentWorld(World):
         self.config_path = config_path
         self.session_id = None
 
-    def _sync_agent(self) -> None:
+    def _load_config(self) -> dict:
         local = yaml.safe_load(self.config_path.read_text())
+        if not local.get("system"):
+            local["system"] = yaml.safe_load(PROD_AGENT_CONFIG_PATH.read_text())["system"]
+        return local
+
+    def _sync_agent(self) -> None:
+        local = self._load_config()
         current = self.client.beta.agents.retrieve(self.agent_id)
         self.client.beta.agents.update(
             self.agent_id,

@@ -3,7 +3,7 @@ import argparse
 from dotenv import load_dotenv
 
 from story_simulator.config import TEST_AGENT_ID
-from story_simulator.repl import handle_input, is_quit
+from story_simulator.interpreter import Interpreter
 from story_simulator.world import AgentWorld, MirrorWorld, TEST_AGENT_CONFIG_PATH
 
 BANNER = "story-simulator REPL. Type /quit to exit."
@@ -26,15 +26,16 @@ def main(world=None, argv=None):
     if world is None:
         args = parse_args(argv)
         world = WORLDS[args.world]()
+    interpreter = Interpreter(world=world)
     print(BANNER)
     while True:
         try:
             text = input("> ")
         except EOFError:
             break
-        if is_quit(text):
+        response = interpreter.input(text)
+        if interpreter.stopped:
             break
-        response = handle_input(world, text)
         if response is not None:
             print(response)
 

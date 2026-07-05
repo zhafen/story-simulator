@@ -2,7 +2,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from story_simulator.world import AgentWorld, World, MirrorWorld
+from story_simulator.world import AgentWorld, Chronicler, World, MirrorWorld, MultiAgentWorld
 
 
 def test_base_world_cannot_be_instantiated():
@@ -109,3 +109,39 @@ def test_agent_world_inherits_system_from_prod_config_when_omitted(tmp_path, mon
         system="Shared instructions.",
         tools=[],
     )
+
+
+def test_chronicler_cannot_be_instantiated():
+    with pytest.raises(TypeError):
+        Chronicler()
+
+
+def test_multi_agent_world_returns_world_soul_response():
+    world_soul = MagicMock(spec=World)
+    world_soul.respond.return_value = "the world responds"
+
+    world = MultiAgentWorld(world_soul=world_soul)
+    result = world.respond("open the door")
+
+    assert result == "the world responds"
+    world_soul.respond.assert_called_once_with("open the door")
+
+
+def test_multi_agent_world_passes_exchange_to_chronicler():
+    world_soul = MagicMock(spec=World)
+    world_soul.respond.return_value = "the world responds"
+    chronicler = MagicMock(spec=Chronicler)
+
+    world = MultiAgentWorld(world_soul=world_soul, chronicler=chronicler)
+    world.respond("open the door")
+
+    chronicler.record.assert_called_once_with("open the door", "the world responds")
+
+
+def test_multi_agent_world_works_without_a_chronicler():
+    world_soul = MagicMock(spec=World)
+    world_soul.respond.return_value = "the world responds"
+
+    world = MultiAgentWorld(world_soul=world_soul)
+
+    assert world.respond("open the door") == "the world responds"

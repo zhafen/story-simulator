@@ -85,3 +85,34 @@ class AgentWorld(World):
                 if event.stop_reason.type != "requires_action":
                     break
         return "".join(text_parts)
+
+
+class Chronicler(ABC):
+    """Records a player/World Soul exchange as structured data.
+
+    Not yet implemented — a concrete Chronicler agent is coming soon.
+    """
+
+    @abstractmethod
+    def record(self, player_input: str, world_response: str) -> None:
+        raise NotImplementedError
+
+
+class MultiAgentWorld(World):
+    """A world simulated by multiple interacting agents and systems.
+
+    Each turn, the player's input is passed to the World Soul agent, which
+    narrates how the world responds; the Chronicler agent then records the
+    exchange as structured data. The Chronicler is optional for now since it
+    isn't implemented yet.
+    """
+
+    def __init__(self, world_soul: World | None = None, chronicler: Chronicler | None = None):
+        self.world_soul = world_soul or AgentWorld()
+        self.chronicler = chronicler
+
+    def respond(self, text: str) -> str:
+        response = self.world_soul.respond(text)
+        if self.chronicler is not None:
+            self.chronicler.record(text, response)
+        return response

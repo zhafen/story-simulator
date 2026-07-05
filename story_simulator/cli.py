@@ -1,9 +1,12 @@
+from dotenv import load_dotenv
+
 from story_simulator.world import MirrorWorld
 
 BANNER = "story-simulator REPL. Type /quit to exit."
 
 
 def main(world=None):
+    load_dotenv()
     if world is None:
         world = MirrorWorld()
     print(BANNER)

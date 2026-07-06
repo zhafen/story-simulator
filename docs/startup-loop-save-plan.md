@@ -212,17 +212,22 @@ the implementation.
   `messages.create` responses) and `tests/test_cli.py` (`--save-dir`
   parsing). Full suite passes except the live test (see below).
 
-## Remaining blocker
+## Live test run
 
-`test_startup_one_loop_save` is unmocked and needs a live Anthropic API key
-plus network access (World Soul narration + Archivist tool-calling are both
-real LLM calls). This session found that this remote environment reserves/
-strips the `ANTHROPIC_API_KEY` name specifically (it collides with Claude
-Code's own credential plumbing), so `AgentWorld`/`IacsArchivist` now read the
-key via `story_simulator.config.resolve_anthropic_api_key()`, which checks
-`STORY_SIM_ANTHROPIC_API_KEY` first (passed explicitly as `api_key=` to
-`anthropic.Anthropic()`) and falls back to the SDK's normal
-`ANTHROPIC_API_KEY` auto-discovery for local development. To run the live
-test: add `STORY_SIM_ANTHROPIC_API_KEY` (holding a real key) to the
-environment's variables and re-run
-`pytest tests/test_human_validated.py::test_startup_one_loop_save`.
+With `STORY_SIM_ANTHROPIC_API_KEY` set, `test_startup_one_loop_save` runs the
+real `AgentWorld` narration and `IacsArchivist` tool-loop end to end. First
+run surfaced that the test's own assertions were broken independent of the
+archivist: `iacs`'s `Architect.get(...)` returns lazy `ibis` table/scalar
+expressions, and comparing those directly (`.count() >= 2`, or a filtered
+`Table == 1`) either raises (`ibis` explicitly disables `__bool__` on
+expressions) or silently falls back to Python's default `==` and evaluates
+to `False`. Fixed by calling `.execute()` on each `.count()` before
+comparing, and adding the missing `.count()` on the door-object filter
+assertion (`tests/test_human_validated.py`).
+
+Once that was fixed, the archivist's actual output was verified correct: a
+single `I look around. What do I see?` turn produced a `world.yaml` with the
+player (position, origin, character/interaction_type=player, appearance) and
+two described entities including a door (position, object/type, appearance),
+satisfying every assertion. `pytest tests/` (27 tests, including this one)
+passes.

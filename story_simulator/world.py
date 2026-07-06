@@ -85,3 +85,34 @@ class AgentWorld(World):
                 if event.stop_reason.type != "requires_action":
                     break
         return "".join(text_parts)
+
+
+class Archivist(ABC):
+    """Records a player/World Soul exchange as structured data.
+
+    Not yet implemented — a concrete Archivist agent is coming soon.
+    """
+
+    @abstractmethod
+    def record(self, player_input: str, world_response: str) -> None:
+        raise NotImplementedError
+
+
+class EnsembleWorld(World):
+    """A world simulated by multiple interacting agents and systems.
+
+    Each turn, the player's input is passed to the World Soul agent, which
+    narrates how the world responds; the Archivist agent then records the
+    exchange as structured data. The Archivist is optional for now since it
+    isn't implemented yet.
+    """
+
+    def __init__(self, world_soul: World | None = None, archivist: Archivist | None = None):
+        self.world_soul = world_soul or AgentWorld()
+        self.archivist = archivist
+
+    def respond(self, text: str) -> str:
+        response = self.world_soul.respond(text)
+        if self.archivist is not None:
+            self.archivist.record(text, response)
+        return response

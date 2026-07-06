@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "iacs": {
+      "type": "stdio",
+      "command": "uv",
+      "args": ["run", "iacs-mcp"],
+      "env": {}
+    }
+  }
+}

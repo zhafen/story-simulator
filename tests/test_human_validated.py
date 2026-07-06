@@ -1,7 +1,4 @@
 from pathlib import Path
-import yaml
-
-from iacs.architect import Architect
 
 from story_simulator.interpreter import Interpreter
 from story_simulator.world import EnsembleWorld
@@ -38,7 +35,7 @@ def test_startup_one_loop_save():
     # In the base scenario, there should be the following entities:
     # The player, with at least a position component and a player_character component
     # The door, with at least a position component
-    a = Architect.from_manifest(save_dir)
+    a = w.architect
     # At least two positions
     assert a.get("position").count().execute() >= 2
     # One origin

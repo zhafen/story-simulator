@@ -4,6 +4,7 @@ from pathlib import Path
 
 import anthropic
 import yaml
+from iacs.architect import Architect
 
 from story_simulator.config import ENVIRONMENT_ID, PROD_AGENT_ID, resolve_anthropic_api_key
 from story_simulator.mcp_client import open_iacs_mcp_session
@@ -212,7 +213,9 @@ class EnsembleWorld(World):
 
     Each turn, the player's input is passed to the World Soul agent, which
     narrates how the world responds; each system (e.g. the Archivist) then
-    gets a chance to record or react to the exchange.
+    gets a chance to record or react to the exchange. An iacs `Architect`,
+    created at startup, acts as the data backend for querying the world's
+    entities/components as they're recorded.
     """
 
     def __init__(
@@ -227,9 +230,14 @@ class EnsembleWorld(World):
             archivist = IacsArchivist(self.save_dir)
         self.archivist = archivist
         self.systems: list[Archivist] = [archivist] if archivist is not None else []
+        self.architect = (
+            Architect.from_manifest(self.save_dir) if self.save_dir is not None else Architect()
+        )
 
     def respond(self, text: str) -> str:
         response = self.world_soul.respond(text)
         for system in self.systems:
             system.record(text, response)
+        if self.save_dir is not None:
+            self.architect.load_manifest(self.save_dir)
         return response

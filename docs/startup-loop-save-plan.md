@@ -1,9 +1,12 @@
 # Plan: `test_startup_one_loop_save`
 
 Research notes and implementation plan for making
-`tests/test_human_validated.py::test_startup_one_loop_save` pass. Written before
-any code changes, so the next session can pick up without re-deriving context.
-Blocked on live credentials (see "Blocker" below) before implementation started.
+`tests/test_human_validated.py::test_startup_one_loop_save` pass.
+
+**Status: implemented.** Everything below except the live test run itself is
+done — see "Implementation notes" at the end for what landed and how it
+differs from the plan, and "Remaining blocker" for what's still needed to run
+the live test.
 
 ## The task (as given)
 
@@ -171,13 +174,60 @@ the implementation.
 - Need to add `mcp` as an explicit `pyproject.toml` dependency (currently
   only present transitively via `iacs`).
 
-## Blocker
+## Implementation notes (what actually landed)
 
-`test_startup_one_loop_save` is unmocked and needs a live `ANTHROPIC_API_KEY`
-plus network access to actually pass (World Soul narration + Archivist
-tool-calling are both real LLM calls). Neither is available in the sandbox
-this research was done in. **User's choice: pause implementation and add
-`ANTHROPIC_API_KEY` to the environment's configuration before continuing**,
-rather than implementing blind and deferring the live run to a human.
+- `story_simulator/world.py`: `IacsArchivist(Archivist)` implements the local
+  tool-use loop as planned (`anthropic.Anthropic().messages.create` in a
+  manual loop, capped at `MAX_ARCHIVIST_TOOL_TURNS = 8` round trips as a
+  runaway-loop guard). `EnsembleWorld` gained `save_dir`, defaults its
+  `archivist` to `IacsArchivist(save_dir)` when one isn't given, and loops
+  over a generic `self.systems` list in `respond()`.
+- `story_simulator/mcp_client.py`: `open_iacs_mcp_session(manifest_dir)` is an
+  async context manager wrapping `mcp.client.stdio.stdio_client` +
+  `mcp.ClientSession`, spawning `uv run iacs-mcp` with `IACS_MANIFEST` set to
+  the world's `save_dir` and `cwd` pinned to the repo root. Exposes
+  `.tools` (MCP tool list translated to Anthropic tool-param schemas) and
+  `.call_tool(name, arguments)`.
+- **EC file write strategy** (resolves the plan's open question): one file,
+  `save_dir/world.yaml`, that the Archivist reads (`read_world_file` local
+  tool) before composing the full updated content and overwriting
+  (`write_world_file` local tool) — a "growing single file" rather than
+  per-turn files, so multi-turn runs accumulate instead of clobbering.
+  `refresh`/`load_manifest` are available to the model to normalize
+  formatting but aren't required for the test's assertions.
+- `story_simulator/archivist.yaml` / `archivist.test.yaml`: mirror the
+  `agent.yaml` / `agent.test.yaml` pattern. Both use `claude-haiku-4-5`
+  (resolves the plan's open question in favor of the cheap/fast model, since
+  transcription doesn't need the World Soul's narrative model). The system
+  prompt spells out the component schema the test expects
+  (`position {x,y}`, `character {interaction_type}`, `object {type}`,
+  `appearance {value}`, `origin` tag) since that's this game's actual data
+  model, not a hypothetical.
+- `mcp` added as an explicit `pyproject.toml` dependency; `cli.py`'s
+  `"ensemble"` entry gained a `--save-dir` flag.
+- Test bug fixed: `Interpreter(EnsembleWorld())` → `Interpreter(w)`.
+- Unit tests added in `tests/test_world.py` (EnsembleWorld/save_dir/systems
+  wiring, `IacsArchivist` read/write of `world.yaml`, and a full mocked
+  tool-loop dispatch test using a fake MCP session + scripted
+  `messages.create` responses) and `tests/test_cli.py` (`--save-dir`
+  parsing). Full suite passes except the live test (see below).
 
-No source files have been modified yet — this document is the only change.
+## Live test run
+
+With `STORY_SIM_ANTHROPIC_API_KEY` set, `test_startup_one_loop_save` runs the
+real `AgentWorld` narration and `IacsArchivist` tool-loop end to end. First
+run surfaced that the test's own assertions were broken independent of the
+archivist: `iacs`'s `Architect.get(...)` returns lazy `ibis` table/scalar
+expressions, and comparing those directly (`.count() >= 2`, or a filtered
+`Table == 1`) either raises (`ibis` explicitly disables `__bool__` on
+expressions) or silently falls back to Python's default `==` and evaluates
+to `False`. Fixed by calling `.execute()` on each `.count()` before
+comparing, and adding the missing `.count()` on the door-object filter
+assertion (`tests/test_human_validated.py`).
+
+Once that was fixed, the archivist's actual output was verified correct: a
+single `I look around. What do I see?` turn produced a `world.yaml` with the
+player (position, origin, character/interaction_type=player, appearance) and
+two described entities including a door (position, object/type, appearance),
+satisfying every assertion. `pytest tests/` (27 tests, including this one)
+passes.

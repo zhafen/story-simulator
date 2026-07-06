@@ -9,16 +9,19 @@ from story_simulator.world import AgentWorld, EnsembleWorld, MirrorWorld, TEST_A
 BANNER = "story-simulator REPL. Type /quit to exit."
 
 WORLDS = {
-    "agent": AgentWorld,
-    "agent-test": lambda: AgentWorld(agent_id=TEST_AGENT_ID, config_path=TEST_AGENT_CONFIG_PATH),
-    "mirror": MirrorWorld,
-    "ensemble": EnsembleWorld,
+    "agent": lambda args: AgentWorld(),
+    "agent-test": lambda args: AgentWorld(agent_id=TEST_AGENT_ID, config_path=TEST_AGENT_CONFIG_PATH),
+    "mirror": lambda args: MirrorWorld(),
+    "ensemble": lambda args: EnsembleWorld(save_dir=args.save_dir),
 }
 
 
 def parse_args(argv=None):
     parser = argparse.ArgumentParser()
     parser.add_argument("--world", choices=WORLDS, default="agent")
+    parser.add_argument(
+        "--save-dir", default=None, help="Directory for the ensemble world's save data."
+    )
     return parser.parse_args(argv)
 
 
@@ -26,7 +29,7 @@ def main(world=None, argv=None):
     load_dotenv()
     if world is None:
         args = parse_args(argv)
-        world = WORLDS[args.world]()
+        world = WORLDS[args.world](args)
     interpreter = Interpreter(world=world)
     print(BANNER)
     while True:

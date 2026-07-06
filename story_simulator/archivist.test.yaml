@@ -1,0 +1,8 @@
+name: Archivist (Testing)
+description: >-
+  Testing variant of the Archivist, identical to the production config for
+  now. Kept separate to mirror the agent.yaml / agent.test.yaml pattern in
+  case the two need to diverge later (e.g. a cheaper model).
+model: claude-haiku-4-5
+# system prompt is intentionally omitted here — it's inherited from
+# archivist.yaml (the production config) at load time.

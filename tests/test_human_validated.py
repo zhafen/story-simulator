@@ -29,7 +29,7 @@ def test_startup_one_loop_save():
     # Setup
     save_dir = DATA_DIR / "test_save"
     w = EnsembleWorld(save_dir=save_dir)
-    p = Interpreter(EnsembleWorld())
+    p = Interpreter(w)
 
     # Do the loop
     p.input("I look around. What do I see?")
@@ -40,14 +40,14 @@ def test_startup_one_loop_save():
     # The door, with at least a position component
     a = Architect.from_manifest(save_dir)
     # At least two positions
-    assert a.get("position").count() >= 2
+    assert a.get("position").count().execute() >= 2
     # One origin
-    assert a.get("origin").count() == 1
+    assert a.get("origin").count().execute() == 1
     # One character, of interaction type player
-    assert (characters := a.get("character")).count() == 1
-    assert characters.filter(characters.interaction_type == "player").count()
+    assert (characters := a.get("character")).count().execute() == 1
+    assert characters.filter(characters.interaction_type == "player").count().execute()
     # At least one object, which is a door
-    assert (objects := a.get("object")).count() >= 1
-    assert objects.filter(objects.type.contains("door")) == 1
+    assert (objects := a.get("object")).count().execute() >= 1
+    assert objects.filter(objects.type.contains("door")).count().execute() == 1
     # At least two appearance components
-    assert a.get("appearance").count() >= 2
+    assert a.get("appearance").count().execute() >= 2

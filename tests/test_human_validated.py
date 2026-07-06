@@ -27,8 +27,8 @@ def test_startup_one_loop_save():
     """
 
     # Setup
-    world_dir = DATA_DIR / "test_save"
-    w = EnsembleWorld(world_dir=world_dir)
+    save_dir = DATA_DIR / "test_save"
+    w = EnsembleWorld(save_dir=save_dir)
     p = Interpreter(EnsembleWorld())
 
     # Do the loop
@@ -38,7 +38,7 @@ def test_startup_one_loop_save():
     # In the base scenario, there should be the following entities:
     # The player, with at least a position component and a player_character component
     # The door, with at least a position component
-    a = Architect.from_manifest(world_dir)
+    a = Architect.from_manifest(save_dir)
     # At least two positions
     assert a.get("position").count() >= 2
     # One origin

@@ -29,7 +29,7 @@ def test_startup_one_loop_save():
     # Setup
     save_dir = DATA_DIR / "test_save"
     w = EnsembleWorld(save_dir=save_dir)
-    p = Interpreter(EnsembleWorld())
+    p = Interpreter(w)
 
     # Do the loop
     p.input("I look around. What do I see?")

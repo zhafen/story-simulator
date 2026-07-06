@@ -22,8 +22,8 @@ def test_startup_one_loop_save():
     """This test starts up an EnsembleWorld, and does a single
     loop, with the player character asking a simple question.
     This should trigger at least:
-    1. The WorldSoul agent describing what the player sees.
-    2. The Archivist transcribing the WorldSoul's description into iacs EC files, with the help of the iacs MCP.
+    1. The WorldSoul agent responding to the player.
+    2. The Archivist transcribing entities described by the WorldSoul into iacs EC files, with the help of the iacs MCP.
     """
 
     # Setup

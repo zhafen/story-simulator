@@ -1,0 +1,49 @@
+character:
+    - description: Base component for character data.
+    - component_type
+    - field:
+        interaction_type:
+            description: Who controls the character.
+            type: str
+            range:
+                - player
+                - npc
+
+inanimate_object:
+    - description: Base component for inanimate_objects.
+    - field:
+        type:
+            description: The type of object, e.g. "door".
+            type: str
+
+appearance:
+    - description: A component used to describe the appearance of an entity.
+    - component_type
+    - field:
+        description:
+            description: A description of the appearance.
+            type: str
+
+physics_components:
+    position:
+        - description: Component containing the position of an entity.
+        - component_type
+        - field:
+            x:
+                description: X position in meters, relative to the origin. On a standard
+                    map, x would be east (positive) and west (negative).
+                type: float
+                nullable: false
+            y:
+                description: Y position in meters, relative to the origin. On a standard
+                    map, y would be north (positive) and south (negative).
+                type: float
+                nullable: false
+            z:
+                description: Z position in meters, relative to the origin. On a standard map, z would be out of the map/up (positive) and into the map/down (negative).
+                type: float
+                nullable: false
+    origin:
+        - description: A tag component indicating that the associated entity is at the
+            origin of the coordinate system.
+        - component_type

@@ -1,4 +1,12 @@
+from pathlib import Path
+import yaml
+
+from iacs.architect import Architect
+
 from story_simulator.interpreter import Interpreter
+from story_simulator.world import EnsembleWorld
+
+DATA_DIR = Path(__file__).parent / "data"
 
 
 def test_startup_and_exit():
@@ -9,3 +17,37 @@ def test_startup_and_exit():
     assert not p.stopped
     p.input("/quit")
     assert p.stopped
+
+def test_startup_one_loop_save():
+    """This test starts up an EnsembleWorld, and does a single
+    loop, with the player character asking a simple question.
+    This should trigger at least:
+    1. The WorldSoul agent describing what the player sees.
+    2. The Archivist transcribing the WorldSoul's description into iacs EC files, with the help of the iacs MCP.
+    """
+
+    # Setup
+    world_dir = DATA_DIR / "test_save"
+    w = EnsembleWorld(world_dir=world_dir)
+    p = Interpreter(EnsembleWorld())
+
+    # Do the loop
+    p.input("I look around. What do I see?")
+
+    # Load saved data using iacs
+    # In the base scenario, there should be the following entities:
+    # The player, with at least a position component and a player_character component
+    # The door, with at least a position component
+    a = Architect.from_manifest(world_dir)
+    # At least two positions
+    assert a.get("position").count() >= 2
+    # One origin
+    assert a.get("origin").count() == 1
+    # One character, of interaction type player
+    assert (characters := a.get("character")).count() == 1
+    assert characters.filter(characters.interaction_type == "player").count()
+    # At least one object, which is a door
+    assert (objects := a.get("object")).count() >= 1
+    assert objects.filter(objects.type.contains("door")) == 1
+    # At least two appearance components
+    assert a.get("appearance").count() >= 2

@@ -7,4 +7,3 @@ __pycache__/
 venv/
 .DS_Store
 .env
-tests/data/test_save/

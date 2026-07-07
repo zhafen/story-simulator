@@ -42,7 +42,7 @@ def test_startup_one_loop_save():
     assert a.get("origin").count().execute() == 1
     # One character, of interaction type player
     assert (characters := a.get("character")).count().execute() == 1
-    assert characters.filter(characters.interaction_type == "player").count().execute()
+    assert characters.filter(characters.interaction_type == "player").count().execute() == 1
     # At least one object, which is a door
     assert (objects := a.get("object")).count().execute() >= 1
     assert objects.filter(objects.type.contains("door")).count().execute() == 1

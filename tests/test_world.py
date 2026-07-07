@@ -8,6 +8,7 @@ from story_simulator.world import (
     AgentWorld,
     Archivist,
     IacsArchivist,
+    Sentinel,
     World,
     MirrorWorld,
     EnsembleWorld,
@@ -275,3 +276,99 @@ def test_iacs_archivist_dispatches_mcp_and_local_tools(tmp_path, monkeypatch):
     assert mcp_calls == [("describe_format", {})]
     assert (save_dir / WORLD_YAML_FILENAME).read_text() == "player:\n    - origin\n"
     assert mock_client.messages.create.call_count == 3
+
+
+def _write_world_yaml(save_dir, content):
+    save_dir.mkdir(parents=True, exist_ok=True)
+    (save_dir / WORLD_YAML_FILENAME).write_text(content)
+
+
+_SAMPLE_WORLD_YAML = """
+player:
+    - character:
+        interaction_type: player
+    - position:
+        x: 0.0
+        y: 0.0
+        z: 0.0
+
+nearby_npc:
+    - character:
+        interaction_type: npc
+    - position:
+        x: 3.0
+        y: 4.0
+        z: 0.0
+
+distant_rock:
+    - object:
+        type: rock
+    - position:
+        x: 500.0
+        y: 0.0
+        z: 0.0
+"""
+
+
+def test_sentinel_returns_empty_list_without_player_data():
+    assert Sentinel().find_active_entities(Architect()) == []
+
+
+def test_sentinel_finds_characters_and_objects_within_radius(tmp_path):
+    save_dir = tmp_path / "save"
+    _write_world_yaml(save_dir, _SAMPLE_WORLD_YAML)
+    architect = Architect.from_manifest(save_dir)
+
+    active = Sentinel(radius=10.0).find_active_entities(architect)
+
+    assert {"id": "nearby_npc", "kind": "character", "label": "npc"} in active
+    assert not any(e["id"] == "distant_rock" for e in active)
+    assert not any(e["id"] == "player" for e in active)
+
+
+def test_sentinel_excludes_entities_outside_radius(tmp_path):
+    save_dir = tmp_path / "save"
+    _write_world_yaml(save_dir, _SAMPLE_WORLD_YAML)
+    architect = Architect.from_manifest(save_dir)
+
+    active = Sentinel(radius=1.0).find_active_entities(architect)
+
+    assert active == []
+
+
+def test_ensemble_world_stores_active_entities_after_a_turn(tmp_path):
+    save_dir = tmp_path / "save"
+    world_soul = MagicMock(spec=World)
+    world_soul.respond.return_value = "the world responds"
+    archivist = MagicMock(spec=Archivist)
+    archivist.record.side_effect = lambda *_args: _write_world_yaml(save_dir, _SAMPLE_WORLD_YAML)
+
+    world = EnsembleWorld(
+        world_soul=world_soul, archivist=archivist, save_dir=save_dir, sentinel=Sentinel(radius=10.0)
+    )
+    assert world.active_entities == []
+
+    world.respond("look around")
+
+    assert {"id": "nearby_npc", "kind": "character", "label": "npc"} in world.active_entities
+    assert not any(e["id"] == "distant_rock" for e in world.active_entities)
+
+
+def test_ensemble_world_includes_active_entities_in_next_prompt(tmp_path):
+    save_dir = tmp_path / "save"
+    world_soul = MagicMock(spec=World)
+    world_soul.respond.return_value = "the world responds"
+    archivist = MagicMock(spec=Archivist)
+    archivist.record.side_effect = lambda *_args: _write_world_yaml(save_dir, _SAMPLE_WORLD_YAML)
+
+    world = EnsembleWorld(
+        world_soul=world_soul, archivist=archivist, save_dir=save_dir, sentinel=Sentinel(radius=10.0)
+    )
+    world.respond("look around")
+    world_soul.respond.assert_called_with("look around")
+
+    world.respond("say hello")
+
+    prompt = world_soul.respond.call_args.args[0]
+    assert "nearby_npc" in prompt
+    assert prompt.endswith("Player input: say hello")

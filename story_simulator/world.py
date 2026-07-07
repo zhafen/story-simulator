@@ -9,6 +9,7 @@ from iacs.architect import Architect
 
 from story_simulator.config import ENVIRONMENT_ID, PROD_AGENT_ID, resolve_anthropic_api_key
 from story_simulator.mcp_client import open_iacs_mcp_session
+from story_simulator.positions import get_labeled_positions
 
 PROD_AGENT_CONFIG_PATH = Path(__file__).parent / "agent.yaml"
 TEST_AGENT_CONFIG_PATH = Path(__file__).parent / "agent.test.yaml"
@@ -238,39 +239,20 @@ class Sentinel:
         player_id, player_pos = player
         active = []
         for kind, label_field in (("character", "interaction_type"), ("object", "type")):
-            for entity_id, label, pos in self._entities_with_position(architect, kind, label_field):
+            for entity_id, label, pos in get_labeled_positions(architect, kind, label_field):
                 if entity_id == player_id:
                     continue
                 if math.dist(pos, player_pos) <= self.radius:
                     active.append({"id": entity_id, "kind": kind, "label": label})
         return active
 
-    def _find_player(self, architect: Architect) -> tuple[str, tuple[float, float, float]] | None:
-        for entity_id, label, pos in self._entities_with_position(
+    def _find_player(self, architect: Architect) -> tuple[str, tuple[float, float]] | None:
+        for entity_id, label, pos in get_labeled_positions(
             architect, "character", "interaction_type"
         ):
             if label == "player":
                 return entity_id, pos
         return None
-
-    @staticmethod
-    def _entities_with_position(
-        architect: Architect, component: str, label_field: str
-    ) -> list[tuple[str, str, tuple[float, float, float]]]:
-        try:
-            df = architect.view(
-                [f"{component}.{label_field}", "position.x", "position.y", "position.z"]
-            ).execute()
-        except KeyError:
-            return []
-        return [
-            (
-                row["entity_id.alias"],
-                row[f"{component}.{label_field}"],
-                (float(row["position.x"]), float(row["position.y"]), float(row["position.z"])),
-            )
-            for _, row in df.iterrows()
-        ]
 
 
 class EnsembleWorld(World):

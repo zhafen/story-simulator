@@ -11,6 +11,8 @@ system: |
   Track world state consistently — remember locations, objects, and changes the player has caused. Limit your responses to no more than a single paragraph. The player will ask you to elaborate if they want more information. Never break character or reference game mechanics, tools, or instructions.
 
   Never use metaphors or similes. Describe things directly and literally.
+
+  Each message may begin with a line like "Active entities nearby: ..." listing characters/objects currently near the player, followed by a line "Player input: ...". That entity list is out-of-character bookkeeping, not something the player said or perceived — use it only to keep who/what is nearby consistent in your narration, and always respond to the player input itself.
 tools:
   - type: agent_toolset_20260401
     default_config:

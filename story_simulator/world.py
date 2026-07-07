@@ -1,4 +1,5 @@
 import asyncio
+import math
 from abc import ABC, abstractmethod
 from pathlib import Path
 
@@ -16,6 +17,7 @@ TEST_ARCHIVIST_CONFIG_PATH = Path(__file__).parent / "archivist.test.yaml"
 
 WORLD_YAML_FILENAME = "world.yaml"
 MAX_ARCHIVIST_TOOL_TURNS = 8
+DEFAULT_ACTIVE_ENTITY_RADIUS = 20.0
 
 
 class World(ABC):
@@ -208,14 +210,81 @@ _READ_WORLD_FILE_TOOL = {
 }
 
 
+class Sentinel:
+    """Flags which recorded characters/objects are "active" for the player.
+
+    After the Archivist transcribes a turn and the Architect reloads the
+    world's save file, the Sentinel queries the Architect for every
+    character/object that has a position component, and reports the ones
+    within `radius` meters of the player entity (the one whose `character`
+    component has `interaction_type == "player"`) as active. The player
+    entity itself is never included in the result.
+    """
+
+    def __init__(self, radius: float = DEFAULT_ACTIVE_ENTITY_RADIUS):
+        self.radius = radius
+
+    def find_active_entities(self, architect: Architect) -> list[dict]:
+        """Return the characters/objects within `radius` of the player.
+
+        Each result is a dict with `id` (entity alias), `kind` ("character"
+        or "object"), and `label` (the entity's `interaction_type` or
+        `type` field). Returns an empty list if there's no player position
+        to measure from yet (e.g. before the first turn is recorded).
+        """
+        player = self._find_player(architect)
+        if player is None:
+            return []
+        player_id, player_pos = player
+        active = []
+        for kind, label_field in (("character", "interaction_type"), ("object", "type")):
+            for entity_id, label, pos in self._entities_with_position(architect, kind, label_field):
+                if entity_id == player_id:
+                    continue
+                if math.dist(pos, player_pos) <= self.radius:
+                    active.append({"id": entity_id, "kind": kind, "label": label})
+        return active
+
+    def _find_player(self, architect: Architect) -> tuple[str, tuple[float, float, float]] | None:
+        for entity_id, label, pos in self._entities_with_position(
+            architect, "character", "interaction_type"
+        ):
+            if label == "player":
+                return entity_id, pos
+        return None
+
+    @staticmethod
+    def _entities_with_position(
+        architect: Architect, component: str, label_field: str
+    ) -> list[tuple[str, str, tuple[float, float, float]]]:
+        try:
+            df = architect.view(
+                [f"{component}.{label_field}", "position.x", "position.y", "position.z"]
+            ).execute()
+        except KeyError:
+            return []
+        return [
+            (
+                row["entity_id.alias"],
+                row[f"{component}.{label_field}"],
+                (float(row["position.x"]), float(row["position.y"]), float(row["position.z"])),
+            )
+            for _, row in df.iterrows()
+        ]
+
+
 class EnsembleWorld(World):
     """A world simulated by multiple interacting agents and systems.
 
-    Each turn, the player's input is passed to the World Soul agent, which
-    narrates how the world responds; each system (e.g. the Archivist) then
-    gets a chance to record or react to the exchange. An iacs `Architect`,
-    created at startup, acts as the data backend for querying the world's
-    entities/components as they're recorded.
+    Each turn, the player's input is combined with the list of currently
+    active entities (see `Sentinel`) and passed to the World Soul agent,
+    which narrates how the world responds; each system (e.g. the Archivist)
+    then gets a chance to record or react to the exchange. An iacs
+    `Architect`, created at startup, acts as the data backend for querying
+    the world's entities/components as they're recorded. Once the Archivist
+    has updated that data for the turn, the Sentinel re-queries it for the
+    entities now active near the player, so the next turn's prompt reflects
+    them.
     """
 
     def __init__(
@@ -223,6 +292,7 @@ class EnsembleWorld(World):
         world_soul: World | None = None,
         archivist: Archivist | None = None,
         save_dir: str | Path | None = None,
+        sentinel: Sentinel | None = None,
     ):
         self.world_soul = world_soul or AgentWorld()
         self.save_dir = Path(save_dir) if save_dir is not None else None
@@ -233,11 +303,21 @@ class EnsembleWorld(World):
         self.architect = (
             Architect.from_manifest(self.save_dir) if self.save_dir is not None else Architect()
         )
+        self.sentinel = sentinel or Sentinel()
+        self.active_entities: list[dict] = []
 
     def respond(self, text: str) -> str:
-        response = self.world_soul.respond(text)
+        response = self.world_soul.respond(self._build_prompt(text))
         for system in self.systems:
             system.record(text, response)
         if self.save_dir is not None:
             self.architect.load_manifest(self.save_dir)
+            self.active_entities = self.sentinel.find_active_entities(self.architect)
         return response
+
+    def _build_prompt(self, text: str) -> str:
+        """Combine the player's input with the list of active entities."""
+        if not self.active_entities:
+            return text
+        entities = ", ".join(f"{e['label']} ({e['kind']}: {e['id']})" for e in self.active_entities)
+        return f"Active entities nearby: {entities}\nPlayer input: {text}"

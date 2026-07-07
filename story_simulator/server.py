@@ -7,6 +7,7 @@ from pydantic import BaseModel
 
 from story_simulator.cli import WORLDS
 from story_simulator.interpreter import Interpreter
+from story_simulator.positions import get_positions
 
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8000
@@ -16,23 +17,8 @@ class InputRequest(BaseModel):
     text: str
 
 
-def get_positions(interpreter: Interpreter) -> list[dict]:
-    """Return {alias, x, y} for every entity with a position component."""
-    architect = getattr(interpreter.world, "architect", None)
-    if architect is None:
-        return []
-    try:
-        df = architect.view("position").execute()
-    except KeyError:
-        return []
-    return [
-        {
-            "alias": row["entity_id.alias"],
-            "x": float(row["position.x"]),
-            "y": float(row["position.y"]),
-        }
-        for _, row in df.iterrows()
-    ]
+def _positions_for(interpreter: Interpreter) -> list[dict]:
+    return get_positions(getattr(interpreter.world, "architect", None))
 
 
 def create_app(interpreter: Interpreter) -> FastAPI:
@@ -46,7 +32,7 @@ def create_app(interpreter: Interpreter) -> FastAPI:
 
     @app.get("/positions")
     def read_positions():
-        return {"positions": get_positions(interpreter)}
+        return {"positions": _positions_for(interpreter)}
 
     @app.post("/input")
     def post_input(body: InputRequest):
@@ -54,7 +40,7 @@ def create_app(interpreter: Interpreter) -> FastAPI:
         return {
             "response": response,
             "stopped": interpreter.stopped,
-            "positions": get_positions(interpreter),
+            "positions": _positions_for(interpreter),
         }
 
     return app

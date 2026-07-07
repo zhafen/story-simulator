@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 2
 requires-python = ">=3.12"
 resolution-markers = [
     "python_full_version >= '3.14' and sys_platform == 'win32'",
@@ -3534,21 +3534,25 @@ version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
     { name = "anthropic" },
+    { name = "fastapi" },
     { name = "iacs" },
     { name = "mcp" },
     { name = "pytest" },
     { name = "python-dotenv" },
     { name = "pyyaml" },
+    { name = "uvicorn" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "anthropic", specifier = ">=0.116.0" },
+    { name = "fastapi", specifier = ">=0.139.0" },
     { name = "iacs", git = "https://github.com/zhafen/iacs" },
     { name = "mcp", specifier = ">=1.28.1" },
     { name = "pytest", specifier = ">=9.1.1" },
     { name = "python-dotenv", specifier = ">=1.2.2" },
     { name = "pyyaml", specifier = ">=6.0.3" },
+    { name = "uvicorn", specifier = ">=0.50.0" },
 ]
 
 [[package]]

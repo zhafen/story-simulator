@@ -2,6 +2,7 @@ from contextlib import asynccontextmanager
 from unittest.mock import MagicMock
 
 import pytest
+from iacs.architect import Architect
 
 from story_simulator.world import (
     AgentWorld,
@@ -154,6 +155,44 @@ def test_ensemble_world_works_without_an_archivist():
     world = EnsembleWorld(world_soul=world_soul)
 
     assert world.respond("open the door") == "the world responds"
+
+
+def test_ensemble_world_creates_an_architect_at_startup():
+    world_soul = MagicMock(spec=World)
+
+    world = EnsembleWorld(world_soul=world_soul)
+
+    assert isinstance(world.architect, Architect)
+
+
+def test_ensemble_world_architect_loads_from_save_dir(tmp_path):
+    save_dir = tmp_path / "save"
+    save_dir.mkdir()
+    (save_dir / WORLD_YAML_FILENAME).write_text("player:\n    - origin\n")
+    world_soul = MagicMock(spec=World)
+
+    world = EnsembleWorld(world_soul=world_soul, save_dir=save_dir)
+
+    assert world.architect.get("origin").count().execute() == 1
+
+
+def test_ensemble_world_refreshes_architect_after_each_turn(tmp_path):
+    save_dir = tmp_path / "save"
+    world_soul = MagicMock(spec=World)
+    world_soul.respond.return_value = "the world responds"
+    archivist = MagicMock(spec=Archivist)
+
+    world = EnsembleWorld(world_soul=world_soul, archivist=archivist, save_dir=save_dir)
+    assert world.architect.get("origin").count().execute() == 0
+
+    def write_world_file(*_args):
+        save_dir.mkdir(parents=True, exist_ok=True)
+        (save_dir / WORLD_YAML_FILENAME).write_text("player:\n    - origin\n")
+
+    archivist.record.side_effect = write_world_file
+    world.respond("open the door")
+
+    assert world.architect.get("origin").count().execute() == 1
 
 
 def test_ensemble_world_defaults_to_iacs_archivist_when_save_dir_given(tmp_path):

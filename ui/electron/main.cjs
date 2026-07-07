@@ -1,23 +1,13 @@
 const { app, BrowserWindow } = require('electron')
 const path = require('node:path')
 
-const DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL
-
 function createWindow() {
-  const win = new BrowserWindow({
-    width: 1200,
-    height: 800,
-    webPreferences: {
-      contextIsolation: true,
-      nodeIntegration: false,
-    },
-  })
+  const win = new BrowserWindow({ width: 1200, height: 800 })
 
-  if (DEV_SERVER_URL) {
-    win.loadURL(DEV_SERVER_URL)
-    win.webContents.openDevTools()
-  } else {
+  if (app.isPackaged) {
     win.loadFile(path.join(__dirname, '../dist/index.html'))
+  } else {
+    win.loadURL('http://localhost:5173')
   }
 }
 

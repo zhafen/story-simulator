@@ -7,9 +7,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "lint": "oxlint",
     "preview": "vite preview",
-    "electron:dev": "concurrently -k -s first \"vite\" \"wait-on tcp:5173 && VITE_DEV_SERVER_URL=http://localhost:5173 electron electron/main.cjs\""
+    "electron": "electron ."
   },
   "dependencies": {
     "d3": "^7.9.0",
@@ -22,11 +21,8 @@
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.3",
-    "concurrently": "^10.0.3",
     "electron": "^43.0.0",
-    "oxlint": "^1.71.0",
     "typescript": "~6.0.2",
-    "vite": "^8.1.1",
-    "wait-on": "^9.0.10"
+    "vite": "^8.1.1"
   }
 }

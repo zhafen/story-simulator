@@ -20,14 +20,20 @@ uv run python -m story_simulator.server --world ensemble --save-dir /path/to/sav
 is only used by the `ensemble` world. It serves on `http://127.0.0.1:8000` by default
 (override with `--host`/`--port`).
 
-Then, in a separate terminal, start the UI:
+Then, in a separate terminal, start the Vite dev server for the UI:
 
 ```
 cd ui
 npm install   # first time only
-npm run electron:dev
+npm run dev
 ```
 
-This launches the Electron app pointed at the running server. To check the UI in a regular
-browser instead (e.g. for quick visual checks), run `npm run dev` and open the printed
-`http://localhost:5173` URL.
+Once it prints `http://localhost:5173`, start Electron in a third terminal to load it:
+
+```
+cd ui
+npm run electron
+```
+
+(You can also just open `http://localhost:5173` in a regular browser instead of Electron, e.g.
+for quick visual checks.)

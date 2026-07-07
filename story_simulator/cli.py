@@ -18,17 +18,22 @@ WORLDS = {
 }
 
 
+DEFAULT_SAVE_DIR = "./data/default"
+
+
 def parse_args(argv=None):
     parser = argparse.ArgumentParser()
-    parser.add_argument("--world", choices=WORLDS, default="agent")
+    parser.add_argument("--world", choices=WORLDS, default="ensemble")
     parser.add_argument(
-        "--save-dir", default=None, help="Directory for the ensemble world's save data."
+        "--save-dir",
+        default=DEFAULT_SAVE_DIR,
+        help="Directory for the ensemble world's save data.",
     )
     parser.add_argument(
         "--render-path",
         default=None,
         help="Where to overwrite an SVG render of entity positions each turn "
-        "(default: render.svg next to --save-dir, or ./render.svg).",
+        "(default: render.svg next to --save-dir).",
     )
     return parser.parse_args(argv)
 
@@ -40,9 +45,7 @@ def main(world=None, argv=None, render_path=None):
         world = WORLDS[args.world](args)
         if render_path is None:
             render_path = (
-                Path(args.render_path)
-                if args.render_path
-                else Path(args.save_dir) / "render.svg" if args.save_dir else DEFAULT_RENDER_PATH
+                Path(args.render_path) if args.render_path else Path(args.save_dir) / "render.svg"
             )
     if render_path is None:
         render_path = DEFAULT_RENDER_PATH

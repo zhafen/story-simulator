@@ -22,8 +22,8 @@ def test_non_command_text_gets_response(monkeypatch, capsys):
     assert len(output) > len(BANNER) + 1
 
 
-def test_world_defaults_to_agent():
-    assert parse_args([]).world == "agent"
+def test_world_defaults_to_ensemble():
+    assert parse_args([]).world == "ensemble"
 
 
 def test_world_flag_selects_mirror():
@@ -34,8 +34,8 @@ def test_world_flag_selects_agent_test():
     assert parse_args(["--world", "agent-test"]).world == "agent-test"
 
 
-def test_save_dir_flag_defaults_to_none():
-    assert parse_args([]).save_dir is None
+def test_save_dir_flag_defaults_to_data_default():
+    assert parse_args([]).save_dir == "./data/default"
 
 
 def test_save_dir_flag_is_parsed():

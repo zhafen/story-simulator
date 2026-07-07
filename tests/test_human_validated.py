@@ -1,14 +1,14 @@
 from pathlib import Path
 
 from story_simulator.interpreter import Interpreter
-from story_simulator.world import EnsembleWorld
+from story_simulator.world import EnsembleWorld, MirrorWorld
 
 DATA_DIR = Path(__file__).parent / "data"
 
 
 def test_startup_and_exit():
 
-    p = Interpreter()
+    p = Interpreter(MirrorWorld())
     assert p.input("Hello there.") == "Hello there."
 
     assert not p.stopped

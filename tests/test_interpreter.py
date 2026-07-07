@@ -1,10 +1,10 @@
 from story_simulator.interpreter import Interpreter
-from story_simulator.world import MirrorWorld
+from story_simulator.world import EnsembleWorld, MirrorWorld
 
 
-def test_defaults_to_mirror_world():
+def test_defaults_to_ensemble_world():
     interpreter = Interpreter()
-    assert isinstance(interpreter.world, MirrorWorld)
+    assert isinstance(interpreter.world, EnsembleWorld)
 
 
 def test_plain_text_returns_world_response():

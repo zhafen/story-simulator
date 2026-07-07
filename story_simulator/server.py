@@ -50,7 +50,9 @@ def parse_args(argv=None):
     parser = argparse.ArgumentParser()
     parser.add_argument("--world", choices=WORLDS, default="ensemble")
     parser.add_argument(
-        "--save-dir", default=None, help="Directory for the ensemble world's save data."
+        "--save-dir",
+        default="./data/default",
+        help="Directory for the ensemble world's save data.",
     )
     parser.add_argument("--host", default=DEFAULT_HOST)
     parser.add_argument("--port", type=int, default=DEFAULT_PORT)

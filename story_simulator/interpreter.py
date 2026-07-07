@@ -1,11 +1,11 @@
-from story_simulator.world import MirrorWorld, World
+from story_simulator.world import EnsembleWorld, World
 
 
 class Interpreter:
     """Interprets a line of input against a World, independent of any UI."""
 
     def __init__(self, world: World | None = None):
-        self.world = world if world is not None else MirrorWorld()
+        self.world = world if world is not None else EnsembleWorld()
         self.stopped = False
 
     def input(self, text: str) -> str | None:

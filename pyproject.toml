@@ -16,3 +16,6 @@ dependencies = [
 
 [tool.uv.sources]
 iacs = { path = "iacs", editable = true }
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

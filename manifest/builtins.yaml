@@ -48,55 +48,32 @@ physics_components:
             origin of the coordinate system.
         - component_type
 
-turn_log_components:
-    command:
-        - description: Scratch component recording the player's raw input for a turn.
-            Written by InputSystem onto the turn_log entity and read back by
-            ResolverAgentSystem/ArchivistAgentSystem instead of being passed
-            between them directly.
+turn_components:
+    input:
+        - description: A turn's raw text, owned by the player entity — either the
+            player's own command or the Resolver's narrated reply to it,
+            distinguished by `type`. Written by InputSystem/ResolverAgentSystem
+            and read back by ResolverAgentSystem/ArchivistAgentSystem instead of
+            being passed between them directly.
         - component_type
         - field:
             text:
-                description: The player's raw input text.
+                description: The turn's raw text.
                 type: str
                 nullable: false
-            turn:
-                description: The turn counter this command was captured on.
-                type: int
-                nullable: false
-    narration:
-        - description: Scratch component recording the World Soul's narration for a turn.
-            Written by ResolverAgentSystem onto the turn_log entity and read back
-            by ArchivistAgentSystem.
-        - component_type
-        - field:
-            text:
-                description: The World Soul's narration text.
+            type:
+                description: Who produced this input.
                 type: str
                 nullable: false
+                range:
+                    - player
+                    - agent
             turn:
-                description: The turn counter this narration was produced on.
+                description: The turn counter this input was produced on.
                 type: int
                 nullable: false
     active:
-        - description: Scratch tag component marking an entity as active (within
-            radius of the player) for a turn. Written by MapSystem onto the
-            turn_log entity, one instance per active entity.
+        - description: Tag component marking an entity as active (within radius of
+            the player) for the current turn. Written directly onto each active
+            entity by MapSystem, and removed once the entity falls out of range.
         - component_type
-        - field:
-            target:
-                description: Alias of the entity that is active.
-                type: str
-                nullable: false
-            kind:
-                description: Either "character" or "object".
-                type: str
-                nullable: false
-            label:
-                description: The active entity's interaction_type or object type.
-                type: str
-                nullable: false
-            turn:
-                description: The turn counter this tag applies to.
-                type: int
-                nullable: false

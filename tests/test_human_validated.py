@@ -1,6 +1,5 @@
 from story_simulator.interpreter import Interpreter
-from story_simulator.systems import EnsembleWorld
-from story_simulator.world import MirrorWorld
+from story_simulator.world import EnsembleWorld, MirrorWorld
 
 
 def test_startup_and_exit():
@@ -16,8 +15,8 @@ def test_startup_one_loop_save(tmp_path):
     """This test starts up an EnsembleWorld, and does a single
     loop, with the player character asking a simple question.
     This should trigger at least:
-    1. The WorldSoul agent responding to the player.
-    2. The Archivist transcribing entities described by the WorldSoul into iacs EC files, with the help of the iacs MCP.
+    1. The Resolver agent responding to the player.
+    2. The Archivist transcribing entities described by the Resolver into iacs EC files, with the help of the iacs MCP.
     """
 
     # Setup

@@ -1,6 +1,6 @@
-name: World Soul (Testing)
+name: Resolver (Testing)
 description: >-
-  Testing variant of the World Soul narrative agent, running on Claude Haiku
+  Testing variant of the Resolver narrative agent, running on Claude Haiku
   4.5 for fast/cheap iteration.
 model: claude-haiku-4-5
 # system prompt is intentionally omitted here — it's inherited from agent.yaml

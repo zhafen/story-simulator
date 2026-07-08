@@ -2,20 +2,17 @@
 
 Every turn, `EnsembleWorld` calls `step()` on each `System` in a fixed order.
 Systems never call each other directly or pass return values between one
-another; instead they communicate exclusively through the iacs `Architect`
-(`architect`), reading and writing entity-first YAML files under `save_dir`
-and reloading the registry via `architect.load_manifest(save_dir)`. Two
-scratch component types, `command` and `narration`, plus a tag component,
-`active`, carry each turn's ephemeral state (the player's raw input, the
-World Soul's narration, and which entities are currently near the player) on
-a dedicated `turn_log` entity, alongside the "real" entities (`player`,
-`door`, ...) that `ArchivistAgentSystem` transcribes into `world.yaml`.
+another; instead they communicate exclusively through the iacs `Architect`,
+reading and writing `world.yaml` (and reloading the registry via
+`architect.load_manifest(save_dir)`) so every value lives on the entity that
+produced it: the player entity owns `input` components (its own commands and
+the Resolver's narrated replies, distinguished by `type`), and each nearby
+character/object owns a bare `active` tag for the turn.
 """
 
 import asyncio
 import math
 from abc import ABC, abstractmethod
-from collections import OrderedDict
 from pathlib import Path
 
 import anthropic
@@ -24,13 +21,10 @@ from iacs.architect import Architect
 
 from story_simulator.config import resolve_anthropic_api_key
 from story_simulator.mcp_client import open_iacs_mcp_session
-from story_simulator.positions import get_labeled_positions
 from story_simulator.render import DEFAULT_RENDER_PATH, render_positions
 from story_simulator.world import AgentWorld, World
 
 WORLD_YAML_FILENAME = "world.yaml"
-TURN_LOG_FILENAME = "turn_log.yaml"
-TURN_LOG_ALIAS = "turn_log"
 MAX_ARCHIVIST_TOOL_TURNS = 8
 DEFAULT_ACTIVE_ENTITY_RADIUS = 20.0
 
@@ -39,25 +33,29 @@ TEST_ARCHIVIST_CONFIG_PATH = Path(__file__).parent / "archivist.test.yaml"
 
 
 class System(ABC):
-    """One stage of an EnsembleWorld turn.
-
-    `text` is the player's raw input for the turn; every System receives it
-    so the interface stays uniform, but only `InputSystem` actually uses it
-    (everyone downstream reads the `command` component it writes instead).
-    """
+    """One stage of an EnsembleWorld turn."""
 
     @abstractmethod
-    def step(self, architect: Architect, save_dir: Path | None, turn: int, text: str) -> None:
+    def step(self, architect: Architect, save_dir: Path | None, turn: int) -> None:
         raise NotImplementedError
 
 
 class InputSystem(System):
-    """Registers the player's raw input as a `command` component for the turn."""
+    """Registers the player's raw input as an `input` component on the player entity."""
 
-    def step(self, architect: Architect, save_dir: Path | None, turn: int, text: str) -> None:
-        if save_dir is None:
+    def __init__(self):
+        self._pending_text: str | None = None
+
+    def receive(self, text: str) -> None:
+        """Queue the player's raw text for the next step() call."""
+        self._pending_text = text
+
+    def step(self, architect: Architect, save_dir: Path | None, turn: int) -> None:
+        if save_dir is None or self._pending_text is None:
             return
-        _write_turn_component(save_dir, "command", {"text": text, "turn": turn})
+        alias = _ensure_player_alias(save_dir, architect)
+        _add_input(save_dir, alias, self._pending_text, "player", turn)
+        self._pending_text = None
 
 
 class AgentSystem(System, ABC):
@@ -69,77 +67,79 @@ class MapSystem(System):
 
     Reads the player's position as of the *previous* turn's recorded data
     (this System runs before `InputSystem`/`ResolverAgentSystem` each turn),
-    and writes an `active` component instance per nearby entity onto the
-    `turn_log` entity.
+    and adds/removes a bare `active` tag directly on each entity as it enters
+    or leaves range.
     """
 
     def __init__(self, radius: float = DEFAULT_ACTIVE_ENTITY_RADIUS):
         self.radius = radius
 
-    def step(self, architect: Architect, save_dir: Path | None, turn: int, text: str) -> None:
+    def step(self, architect: Architect, save_dir: Path | None, turn: int) -> None:
         if save_dir is None:
             return
-        player = self._find_player(architect)
+        player = _player_position(architect)
         if player is None:
             return
-        player_id, player_pos = player
-        tags = []
-        for kind, label_field in (("character", "interaction_type"), ("object", "type")):
-            for entity_id, label, pos in get_labeled_positions(architect, kind, label_field):
-                if entity_id == player_id:
-                    continue
-                if math.dist(pos, player_pos) <= self.radius:
-                    tags.append({"target": entity_id, "kind": kind, "label": label, "turn": turn})
-        _write_turn_components(save_dir, "active", tags)
+        player_alias, player_pos = player
 
-    @staticmethod
-    def _find_player(architect: Architect) -> tuple[str, tuple[float, float]] | None:
-        for entity_id, label, pos in get_labeled_positions(
-            architect, "character", "interaction_type"
-        ):
-            if label == "player":
-                return entity_id, pos
-        return None
+        active_aliases = set()
+        for component, label_field in (("character", "interaction_type"), ("object", "type")):
+            if component not in architect.registry.component_types:
+                continue
+            view = architect.view([f"{component}.{label_field}", "position.x", "position.y"])
+            try:
+                df = view.execute()
+            except KeyError:
+                continue
+            for _, row in df.iterrows():
+                alias = row["entity_id.alias"]
+                if alias == player_alias:
+                    continue
+                pos = (float(row["position.x"]), float(row["position.y"]))
+                if math.dist(pos, player_pos) <= self.radius:
+                    active_aliases.add(alias)
+
+        _sync_active_tags(save_dir, active_aliases)
 
 
 class ResolverAgentSystem(AgentSystem):
-    """Resolves what the player sees and what happens, via the World Soul agent.
+    """Resolves what the player sees and what happens, via the Resolver agent.
 
-    Reads the turn's `command` and `active` components from the registry,
+    Reads the turn's player input and active entities from the registry,
     prompts `world_soul` (an `AgentWorld` by default), and writes the result
-    back as the turn's `narration` component. Also keeps the response on
-    `last_response` so `EnsembleWorld.respond()` has something to return even
-    when there's no `save_dir` (and therefore no registry) to write through.
+    back as an agent-type `input` component on the player entity.
     """
 
     def __init__(self, world_soul: World | None = None):
         self.world_soul = world_soul or AgentWorld()
         self.last_response: str = ""
 
-    def step(self, architect: Architect, save_dir: Path | None, turn: int, text: str) -> None:
-        if save_dir is not None:
-            command_text = _latest_turn_value(save_dir, "command", turn) or text
-            active = _active_entities_for_turn(save_dir, turn)
-        else:
-            command_text = text
-            active = []
+    def step(self, architect: Architect, save_dir: Path | None, turn: int) -> None:
+        if save_dir is None:
+            return
+        command_text = _latest_input(save_dir, "player", turn)
+        if command_text is None:
+            return
 
-        response = self.world_soul.respond(_build_prompt(command_text, active))
+        active_aliases = _active_aliases(save_dir)
+        response = self.world_soul.respond(_build_prompt(command_text, active_aliases))
         self.last_response = response
 
-        if save_dir is not None:
-            _write_turn_component(save_dir, "narration", {"text": response, "turn": turn})
+        alias = _ensure_player_alias(save_dir, architect)
+        _add_input(save_dir, alias, response, "agent", turn)
 
 
 class ArchivistAgentSystem(AgentSystem):
-    """Transcribes a turn's command/narration exchange into iacs entity-first YAML.
+    """Transcribes a turn's input exchange into iacs entity-first YAML.
 
     Runs a local tool-use loop rather than the hosted Anthropic Agents/
     Sessions platform `AgentWorld` uses, because that hosted API only accepts
     MCP servers reachable by URL and can't attach the local stdio `iacs-mcp`
-    subprocess. The model is given the iacs MCP server's tools (describe_format,
-    validate_yaml, ...) plus two local, non-MCP tools for reading/writing the
-    world's save file, since no MCP tool writes new EC files.
+    subprocess. The tool loop is async because the `mcp` SDK's stdio
+    transport (`open_iacs_mcp_session`) is itself async-only. The model is
+    given the iacs MCP server's tools (describe_format, validate_yaml, ...)
+    plus two local, non-MCP tools for reading/writing the world's save file,
+    since no MCP tool writes new EC files.
     """
 
     def __init__(self, config_path: Path = PROD_ARCHIVIST_CONFIG_PATH):
@@ -150,12 +150,12 @@ class ArchivistAgentSystem(AgentSystem):
         self.model = config["model"]
         self.system = config["system"]
 
-    def step(self, architect: Architect, save_dir: Path | None, turn: int, text: str) -> None:
+    def step(self, architect: Architect, save_dir: Path | None, turn: int) -> None:
         if save_dir is None:
             return
-        command_text = _latest_turn_value(save_dir, "command", turn) or text
-        narration_text = _latest_turn_value(save_dir, "narration", turn)
-        if narration_text is None:
+        command_text = _latest_input(save_dir, "player", turn)
+        narration_text = _latest_input(save_dir, "agent", turn)
+        if command_text is None or narration_text is None:
             return
         save_dir = Path(save_dir)
         save_dir.mkdir(parents=True, exist_ok=True)
@@ -223,7 +223,7 @@ class VisualizerSystem(System):
     def __init__(self, render_path: Path = DEFAULT_RENDER_PATH):
         self.render_path = Path(render_path)
 
-    def step(self, architect: Architect, save_dir: Path | None, turn: int, text: str) -> None:
+    def step(self, architect: Architect, save_dir: Path | None, turn: int) -> None:
         if save_dir is None:
             return
         render_positions(architect, self.render_path)
@@ -257,123 +257,125 @@ _READ_WORLD_FILE_TOOL = {
 }
 
 
-def _read_turn_log(save_dir: Path) -> dict:
-    path = Path(save_dir) / TURN_LOG_FILENAME
+def _read_world_yaml(save_dir: Path) -> dict:
+    path = Path(save_dir) / WORLD_YAML_FILENAME
     if not path.exists():
         return {}
     return yaml.safe_load(path.read_text()) or {}
 
 
-def _write_turn_components(save_dir: Path, component: str, entries: list[dict]) -> None:
-    """Replace all `component` instances on the `turn_log` entity with `entries`."""
+def _write_world_yaml(save_dir: Path, data: dict) -> None:
     save_dir = Path(save_dir)
     save_dir.mkdir(parents=True, exist_ok=True)
-    data = _read_turn_log(save_dir)
-    kept = [
-        item
-        for item in data.get(TURN_LOG_ALIAS, [])
-        if not (isinstance(item, dict) and component in item)
-    ]
-    data[TURN_LOG_ALIAS] = kept + [{component: fields} for fields in entries]
-    (save_dir / TURN_LOG_FILENAME).write_text(yaml.safe_dump(data, sort_keys=False))
+    (save_dir / WORLD_YAML_FILENAME).write_text(yaml.safe_dump(data, sort_keys=False))
 
 
-def _write_turn_component(save_dir: Path, component: str, fields: dict) -> None:
-    _write_turn_components(save_dir, component, [fields])
+def _add_input(save_dir: Path, alias: str, text: str, type_: str, turn: int) -> None:
+    """Append an `input` component instance onto `alias`'s entity."""
+    data = _read_world_yaml(save_dir)
+    components = data.setdefault(alias, [])
+    components.append({"input": {"text": text, "type": type_, "turn": turn}})
+    _write_world_yaml(save_dir, data)
 
 
-def _load_turn_registry(save_dir: Path) -> Architect:
-    """Load a throwaway Architect scoped to `save_dir`'s current file contents.
+def _sync_active_tags(save_dir: Path, active_aliases: set[str]) -> None:
+    """Add/remove the bare `active` tag on each entity to match `active_aliases`."""
+    data = _read_world_yaml(save_dir)
+    for alias, components in data.items():
+        has_tag = "active" in components
+        should_have_tag = alias in active_aliases
+        if should_have_tag and not has_tag:
+            components.append("active")
+        elif not should_have_tag and has_tag:
+            components.remove("active")
+    _write_world_yaml(save_dir, data)
 
-    `command`/`narration`/`active` are ephemeral, single-turn values, so
-    reading them through a fresh Architect (rather than the long-lived one
-    EnsembleWorld keeps for "real" entities) avoids accumulating every past
-    turn's now-irrelevant rows into a permanently growing table.
+
+def _player_alias(architect: Architect) -> str | None:
+    """Return the current player entity's alias, or None if it doesn't exist yet."""
+    if "character" not in architect.registry.component_types:
+        return None
+    view = architect.view(["character.interaction_type"])
+    df = view.filter(view["character.interaction_type"] == "player").execute()
+    if df.empty:
+        return None
+    return df.iloc[0]["entity_id.alias"]
+
+
+def _player_position(architect: Architect) -> tuple[str, tuple[float, float]] | None:
+    """Return (alias, (x, y)) for the player entity, or None if not known yet."""
+    if "character" not in architect.registry.component_types:
+        return None
+    if "position" not in architect.registry.component_types:
+        return None
+    view = architect.view(["character.interaction_type", "position.x", "position.y"])
+    try:
+        df = view.filter(view["character.interaction_type"] == "player").execute()
+    except KeyError:
+        return None
+    if df.empty:
+        return None
+    row = df.iloc[0]
+    return row["entity_id.alias"], (float(row["position.x"]), float(row["position.y"]))
+
+
+def _ensure_player_alias(save_dir: Path, architect: Architect) -> str:
+    """Return the player entity's alias, seeding a minimal one if none exists yet.
+
+    On the very first turn there's no player entity for InputSystem/
+    ResolverAgentSystem to attach an `input` component to, since the
+    Archivist only creates one once it transcribes the first exchange. Seed
+    a bare `player` entity (matching the alias archivist.yaml already
+    instructs the Archivist to use) so `input` always has somewhere to live.
     """
-    return Architect.from_manifest(save_dir)
+    alias = _player_alias(architect)
+    if alias is not None:
+        return alias
+    data = _read_world_yaml(save_dir)
+    if "player" not in data:
+        data["player"] = [{"character": {"interaction_type": "player"}}]
+        _write_world_yaml(save_dir, data)
+        architect.load_manifest(save_dir)
+    return "player"
 
 
-def _latest_turn_value(save_dir: Path, component: str, turn: int) -> str | None:
-    """Return `component.text` for `turn`, or None if it hasn't been written yet.
+def _latest_input(save_dir: Path, type_: str, turn: int) -> str | None:
+    """Return the `type_`-authored input's text for `turn`, or None if not written yet.
+
+    Reads through a fresh, throwaway Architect scoped to `save_dir` rather
+    than the long-lived one EnsembleWorld keeps, so a same-turn write by an
+    earlier System (e.g. InputSystem, moments before ResolverAgentSystem
+    runs) is visible without reloading (and thereby accumulating history
+    into) the long-lived registry.
 
     Without a validated schema loaded, iacs keeps field values as raw
     strings rather than casting `turn` to int, so the comparison is done on
     the string form of `turn` to stay dtype-agnostic.
     """
-    registry = _load_turn_registry(save_dir)
-    try:
-        df = registry.view([f"{component}.text", f"{component}.turn"]).execute()
-    except KeyError:
+    registry = Architect.from_manifest(save_dir)
+    if "input" not in registry.registry.component_types:
         return None
-    matches = df[df[f"{component}.turn"].astype(str) == str(turn)]
+    i = registry.get("input")
+    df = i.filter(i.type == type_).execute()
+    matches = df[df["turn"].astype(str) == str(turn)]
     if matches.empty:
         return None
-    return matches.iloc[-1][f"{component}.text"]
+    return matches.iloc[-1]["text"]
 
 
-def _active_entities_for_turn(save_dir: Path, turn: int) -> list[dict]:
-    """Return {id, kind, label} for every entity tagged `active` this turn."""
-    registry = _load_turn_registry(save_dir)
-    try:
-        df = registry.view(
-            ["active.target", "active.kind", "active.label", "active.turn"]
-        ).execute()
-    except KeyError:
-        return []
-    matches = df[df["active.turn"].astype(str) == str(turn)]
-    return [
-        {"id": row["active.target"], "kind": row["active.kind"], "label": row["active.label"]}
-        for _, row in matches.iterrows()
-    ]
+def _active_aliases(save_dir: Path) -> set[str]:
+    """Return the aliases of every entity currently tagged `active`."""
+    registry = Architect.from_manifest(save_dir)
+    if "active" not in registry.registry.component_types:
+        return set()
+    view = registry.view("active")
+    df = view.execute()
+    return set(df["entity_id.alias"])
 
 
-def _build_prompt(text: str, active: list[dict]) -> str:
+def _build_prompt(text: str, active_aliases: set[str]) -> str:
     """Combine the player's input with the list of active entities."""
-    if not active:
+    if not active_aliases:
         return text
-    entities = ", ".join(f"{e['label']} ({e['kind']}: {e['id']})" for e in active)
+    entities = ", ".join(sorted(active_aliases))
     return f"Active entities nearby: {entities}\nPlayer input: {text}"
-
-
-class EnsembleWorld(World):
-    """A world simulated by an ordered pipeline of Systems.
-
-    Each turn, `respond()` runs every System in `systems` order against the
-    same iacs `Architect`: by default, `MapSystem` first tags entities near
-    the player as active (based on where the player ended up last turn),
-    `InputSystem` registers the player's new input, `ResolverAgentSystem`
-    narrates what happens, `ArchivistAgentSystem` transcribes the exchange
-    into `world.yaml`, and `VisualizerSystem` re-renders the position plot.
-    """
-
-    def __init__(
-        self,
-        systems: "OrderedDict[str, System] | None" = None,
-        save_dir: str | Path | None = None,
-        render_path: str | Path | None = None,
-    ):
-        self.save_dir = Path(save_dir) if save_dir is not None else None
-        self.architect = (
-            Architect.from_manifest(self.save_dir) if self.save_dir is not None else Architect()
-        )
-        self.turn = 0
-        self.systems = systems if systems is not None else self._default_systems(render_path)
-
-    @staticmethod
-    def _default_systems(render_path: str | Path | None) -> "OrderedDict[str, System]":
-        return OrderedDict(
-            map=MapSystem(),
-            input=InputSystem(),
-            resolver=ResolverAgentSystem(),
-            archivist=ArchivistAgentSystem(),
-            visualizer=VisualizerSystem(Path(render_path) if render_path else DEFAULT_RENDER_PATH),
-        )
-
-    def respond(self, text: str) -> str:
-        self.turn += 1
-        for system in self.systems.values():
-            system.step(self.architect, self.save_dir, self.turn, text)
-        resolver = next(
-            (s for s in self.systems.values() if isinstance(s, ResolverAgentSystem)), None
-        )
-        return resolver.last_response if resolver else ""

@@ -1,4 +1,3 @@
-from collections import OrderedDict
 from contextlib import asynccontextmanager
 from unittest.mock import MagicMock
 
@@ -8,15 +7,14 @@ from iacs.architect import Architect
 from story_simulator.systems import (
     AgentSystem,
     ArchivistAgentSystem,
-    EnsembleWorld,
     InputSystem,
     MapSystem,
     ResolverAgentSystem,
     System,
     VisualizerSystem,
     WORLD_YAML_FILENAME,
-    _active_entities_for_turn,
-    _latest_turn_value,
+    _active_aliases,
+    _latest_input,
 )
 from story_simulator.world import World
 
@@ -36,18 +34,31 @@ def test_agent_system_cannot_be_instantiated():
 # ---------------------------------------------------------------------------
 
 
-def test_input_system_writes_command_component(tmp_path):
+def test_input_system_writes_input_component_on_player_entity(tmp_path):
     save_dir = tmp_path / "save"
     architect = Architect()
 
-    InputSystem().step(architect, save_dir, turn=1, text="open the door")
+    input_system = InputSystem()
+    input_system.receive("open the door")
+    input_system.step(architect, save_dir, turn=1)
 
-    assert _latest_turn_value(save_dir, "command", turn=1) == "open the door"
+    assert _latest_input(save_dir, "player", turn=1) == "open the door"
+
+
+def test_input_system_does_nothing_without_pending_text(tmp_path):
+    save_dir = tmp_path / "save"
+    architect = Architect()
+
+    InputSystem().step(architect, save_dir, turn=1)
+
+    assert _latest_input(save_dir, "player", turn=1) is None
 
 
 def test_input_system_does_nothing_without_save_dir():
     architect = Architect()
-    InputSystem().step(architect, None, turn=1, text="open the door")
+    input_system = InputSystem()
+    input_system.receive("open the door")
+    input_system.step(architect, None, turn=1)
     # No exception, and nothing to assert against since there's no save_dir.
 
 
@@ -88,9 +99,9 @@ def test_map_system_does_nothing_without_player_data(tmp_path):
     save_dir = tmp_path / "save"
     architect = Architect()
 
-    MapSystem().step(architect, save_dir, turn=1, text="look around")
+    MapSystem().step(architect, save_dir, turn=1)
 
-    assert _active_entities_for_turn(save_dir, turn=1) == []
+    assert _active_aliases(save_dir) == set()
 
 
 def test_map_system_tags_entities_within_radius(tmp_path):
@@ -98,12 +109,9 @@ def test_map_system_tags_entities_within_radius(tmp_path):
     _write_world_yaml(save_dir, _SAMPLE_WORLD_YAML)
     architect = Architect.from_manifest(save_dir)
 
-    MapSystem(radius=10.0).step(architect, save_dir, turn=1, text="look around")
+    MapSystem(radius=10.0).step(architect, save_dir, turn=1)
 
-    active = _active_entities_for_turn(save_dir, turn=1)
-    assert {"id": "nearby_npc", "kind": "character", "label": "npc"} in active
-    assert not any(e["id"] == "distant_rock" for e in active)
-    assert not any(e["id"] == "player" for e in active)
+    assert _active_aliases(save_dir) == {"nearby_npc"}
 
 
 def test_map_system_excludes_entities_outside_radius(tmp_path):
@@ -111,9 +119,21 @@ def test_map_system_excludes_entities_outside_radius(tmp_path):
     _write_world_yaml(save_dir, _SAMPLE_WORLD_YAML)
     architect = Architect.from_manifest(save_dir)
 
-    MapSystem(radius=1.0).step(architect, save_dir, turn=1, text="look around")
+    MapSystem(radius=1.0).step(architect, save_dir, turn=1)
 
-    assert _active_entities_for_turn(save_dir, turn=1) == []
+    assert _active_aliases(save_dir) == set()
+
+
+def test_map_system_untags_entities_that_leave_radius(tmp_path):
+    save_dir = tmp_path / "save"
+    _write_world_yaml(save_dir, _SAMPLE_WORLD_YAML)
+    architect = Architect.from_manifest(save_dir)
+    MapSystem(radius=10.0).step(architect, save_dir, turn=1)
+    assert _active_aliases(save_dir) == {"nearby_npc"}
+
+    MapSystem(radius=1.0).step(architect, save_dir, turn=2)
+
+    assert _active_aliases(save_dir) == set()
 
 
 # ---------------------------------------------------------------------------
@@ -121,20 +141,22 @@ def test_map_system_excludes_entities_outside_radius(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-def test_resolver_agent_system_calls_world_soul_and_records_narration(tmp_path):
+def test_resolver_agent_system_calls_world_soul_and_records_reply(tmp_path):
     save_dir = tmp_path / "save"
     world_soul = MagicMock(spec=World)
     world_soul.respond.return_value = "the world responds"
 
     resolver = ResolverAgentSystem(world_soul=world_soul)
     architect = Architect()
-    InputSystem().step(architect, save_dir, turn=1, text="open the door")
+    input_system = InputSystem()
+    input_system.receive("open the door")
+    input_system.step(architect, save_dir, turn=1)
 
-    resolver.step(architect, save_dir, turn=1, text="open the door")
+    resolver.step(architect, save_dir, turn=1)
 
     world_soul.respond.assert_called_once_with("open the door")
     assert resolver.last_response == "the world responds"
-    assert _latest_turn_value(save_dir, "narration", turn=1) == "the world responds"
+    assert _latest_input(save_dir, "agent", turn=1) == "the world responds"
 
 
 def test_resolver_agent_system_includes_active_entities_in_prompt(tmp_path):
@@ -144,24 +166,32 @@ def test_resolver_agent_system_includes_active_entities_in_prompt(tmp_path):
     world_soul = MagicMock(spec=World)
     world_soul.respond.return_value = "the world responds"
 
-    MapSystem(radius=10.0).step(architect, save_dir, turn=1, text="look around")
-    InputSystem().step(architect, save_dir, turn=1, text="look around")
-    ResolverAgentSystem(world_soul=world_soul).step(architect, save_dir, turn=1, text="look around")
+    MapSystem(radius=10.0).step(architect, save_dir, turn=1)
+    input_system = InputSystem()
+    input_system.receive("look around")
+    input_system.step(architect, save_dir, turn=1)
+    ResolverAgentSystem(world_soul=world_soul).step(architect, save_dir, turn=1)
 
     prompt = world_soul.respond.call_args.args[0]
-    assert "nearby_npc" in prompt
-    assert prompt.endswith("Player input: look around")
+    assert prompt == "Active entities nearby: nearby_npc\nPlayer input: look around"
 
 
-def test_resolver_agent_system_works_without_save_dir():
+def test_resolver_agent_system_does_nothing_without_command(tmp_path):
+    save_dir = tmp_path / "save"
     world_soul = MagicMock(spec=World)
-    world_soul.respond.return_value = "the world responds"
+
+    ResolverAgentSystem(world_soul=world_soul).step(Architect(), save_dir, turn=1)
+
+    world_soul.respond.assert_not_called()
+
+
+def test_resolver_agent_system_does_nothing_without_save_dir():
+    world_soul = MagicMock(spec=World)
     resolver = ResolverAgentSystem(world_soul=world_soul)
 
-    resolver.step(Architect(), None, turn=1, text="open the door")
+    resolver.step(Architect(), None, turn=1)
 
-    world_soul.respond.assert_called_once_with("open the door")
-    assert resolver.last_response == "the world responds"
+    world_soul.respond.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
@@ -178,19 +208,26 @@ def _make_tool_use_block(tool_name, tool_input, block_id):
 def test_archivist_agent_system_does_nothing_without_narration(tmp_path):
     save_dir = tmp_path / "save"
     architect = Architect()
-    InputSystem().step(architect, save_dir, turn=1, text="open the door")
+    input_system = InputSystem()
+    input_system.receive("open the door")
+    input_system.step(architect, save_dir, turn=1)
+    world_yaml_before = (save_dir / WORLD_YAML_FILENAME).read_text()
 
-    ArchivistAgentSystem().step(architect, save_dir, turn=1, text="open the door")
+    ArchivistAgentSystem().step(architect, save_dir, turn=1)
 
-    assert not (save_dir / WORLD_YAML_FILENAME).exists()
+    # InputSystem seeds/writes world.yaml itself, but the Archivist's own
+    # LLM tool loop should never have run without a narration to transcribe.
+    assert (save_dir / WORLD_YAML_FILENAME).read_text() == world_yaml_before
 
 
 def test_archivist_agent_system_dispatches_mcp_and_local_tools(tmp_path, monkeypatch):
     save_dir = tmp_path / "save"
     architect = Architect()
-    InputSystem().step(architect, save_dir, turn=1, text="I look around")
+    input_system = InputSystem()
+    input_system.receive("I look around")
+    input_system.step(architect, save_dir, turn=1)
     ResolverAgentSystem(world_soul=MagicMock(respond=lambda text: "you see a door")).step(
-        architect, save_dir, turn=1, text="I look around"
+        architect, save_dir, turn=1
     )
 
     mcp_tool_use = _make_tool_use_block("describe_format", {}, "tool_1")
@@ -225,7 +262,7 @@ def test_archivist_agent_system_dispatches_mcp_and_local_tools(tmp_path, monkeyp
         "story_simulator.systems.open_iacs_mcp_session", fake_open_iacs_mcp_session
     )
 
-    ArchivistAgentSystem().step(architect, save_dir, turn=1, text="I look around")
+    ArchivistAgentSystem().step(architect, save_dir, turn=1)
 
     assert mcp_calls == [("describe_format", {})]
     assert (save_dir / WORLD_YAML_FILENAME).read_text() == "player:\n    - origin\n"
@@ -248,7 +285,7 @@ def test_visualizer_system_renders_positions(tmp_path, monkeypatch):
         "story_simulator.systems.render_positions", lambda a, p: calls.append((a, p))
     )
 
-    VisualizerSystem(render_path=render_path).step(architect, save_dir, turn=1, text="look")
+    VisualizerSystem(render_path=render_path).step(architect, save_dir, turn=1)
 
     assert calls == [(architect, render_path)]
 
@@ -259,95 +296,6 @@ def test_visualizer_system_does_nothing_without_save_dir(monkeypatch):
         "story_simulator.systems.render_positions", lambda a, p: calls.append((a, p))
     )
 
-    VisualizerSystem().step(Architect(), None, turn=1, text="look")
+    VisualizerSystem().step(Architect(), None, turn=1)
 
     assert calls == []
-
-
-# ---------------------------------------------------------------------------
-# EnsembleWorld
-# ---------------------------------------------------------------------------
-
-
-def test_ensemble_world_creates_an_architect_at_startup():
-    world = EnsembleWorld(systems=OrderedDict())
-    assert isinstance(world.architect, Architect)
-
-
-def test_ensemble_world_architect_loads_from_save_dir(tmp_path):
-    save_dir = tmp_path / "save"
-    _write_world_yaml(save_dir, "player:\n    - origin\n")
-
-    world = EnsembleWorld(systems=OrderedDict(), save_dir=save_dir)
-
-    assert world.architect.get("origin").count().execute() == 1
-
-
-def test_ensemble_world_default_systems_run_in_order(tmp_path):
-    world = EnsembleWorld(save_dir=tmp_path / "save")
-    assert list(world.systems) == ["map", "input", "resolver", "archivist", "visualizer"]
-    assert isinstance(world.systems["map"], MapSystem)
-    assert isinstance(world.systems["input"], InputSystem)
-    assert isinstance(world.systems["resolver"], ResolverAgentSystem)
-    assert isinstance(world.systems["archivist"], ArchivistAgentSystem)
-    assert isinstance(world.systems["visualizer"], VisualizerSystem)
-
-
-def test_ensemble_world_loops_over_all_systems_in_order():
-    calls = []
-
-    def _make_system(name):
-        system = MagicMock(spec=System)
-        system.step.side_effect = lambda *args: calls.append(name)
-        return system
-
-    systems = OrderedDict(a=_make_system("a"), b=_make_system("b"), c=_make_system("c"))
-    world = EnsembleWorld(systems=systems)
-
-    world.respond("open the door")
-
-    assert calls == ["a", "b", "c"]
-    for system in systems.values():
-        system.step.assert_called_once_with(world.architect, world.save_dir, 1, "open the door")
-
-
-def test_ensemble_world_returns_resolvers_last_response():
-    resolver = ResolverAgentSystem(world_soul=MagicMock(respond=lambda text: "the world responds"))
-    world = EnsembleWorld(systems=OrderedDict(resolver=resolver))
-
-    assert world.respond("open the door") == "the world responds"
-
-
-def test_ensemble_world_returns_empty_string_without_a_resolver():
-    world = EnsembleWorld(systems=OrderedDict())
-    assert world.respond("open the door") == ""
-
-
-def test_ensemble_world_full_turn_updates_active_entities_next_turn(tmp_path):
-    save_dir = tmp_path / "save"
-    world_soul = MagicMock(spec=World)
-    world_soul.respond.return_value = "the world responds"
-
-    def _record(architect, *_args):
-        _write_world_yaml(save_dir, _SAMPLE_WORLD_YAML)
-        architect.load_manifest(save_dir)
-
-    archivist = MagicMock(spec=System)
-    archivist.step.side_effect = _record
-
-    systems = OrderedDict(
-        map=MapSystem(radius=10.0),
-        input=InputSystem(),
-        resolver=ResolverAgentSystem(world_soul=world_soul),
-        archivist=archivist,
-    )
-    world = EnsembleWorld(systems=systems, save_dir=save_dir)
-
-    world.respond("look around")
-    world_soul.respond.assert_called_with("look around")
-
-    world.respond("say hello")
-
-    prompt = world_soul.respond.call_args.args[0]
-    assert "nearby_npc" in prompt
-    assert prompt.endswith("Player input: say hello")

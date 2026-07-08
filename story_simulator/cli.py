@@ -5,8 +5,7 @@ from dotenv import load_dotenv
 
 from story_simulator.config import TEST_AGENT_ID
 from story_simulator.interpreter import Interpreter
-from story_simulator.systems import EnsembleWorld
-from story_simulator.world import AgentWorld, MirrorWorld, TEST_AGENT_CONFIG_PATH
+from story_simulator.world import AgentWorld, EnsembleWorld, MirrorWorld, TEST_AGENT_CONFIG_PATH
 
 BANNER = "story-simulator REPL. Type /quit to exit."
 

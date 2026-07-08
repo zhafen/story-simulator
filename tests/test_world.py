@@ -1,8 +1,20 @@
+from collections import OrderedDict
 from unittest.mock import MagicMock
 
 import pytest
+from iacs.architect import Architect
 
-from story_simulator.world import AgentWorld, World, MirrorWorld
+from story_simulator.systems import (
+    ArchivistAgentSystem,
+    InputSystem,
+    MapSystem,
+    ResolverAgentSystem,
+    System,
+    VisualizerSystem,
+    WORLD_YAML_FILENAME,
+    _latest_input,
+)
+from story_simulator.world import AgentWorld, EnsembleWorld, World, MirrorWorld
 
 
 def test_base_world_cannot_be_instantiated():
@@ -109,3 +121,138 @@ def test_agent_world_inherits_system_from_prod_config_when_omitted(tmp_path, mon
         system="Shared instructions.",
         tools=[],
     )
+
+
+# ---------------------------------------------------------------------------
+# EnsembleWorld
+# ---------------------------------------------------------------------------
+
+
+def _write_world_yaml(save_dir, content):
+    save_dir.mkdir(parents=True, exist_ok=True)
+    (save_dir / WORLD_YAML_FILENAME).write_text(content)
+
+
+_SAMPLE_WORLD_YAML = """
+player:
+    - character:
+        interaction_type: player
+    - position:
+        x: 0.0
+        y: 0.0
+
+nearby_npc:
+    - character:
+        interaction_type: npc
+    - position:
+        x: 3.0
+        y: 4.0
+"""
+
+
+def test_ensemble_world_creates_an_architect_at_startup():
+    world = EnsembleWorld(systems=OrderedDict())
+    assert isinstance(world.architect, Architect)
+
+
+def test_ensemble_world_architect_loads_from_save_dir(tmp_path):
+    save_dir = tmp_path / "save"
+    _write_world_yaml(save_dir, "player:\n    - origin\n")
+
+    world = EnsembleWorld(systems=OrderedDict(), save_dir=save_dir)
+
+    assert world.architect.get("origin").count().execute() == 1
+
+
+def test_ensemble_world_default_systems_run_in_order(tmp_path):
+    world = EnsembleWorld(save_dir=tmp_path / "save")
+    assert list(world.systems) == ["map", "input", "resolver", "archivist", "visualizer"]
+    assert isinstance(world.systems["map"], MapSystem)
+    assert isinstance(world.systems["input"], InputSystem)
+    assert isinstance(world.systems["resolver"], ResolverAgentSystem)
+    assert isinstance(world.systems["archivist"], ArchivistAgentSystem)
+    assert isinstance(world.systems["visualizer"], VisualizerSystem)
+
+
+def test_ensemble_world_loops_over_all_systems_in_order():
+    calls = []
+
+    def _make_system(name):
+        system = MagicMock(spec=System)
+        system.step.side_effect = lambda *args: calls.append(name)
+        return system
+
+    systems = OrderedDict(a=_make_system("a"), b=_make_system("b"), c=_make_system("c"))
+    world = EnsembleWorld(systems=systems)
+
+    world.respond("open the door")
+
+    assert calls == ["a", "b", "c"]
+    for system in systems.values():
+        system.step.assert_called_once_with(world.architect, world.save_dir, 1)
+
+
+def test_ensemble_world_forwards_text_to_input_system(tmp_path):
+    input_system = InputSystem()
+    world = EnsembleWorld(systems=OrderedDict(input=input_system), save_dir=tmp_path / "save")
+
+    world.respond("open the door")
+
+    assert input_system._pending_text is None  # consumed by step()
+    assert _latest_input(world.save_dir, "player", turn=1) == "open the door"
+
+
+def test_ensemble_world_returns_resolvers_last_response(tmp_path):
+    world = EnsembleWorld(
+        systems=OrderedDict(
+            input=InputSystem(),
+            resolver=ResolverAgentSystem(
+                world_soul=MagicMock(respond=lambda text: "the world responds")
+            ),
+        ),
+        save_dir=tmp_path / "save",
+    )
+
+    assert world.respond("open the door") == "the world responds"
+
+
+def test_ensemble_world_returns_empty_string_without_save_dir():
+    resolver = ResolverAgentSystem(world_soul=MagicMock(respond=lambda text: "the world responds"))
+    world = EnsembleWorld(systems=OrderedDict(input=InputSystem(), resolver=resolver))
+
+    assert world.respond("open the door") == ""
+
+
+def test_ensemble_world_returns_empty_string_without_a_resolver():
+    world = EnsembleWorld(systems=OrderedDict())
+    assert world.respond("open the door") == ""
+
+
+def test_ensemble_world_full_turn_updates_active_entities_next_turn(tmp_path):
+    save_dir = tmp_path / "save"
+    world_soul = MagicMock(spec=World)
+    world_soul.respond.return_value = "the world responds"
+
+    def _record(architect, *_args):
+        _write_world_yaml(save_dir, _SAMPLE_WORLD_YAML)
+        architect.load_manifest(save_dir)
+
+    archivist = MagicMock(spec=System)
+    archivist.step.side_effect = _record
+
+    systems = OrderedDict(
+        map=MapSystem(radius=10.0),
+        input=InputSystem(),
+        resolver=ResolverAgentSystem(world_soul=world_soul),
+        archivist=archivist,
+    )
+    world = EnsembleWorld(systems=systems, save_dir=save_dir)
+
+    world.respond("look around")
+    world_soul.respond.assert_called_with("look around")
+
+    world.respond("say hello")
+
+    prompt = world_soul.respond.call_args.args[0]
+    assert "nearby_npc" in prompt
+    assert prompt.endswith("Player input: say hello")

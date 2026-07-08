@@ -1,8 +1,10 @@
 from abc import ABC, abstractmethod
+from collections import OrderedDict
 from pathlib import Path
 
 import anthropic
 import yaml
+from iacs.architect import Architect
 
 from story_simulator.config import ENVIRONMENT_ID, PROD_AGENT_ID, resolve_anthropic_api_key
 
@@ -85,3 +87,69 @@ class AgentWorld(World):
                 if event.stop_reason.type != "requires_action":
                     break
         return "".join(text_parts)
+
+
+class EnsembleWorld(World):
+    """A world simulated by an ordered pipeline of Systems.
+
+    Each turn, `respond()` runs every System in `systems` order against the
+    same iacs `Architect`: by default, `MapSystem` first tags entities near
+    the player as active (based on where the player ended up last turn),
+    `InputSystem` registers the player's new input, `ResolverAgentSystem`
+    narrates what happens, `ArchivistAgentSystem` transcribes the exchange
+    into `world.yaml`, and `VisualizerSystem` re-renders the position plot.
+
+    Defined here (with the System classes imported lazily) rather than in
+    story_simulator.systems, since systems.py itself needs `World`/
+    `AgentWorld` from this module for `ResolverAgentSystem`'s default agent.
+    """
+
+    def __init__(
+        self,
+        systems: "OrderedDict[str, object] | None" = None,
+        save_dir: str | Path | None = None,
+        render_path: str | Path | None = None,
+    ):
+        self.save_dir = Path(save_dir) if save_dir is not None else None
+        self.architect = (
+            Architect.from_manifest(self.save_dir) if self.save_dir is not None else Architect()
+        )
+        self.turn = 0
+        self.systems = systems if systems is not None else self._default_systems(render_path)
+
+    @staticmethod
+    def _default_systems(render_path: str | Path | None) -> "OrderedDict[str, object]":
+        from story_simulator.render import DEFAULT_RENDER_PATH
+        from story_simulator.systems import (
+            ArchivistAgentSystem,
+            InputSystem,
+            MapSystem,
+            ResolverAgentSystem,
+            VisualizerSystem,
+        )
+
+        return OrderedDict(
+            map=MapSystem(),
+            input=InputSystem(),
+            resolver=ResolverAgentSystem(),
+            archivist=ArchivistAgentSystem(),
+            visualizer=VisualizerSystem(Path(render_path) if render_path else DEFAULT_RENDER_PATH),
+        )
+
+    def respond(self, text: str) -> str:
+        from story_simulator.systems import InputSystem, ResolverAgentSystem
+
+        self.turn += 1
+        input_system = next(
+            (s for s in self.systems.values() if isinstance(s, InputSystem)), None
+        )
+        if input_system is not None:
+            input_system.receive(text)
+
+        for system in self.systems.values():
+            system.step(self.architect, self.save_dir, self.turn)
+
+        resolver = next(
+            (s for s in self.systems.values() if isinstance(s, ResolverAgentSystem)), None
+        )
+        return resolver.last_response if resolver else ""

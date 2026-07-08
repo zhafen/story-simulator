@@ -15,4 +15,7 @@ dependencies = [
 ]
 
 [tool.uv.sources]
-iacs = { git = "https://github.com/zhafen/iacs" }
+iacs = { path = "iacs", editable = true }
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

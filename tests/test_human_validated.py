@@ -31,7 +31,7 @@ def test_startup_one_loop_save(tmp_path):
     # In the base scenario, there should be the following entities:
     # The player, with at least a position component and a player_character component
     # The door, with at least a position component
-    a = w.architect
+    a = w.registry
     # At least two positions
     assert a.get("position").count().execute() >= 2
     # One origin

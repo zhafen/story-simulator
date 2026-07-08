@@ -1,12 +1,15 @@
 from contextlib import asynccontextmanager
 from unittest.mock import MagicMock
 
+import ibis
 import pytest
-from iacs.architect import Architect
+from iacs.etl_system import ETLSystem
+from iacs.registry import Registry
 
 from story_simulator.systems import (
     AgentSystem,
     ArchivistAgentSystem,
+    EtlLoaderSystem,
     InputSystem,
     MapSystem,
     ResolverAgentSystem,
@@ -16,7 +19,12 @@ from story_simulator.systems import (
     _active_aliases,
     _add_input,
     _latest_input,
+    _load_manifest_registry,
 )
+
+
+def _empty_registry() -> Registry:
+    return Registry(ibis.duckdb.connect(), {})
 
 
 def _make_mock_client(session_id, events):
@@ -50,35 +58,91 @@ def test_agent_system_cannot_be_instantiated():
 
 
 # ---------------------------------------------------------------------------
+# EtlLoaderSystem
+# ---------------------------------------------------------------------------
+
+
+def test_etl_loader_system_loads_pre_existing_save_files(tmp_path):
+    save_dir = tmp_path / "save"
+    _write_world_yaml(save_dir, "player:\n    - origin\n")
+    registry = _empty_registry()
+    etl = ETLSystem()
+
+    EtlLoaderSystem().step(registry, etl, save_dir, turn=1)
+
+    assert registry.get("origin").count().execute() == 1
+
+
+def test_etl_loader_system_does_nothing_without_save_dir():
+    registry = _empty_registry()
+    etl = ETLSystem()
+
+    EtlLoaderSystem().step(registry, etl, None, turn=1)
+    # No exception, and nothing to assert against since there's no save_dir.
+
+
+def test_etl_loader_system_does_not_reload_an_already_loaded_file(tmp_path):
+    save_dir = tmp_path / "save"
+    _write_world_yaml(save_dir, "player:\n    - origin\n")
+    registry = _empty_registry()
+    etl = ETLSystem()
+    loader = EtlLoaderSystem()
+
+    loader.step(registry, etl, save_dir, turn=1)
+    (save_dir / WORLD_YAML_FILENAME).write_text("player:\n    - origin\n    - origin\n")
+    loader.step(registry, etl, save_dir, turn=2)
+
+    # Only the first load counted; the on-disk change on turn 2 isn't rescanned.
+    assert registry.get("origin").count().execute() == 1
+
+
+def test_etl_loader_system_loads_a_new_file_discovered_later(tmp_path):
+    save_dir = tmp_path / "save"
+    _write_world_yaml(save_dir, "player:\n    - origin\n")
+    registry = _empty_registry()
+    etl = ETLSystem()
+    loader = EtlLoaderSystem()
+
+    loader.step(registry, etl, save_dir, turn=1)
+    (save_dir / "extra.yaml").write_text("visitor:\n    - origin\n")
+    loader.step(registry, etl, save_dir, turn=2)
+
+    assert registry.get("origin").count().execute() == 2
+
+
+# ---------------------------------------------------------------------------
 # InputSystem
 # ---------------------------------------------------------------------------
 
 
 def test_input_system_writes_input_component_on_player_entity(tmp_path):
     save_dir = tmp_path / "save"
-    architect = Architect()
+    registry = _empty_registry()
+    etl = ETLSystem()
 
     input_system = InputSystem()
     input_system.receive("open the door")
-    input_system.step(architect, save_dir, turn=1)
+    input_system.step(registry, etl, save_dir, turn=1)
 
     assert _latest_input(save_dir, "player", turn=1) == "open the door"
 
 
 def test_input_system_does_nothing_without_pending_text(tmp_path):
     save_dir = tmp_path / "save"
-    architect = Architect()
+    registry = _empty_registry()
+    etl = ETLSystem()
 
-    InputSystem().step(architect, save_dir, turn=1)
+    InputSystem().step(registry, etl, save_dir, turn=1)
 
     assert _latest_input(save_dir, "player", turn=1) is None
 
 
 def test_input_system_does_nothing_without_save_dir():
-    architect = Architect()
+    registry = _empty_registry()
+    etl = ETLSystem()
     input_system = InputSystem()
     input_system.receive("open the door")
-    input_system.step(architect, None, turn=1)
+    input_system.step(registry, etl, None, turn=1)
     # No exception, and nothing to assert against since there's no save_dir.
 
 
@@ -117,9 +181,10 @@ def _write_world_yaml(save_dir, content):
 
 def test_map_system_does_nothing_without_player_data(tmp_path):
     save_dir = tmp_path / "save"
-    architect = Architect()
+    registry = _empty_registry()
+    etl = ETLSystem()
 
-    MapSystem().step(architect, save_dir, turn=1)
+    MapSystem().step(registry, etl, save_dir, turn=1)
 
     assert _active_aliases(save_dir) == set()
 
@@ -127,9 +192,9 @@ def test_map_system_does_nothing_without_player_data(tmp_path):
 def test_map_system_tags_entities_within_radius(tmp_path):
     save_dir = tmp_path / "save"
     _write_world_yaml(save_dir, _SAMPLE_WORLD_YAML)
-    architect = Architect.from_manifest(save_dir)
+    registry = _load_manifest_registry(save_dir)
 
-    MapSystem(radius=10.0).step(architect, save_dir, turn=1)
+    MapSystem(radius=10.0).step(registry, ETLSystem(), save_dir, turn=1)
 
     assert _active_aliases(save_dir) == {"nearby_npc"}
 
@@ -137,9 +202,9 @@ def test_map_system_tags_entities_within_radius(tmp_path):
 def test_map_system_excludes_entities_outside_radius(tmp_path):
     save_dir = tmp_path / "save"
     _write_world_yaml(save_dir, _SAMPLE_WORLD_YAML)
-    architect = Architect.from_manifest(save_dir)
+    registry = _load_manifest_registry(save_dir)
 
-    MapSystem(radius=1.0).step(architect, save_dir, turn=1)
+    MapSystem(radius=1.0).step(registry, ETLSystem(), save_dir, turn=1)
 
     assert _active_aliases(save_dir) == set()
 
@@ -147,11 +212,12 @@ def test_map_system_excludes_entities_outside_radius(tmp_path):
 def test_map_system_untags_entities_that_leave_radius(tmp_path):
     save_dir = tmp_path / "save"
     _write_world_yaml(save_dir, _SAMPLE_WORLD_YAML)
-    architect = Architect.from_manifest(save_dir)
-    MapSystem(radius=10.0).step(architect, save_dir, turn=1)
+    registry = _load_manifest_registry(save_dir)
+    etl = ETLSystem()
+    MapSystem(radius=10.0).step(registry, etl, save_dir, turn=1)
     assert _active_aliases(save_dir) == {"nearby_npc"}
 
-    MapSystem(radius=1.0).step(architect, save_dir, turn=2)
+    MapSystem(radius=1.0).step(registry, etl, save_dir, turn=2)
 
     assert _active_aliases(save_dir) == set()
 
@@ -167,12 +233,13 @@ def test_resolver_agent_system_calls_agent_and_records_reply(tmp_path, monkeypat
     monkeypatch.setattr("story_simulator.systems.anthropic.Anthropic", lambda **kwargs: mock_client)
 
     resolver = ResolverAgentSystem()
-    architect = Architect()
+    registry = _empty_registry()
+    etl = ETLSystem()
     input_system = InputSystem()
     input_system.receive("open the door")
-    input_system.step(architect, save_dir, turn=1)
+    input_system.step(registry, etl, save_dir, turn=1)
 
-    resolver.step(architect, save_dir, turn=1)
+    resolver.step(registry, etl, save_dir, turn=1)
 
     assert _sent_text(mock_client) == "open the door"
     assert resolver.last_response == "hello back"
@@ -182,15 +249,16 @@ def test_resolver_agent_system_calls_agent_and_records_reply(tmp_path, monkeypat
 def test_resolver_agent_system_includes_active_entities_in_prompt(tmp_path, monkeypatch):
     save_dir = tmp_path / "save"
     _write_world_yaml(save_dir, _SAMPLE_WORLD_YAML)
-    architect = Architect.from_manifest(save_dir)
+    registry = _load_manifest_registry(save_dir)
+    etl = ETLSystem()
     mock_client = _make_mock_client("sesn_test123", events=None)
     monkeypatch.setattr("story_simulator.systems.anthropic.Anthropic", lambda **kwargs: mock_client)
 
-    MapSystem(radius=10.0).step(architect, save_dir, turn=1)
+    MapSystem(radius=10.0).step(registry, etl, save_dir, turn=1)
     input_system = InputSystem()
     input_system.receive("look around")
-    input_system.step(architect, save_dir, turn=1)
-    ResolverAgentSystem().step(architect, save_dir, turn=1)
+    input_system.step(registry, etl, save_dir, turn=1)
+    ResolverAgentSystem().step(registry, etl, save_dir, turn=1)
 
     assert _sent_text(mock_client) == "Active entities nearby: nearby_npc\nPlayer input: look around"
 
@@ -200,7 +268,7 @@ def test_resolver_agent_system_does_nothing_without_command(tmp_path, monkeypatc
     mock_client = _make_mock_client("sesn_test123", events=None)
     monkeypatch.setattr("story_simulator.systems.anthropic.Anthropic", lambda **kwargs: mock_client)
 
-    ResolverAgentSystem().step(Architect(), save_dir, turn=1)
+    ResolverAgentSystem().step(_empty_registry(), ETLSystem(), save_dir, turn=1)
 
     mock_client.beta.sessions.create.assert_not_called()
 
@@ -210,7 +278,7 @@ def test_resolver_agent_system_does_nothing_without_save_dir(monkeypatch):
     monkeypatch.setattr("story_simulator.systems.anthropic.Anthropic", lambda **kwargs: mock_client)
     resolver = ResolverAgentSystem()
 
-    resolver.step(Architect(), None, turn=1)
+    resolver.step(_empty_registry(), ETLSystem(), None, turn=1)
 
     mock_client.beta.sessions.create.assert_not_called()
 
@@ -228,13 +296,14 @@ def _make_tool_use_block(tool_name, tool_input, block_id):
 
 def test_archivist_agent_system_does_nothing_without_narration(tmp_path):
     save_dir = tmp_path / "save"
-    architect = Architect()
+    registry = _empty_registry()
+    etl = ETLSystem()
     input_system = InputSystem()
     input_system.receive("open the door")
-    input_system.step(architect, save_dir, turn=1)
+    input_system.step(registry, etl, save_dir, turn=1)
     world_yaml_before = (save_dir / WORLD_YAML_FILENAME).read_text()
 
-    ArchivistAgentSystem().step(architect, save_dir, turn=1)
+    ArchivistAgentSystem().step(registry, etl, save_dir, turn=1)
 
     # InputSystem seeds/writes world.yaml itself, but the Archivist's own
     # LLM tool loop should never have run without a narration to transcribe.
@@ -243,10 +312,11 @@ def test_archivist_agent_system_does_nothing_without_narration(tmp_path):
 
 def test_archivist_agent_system_dispatches_mcp_and_local_tools(tmp_path, monkeypatch):
     save_dir = tmp_path / "save"
-    architect = Architect()
+    registry = _empty_registry()
+    etl = ETLSystem()
     input_system = InputSystem()
     input_system.receive("I look around")
-    input_system.step(architect, save_dir, turn=1)
+    input_system.step(registry, etl, save_dir, turn=1)
     _add_input(save_dir, "player", "you see a door", "agent", 1)
 
     mcp_tool_use = _make_tool_use_block("describe_format", {}, "tool_1")
@@ -281,12 +351,14 @@ def test_archivist_agent_system_dispatches_mcp_and_local_tools(tmp_path, monkeyp
         "story_simulator.systems.open_iacs_mcp_session", fake_open_iacs_mcp_session
     )
 
-    ArchivistAgentSystem().step(architect, save_dir, turn=1)
+    ArchivistAgentSystem().step(registry, etl, save_dir, turn=1)
 
     assert mcp_calls == [("describe_format", {})]
     assert (save_dir / WORLD_YAML_FILENAME).read_text() == "player:\n    - origin\n"
     assert mock_client.messages.create.call_count == 3
-    assert architect.get("origin").count().execute() == 1
+    # The written content was fed straight to ETLSystem and merged in,
+    # without rereading save_dir from disk.
+    assert registry.get("origin").count().execute() == 1
 
 
 # ---------------------------------------------------------------------------
@@ -297,10 +369,10 @@ def test_archivist_agent_system_dispatches_mcp_and_local_tools(tmp_path, monkeyp
 def test_visualizer_system_renders_positions(tmp_path):
     save_dir = tmp_path / "save"
     _write_world_yaml(save_dir, _SAMPLE_WORLD_YAML)
-    architect = Architect.from_manifest(save_dir)
+    registry = _load_manifest_registry(save_dir)
     render_path = tmp_path / "render.svg"
 
-    VisualizerSystem(render_path=render_path).step(architect, save_dir, turn=1)
+    VisualizerSystem(render_path=render_path).step(registry, ETLSystem(), save_dir, turn=1)
 
     assert render_path.exists()
     assert "nearby_npc" in render_path.read_text()
@@ -310,7 +382,7 @@ def test_visualizer_system_renders_without_crashing_when_no_positions_exist(tmp_
     save_dir = tmp_path / "save"
     render_path = tmp_path / "render.svg"
 
-    VisualizerSystem(render_path=render_path).step(Architect(), save_dir, turn=1)
+    VisualizerSystem(render_path=render_path).step(_empty_registry(), ETLSystem(), save_dir, turn=1)
 
     assert render_path.exists()
 
@@ -318,6 +390,6 @@ def test_visualizer_system_renders_without_crashing_when_no_positions_exist(tmp_
 def test_visualizer_system_does_nothing_without_save_dir(tmp_path):
     render_path = tmp_path / "render.svg"
 
-    VisualizerSystem(render_path=render_path).step(Architect(), None, turn=1)
+    VisualizerSystem(render_path=render_path).step(_empty_registry(), ETLSystem(), None, turn=1)
 
     assert not render_path.exists()

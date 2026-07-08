@@ -2,10 +2,12 @@ from collections import OrderedDict
 from unittest.mock import MagicMock
 
 import pytest
-from iacs.architect import Architect
+from iacs.etl_system import ETLSystem
+from iacs.registry import Registry
 
 from story_simulator.systems import (
     ArchivistAgentSystem,
+    EtlLoaderSystem,
     InputSystem,
     MapSystem,
     ResolverAgentSystem,
@@ -13,6 +15,7 @@ from story_simulator.systems import (
     VisualizerSystem,
     WORLD_YAML_FILENAME,
     _latest_input,
+    _merge_yaml_string,
 )
 from story_simulator.world import AgentWorld, EnsembleWorld, World, MirrorWorld
 
@@ -150,23 +153,29 @@ nearby_npc:
 """
 
 
-def test_ensemble_world_creates_an_architect_at_startup():
+def test_ensemble_world_creates_an_empty_registry_and_etl_at_startup():
     world = EnsembleWorld(systems=OrderedDict())
-    assert isinstance(world.architect, Architect)
+    assert isinstance(world.registry, Registry)
+    assert isinstance(world.etl, ETLSystem)
+    assert world.registry.component_types == []
 
 
-def test_ensemble_world_architect_loads_from_save_dir(tmp_path):
+def test_ensemble_world_loads_save_dir_on_first_turn_via_etl_loader(tmp_path):
     save_dir = tmp_path / "save"
     _write_world_yaml(save_dir, "player:\n    - origin\n")
 
-    world = EnsembleWorld(systems=OrderedDict(), save_dir=save_dir)
+    world = EnsembleWorld(systems=OrderedDict(etl_loader=EtlLoaderSystem()), save_dir=save_dir)
+    world.respond("look around")
 
-    assert world.architect.get("origin").count().execute() == 1
+    assert world.registry.get("origin").count().execute() == 1
 
 
 def test_ensemble_world_default_systems_run_in_order(tmp_path):
     world = EnsembleWorld(save_dir=tmp_path / "save")
-    assert list(world.systems) == ["map", "input", "resolver", "archivist", "visualizer"]
+    assert list(world.systems) == [
+        "etl_loader", "map", "input", "resolver", "archivist", "visualizer"
+    ]
+    assert isinstance(world.systems["etl_loader"], EtlLoaderSystem)
     assert isinstance(world.systems["map"], MapSystem)
     assert isinstance(world.systems["input"], InputSystem)
     assert isinstance(world.systems["resolver"], ResolverAgentSystem)
@@ -189,7 +198,7 @@ def test_ensemble_world_loops_over_all_systems_in_order():
 
     assert calls == ["a", "b", "c"]
     for system in systems.values():
-        system.step.assert_called_once_with(world.architect, world.save_dir, 1)
+        system.step.assert_called_once_with(world.registry, world.etl, world.save_dir, 1)
 
 
 def test_ensemble_world_forwards_text_to_input_system(tmp_path):
@@ -235,9 +244,9 @@ def test_ensemble_world_full_turn_updates_active_entities_next_turn(tmp_path, mo
     mock_client = _make_mock_client("sesn_test123", events=None)
     monkeypatch.setattr("story_simulator.systems.anthropic.Anthropic", lambda **kwargs: mock_client)
 
-    def _record(architect, *_args):
+    def _record(registry, etl, *_args):
         _write_world_yaml(save_dir, _SAMPLE_WORLD_YAML)
-        architect.load_manifest(save_dir)
+        _merge_yaml_string(registry, etl, "archivist", _SAMPLE_WORLD_YAML)
 
     archivist = MagicMock(spec=System)
     archivist.step.side_effect = _record

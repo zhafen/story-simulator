@@ -2,12 +2,14 @@
 
 Every turn, `EnsembleWorld` calls `step()` on each `System` in a fixed order.
 Systems never call each other directly or pass return values between one
-another; instead they communicate exclusively through the iacs `Architect`,
-reading and writing `world.yaml` (and reloading the registry via
-`architect.load_manifest(save_dir)`) so every value lives on the entity that
-produced it: the player entity owns `input` components (its own commands and
-the Resolver's narrated replies, distinguished by `type`), and each nearby
-character/object owns a bare `active` tag for the turn.
+another; instead they communicate through the iacs `Registry` (a shared,
+long-lived object every System mutates via `registry.merge(...)`) and
+`world.yaml` on disk, so every value lives on the entity that produced it:
+the player entity owns `input` components (its own commands and the
+Resolver's narrated replies, distinguished by `type`), and each nearby
+character/object owns a bare `active` tag for the turn. `EtlLoaderSystem`
+runs first each turn to pick up any EC files in `save_dir` that nothing has
+fed into the registry yet.
 """
 
 import asyncio
@@ -18,7 +20,9 @@ from pathlib import Path
 import anthropic
 import matplotlib
 import yaml
-from iacs.architect import Architect
+from iacs.dataflows import base_etl
+from iacs.etl_system import ETLSystem
+from iacs.registry import Registry
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -30,6 +34,7 @@ WORLD_YAML_FILENAME = "world.yaml"
 MAX_ARCHIVIST_TOOL_TURNS = 8
 DEFAULT_ACTIVE_ENTITY_RADIUS = 20.0
 DEFAULT_RENDER_PATH = Path("render.svg")
+EC_FILE_GLOBS = ("*.yaml", "*.yml", "*.py", "*.csv")
 
 PROD_AGENT_CONFIG_PATH = Path(__file__).parent / "agent.yaml"
 PROD_ARCHIVIST_CONFIG_PATH = Path(__file__).parent / "archivist.yaml"
@@ -40,8 +45,40 @@ class System(ABC):
     """One stage of an EnsembleWorld turn."""
 
     @abstractmethod
-    def step(self, architect: Architect, save_dir: Path | None, turn: int) -> None:
+    def step(self, registry: Registry, etl: ETLSystem, save_dir: Path | None, turn: int) -> None:
         raise NotImplementedError
+
+
+class EtlLoaderSystem(System):
+    """Loads any not-yet-loaded EC files from `save_dir` into the registry.
+
+    Runs first each turn so every other System sees the latest on-disk
+    state. Tracks every file path already merged in `loaded_files`, so a
+    file is loaded exactly once: later edits to an already-loaded file (e.g.
+    `world.yaml`, which `ArchivistAgentSystem` keeps rewriting) reach the
+    registry directly via that System's own `ETLSystem` merge rather than by
+    rescanning here. This System exists to pick up files nothing else has
+    fed in yet, such as a save directory's pre-existing `world.yaml` on
+    startup, or a new file dropped into `save_dir` mid-game.
+    """
+
+    def __init__(self):
+        self.loaded_files: set[Path] = set()
+
+    def step(self, registry: Registry, etl: ETLSystem, save_dir: Path | None, turn: int) -> None:
+        if save_dir is None:
+            return
+        save_dir = Path(save_dir)
+        if not save_dir.exists():
+            return
+        found = {f for pattern in EC_FILE_GLOBS for f in save_dir.rglob(pattern)}
+        new_files = sorted(found - self.loaded_files)
+        if not new_files:
+            return
+        new_registry = etl.execute(base_etl, input_dirs=[str(f) for f in new_files])
+        registry.merge(new_registry)
+        new_registry.close()
+        self.loaded_files.update(new_files)
 
 
 class InputSystem(System):
@@ -54,10 +91,10 @@ class InputSystem(System):
         """Queue the player's raw text for the next step() call."""
         self._pending_text = text
 
-    def step(self, architect: Architect, save_dir: Path | None, turn: int) -> None:
+    def step(self, registry: Registry, etl: ETLSystem, save_dir: Path | None, turn: int) -> None:
         if save_dir is None or self._pending_text is None:
             return
-        alias = _ensure_player_alias(save_dir, architect)
+        alias = _ensure_player_alias(save_dir, registry, etl)
         _add_input(save_dir, alias, self._pending_text, "player", turn)
         self._pending_text = None
 
@@ -78,19 +115,19 @@ class MapSystem(System):
     def __init__(self, radius: float = DEFAULT_ACTIVE_ENTITY_RADIUS):
         self.radius = radius
 
-    def step(self, architect: Architect, save_dir: Path | None, turn: int) -> None:
+    def step(self, registry: Registry, etl: ETLSystem, save_dir: Path | None, turn: int) -> None:
         if save_dir is None:
             return
-        player = _player_position(architect)
+        player = _player_position(registry)
         if player is None:
             return
         player_alias, player_pos = player
 
         active_aliases = set()
         for component, label_field in (("character", "interaction_type"), ("object", "type")):
-            if component not in architect.registry.component_types:
+            if component not in registry.component_types:
                 continue
-            view = architect.view([f"{component}.{label_field}", "position.x", "position.y"])
+            view = registry.view([f"{component}.{label_field}", "position.x", "position.y"])
             try:
                 df = view.execute()
             except KeyError:
@@ -130,7 +167,7 @@ class ResolverAgentSystem(AgentSystem):
         self.session_id = None
         self.last_response: str = ""
 
-    def step(self, architect: Architect, save_dir: Path | None, turn: int) -> None:
+    def step(self, registry: Registry, etl: ETLSystem, save_dir: Path | None, turn: int) -> None:
         if save_dir is None:
             return
         command_text = _latest_input(save_dir, "player", turn)
@@ -141,7 +178,7 @@ class ResolverAgentSystem(AgentSystem):
         response = self._respond(_build_prompt(command_text, active_aliases))
         self.last_response = response
 
-        alias = _ensure_player_alias(save_dir, architect)
+        alias = _ensure_player_alias(save_dir, registry, etl)
         _add_input(save_dir, alias, response, "agent", turn)
 
     def _load_config(self) -> dict:
@@ -207,7 +244,10 @@ class ArchivistAgentSystem(AgentSystem):
     transport (`open_iacs_mcp_session`) is itself async-only. The model is
     given the iacs MCP server's tools (describe_format, validate_yaml, ...)
     plus two local, non-MCP tools for reading/writing the world's save file,
-    since no MCP tool writes new EC files.
+    since no MCP tool writes new EC files. The content of the last
+    `write_world_file` call is fed straight to `ETLSystem` as a YAML string
+    and merged into the registry, rather than reloading `save_dir` from
+    disk.
     """
 
     def __init__(self, config_path: Path = PROD_ARCHIVIST_CONFIG_PATH):
@@ -217,8 +257,9 @@ class ArchivistAgentSystem(AgentSystem):
             config["system"] = yaml.safe_load(PROD_ARCHIVIST_CONFIG_PATH.read_text())["system"]
         self.model = config["model"]
         self.system = config["system"]
+        self._last_content: str | None = None
 
-    def step(self, architect: Architect, save_dir: Path | None, turn: int) -> None:
+    def step(self, registry: Registry, etl: ETLSystem, save_dir: Path | None, turn: int) -> None:
         if save_dir is None:
             return
         command_text = _latest_input(save_dir, "player", turn)
@@ -227,8 +268,10 @@ class ArchivistAgentSystem(AgentSystem):
             return
         save_dir = Path(save_dir)
         save_dir.mkdir(parents=True, exist_ok=True)
+        self._last_content = None
         asyncio.run(self._record_async(save_dir, command_text, narration_text))
-        architect.load_manifest(save_dir)
+        if self._last_content is not None:
+            _merge_yaml_string(registry, etl, _world_yaml_file_id(save_dir), self._last_content)
 
     async def _record_async(self, save_dir: Path, player_input: str, world_response: str) -> None:
         async with open_iacs_mcp_session(save_dir) as mcp:
@@ -266,6 +309,7 @@ class ArchivistAgentSystem(AgentSystem):
 
     async def _dispatch_tool(self, mcp, save_dir: Path, name: str, arguments: dict) -> str:
         if name == "write_world_file":
+            self._last_content = arguments["content"]
             return self._write_world_file(save_dir, arguments["content"])
         if name == "read_world_file":
             return self._read_world_file(save_dir)
@@ -291,12 +335,12 @@ class VisualizerSystem(System):
     def __init__(self, render_path: Path = DEFAULT_RENDER_PATH):
         self.render_path = Path(render_path)
 
-    def step(self, architect: Architect, save_dir: Path | None, turn: int) -> None:
+    def step(self, registry: Registry, etl: ETLSystem, save_dir: Path | None, turn: int) -> None:
         if save_dir is None:
             return
-        has_positions = "position" in architect.registry.component_types
+        has_positions = "position" in registry.component_types
         if has_positions:
-            position = architect.view("position")
+            position = registry.view("position")
             df = position.execute()
 
         fig, ax = plt.subplots()
@@ -355,6 +399,22 @@ def _write_world_yaml(save_dir: Path, data: dict) -> None:
     (save_dir / WORLD_YAML_FILENAME).write_text(yaml.safe_dump(data, sort_keys=False))
 
 
+def _world_yaml_file_id(save_dir: Path) -> str:
+    """The file identifier iacs would assign world.yaml if loaded from disk.
+
+    Entity IDs are hashed from `{file_id}:{entity_path}`, so a direct
+    yaml-string merge must be keyed with the exact identifier iacs's own
+    directory scan (`_file_id` in `iacs.dataflows.etl.load_manifest`) would
+    give the real file, or the same entity would mint a different hash each
+    time and never dedupe against itself across turns.
+    """
+    path = Path(save_dir) / WORLD_YAML_FILENAME
+    try:
+        return str(path.relative_to(Path.cwd()))
+    except ValueError:
+        return str(path)
+
+
 def _add_input(save_dir: Path, alias: str, text: str, type_: str, turn: int) -> None:
     """Append an `input` component instance onto `alias`'s entity."""
     data = _read_world_yaml(save_dir)
@@ -376,24 +436,31 @@ def _sync_active_tags(save_dir: Path, active_aliases: set[str]) -> None:
     _write_world_yaml(save_dir, data)
 
 
-def _player_alias(architect: Architect) -> str | None:
+def _merge_yaml_string(registry: Registry, etl: ETLSystem, key: str, yaml_text: str) -> None:
+    """Run the ETL pipeline on a raw YAML string and merge the result into `registry`."""
+    new_registry = etl.execute(base_etl, input_dirs=[], yaml_strings={key: yaml_text})
+    registry.merge(new_registry)
+    new_registry.close()
+
+
+def _player_alias(registry: Registry) -> str | None:
     """Return the current player entity's alias, or None if it doesn't exist yet."""
-    if "character" not in architect.registry.component_types:
+    if "character" not in registry.component_types:
         return None
-    view = architect.view(["character.interaction_type"])
+    view = registry.view(["character.interaction_type"])
     df = view.filter(view["character.interaction_type"] == "player").execute()
     if df.empty:
         return None
     return df.iloc[0]["entity_id.alias"]
 
 
-def _player_position(architect: Architect) -> tuple[str, tuple[float, float]] | None:
+def _player_position(registry: Registry) -> tuple[str, tuple[float, float]] | None:
     """Return (alias, (x, y)) for the player entity, or None if not known yet."""
-    if "character" not in architect.registry.component_types:
+    if "character" not in registry.component_types:
         return None
-    if "position" not in architect.registry.component_types:
+    if "position" not in registry.component_types:
         return None
-    view = architect.view(["character.interaction_type", "position.x", "position.y"])
+    view = registry.view(["character.interaction_type", "position.x", "position.y"])
     try:
         df = view.filter(view["character.interaction_type"] == "player").execute()
     except KeyError:
@@ -404,7 +471,7 @@ def _player_position(architect: Architect) -> tuple[str, tuple[float, float]] | 
     return row["entity_id.alias"], (float(row["position.x"]), float(row["position.y"]))
 
 
-def _ensure_player_alias(save_dir: Path, architect: Architect) -> str:
+def _ensure_player_alias(save_dir: Path, registry: Registry, etl: ETLSystem) -> str:
     """Return the player entity's alias, seeding a minimal one if none exists yet.
 
     On the very first turn there's no player entity for InputSystem/
@@ -413,21 +480,28 @@ def _ensure_player_alias(save_dir: Path, architect: Architect) -> str:
     a bare `player` entity (matching the alias archivist.yaml already
     instructs the Archivist to use) so `input` always has somewhere to live.
     """
-    alias = _player_alias(architect)
+    alias = _player_alias(registry)
     if alias is not None:
         return alias
     data = _read_world_yaml(save_dir)
     if "player" not in data:
         data["player"] = [{"character": {"interaction_type": "player"}}]
         _write_world_yaml(save_dir, data)
-        architect.load_manifest(save_dir)
+        _merge_yaml_string(
+            registry, etl, _world_yaml_file_id(save_dir), yaml.safe_dump(data, sort_keys=False)
+        )
     return "player"
+
+
+def _load_manifest_registry(save_dir: Path) -> Registry:
+    """Run the full ETL pipeline over `save_dir` and return a fresh, throwaway Registry."""
+    return ETLSystem().execute(base_etl, input_dirs=[str(save_dir)])
 
 
 def _latest_input(save_dir: Path, type_: str, turn: int) -> str | None:
     """Return the `type_`-authored input's text for `turn`, or None if not written yet.
 
-    Reads through a fresh, throwaway Architect scoped to `save_dir` rather
+    Reads through a fresh, throwaway Registry scoped to `save_dir` rather
     than the long-lived one EnsembleWorld keeps, so a same-turn write by an
     earlier System (e.g. InputSystem, moments before ResolverAgentSystem
     runs) is visible without reloading (and thereby accumulating history
@@ -437,8 +511,8 @@ def _latest_input(save_dir: Path, type_: str, turn: int) -> str | None:
     strings rather than casting `turn` to int, so the comparison is done on
     the string form of `turn` to stay dtype-agnostic.
     """
-    registry = Architect.from_manifest(save_dir)
-    if "input" not in registry.registry.component_types:
+    registry = _load_manifest_registry(save_dir)
+    if "input" not in registry.component_types:
         return None
     i = registry.get("input")
     df = i.filter(i.type == type_).execute()
@@ -450,8 +524,8 @@ def _latest_input(save_dir: Path, type_: str, turn: int) -> str | None:
 
 def _active_aliases(save_dir: Path) -> set[str]:
     """Return the aliases of every entity currently tagged `active`."""
-    registry = Architect.from_manifest(save_dir)
-    if "active" not in registry.registry.component_types:
+    registry = _load_manifest_registry(save_dir)
+    if "active" not in registry.component_types:
         return set()
     view = registry.view("active")
     df = view.execute()

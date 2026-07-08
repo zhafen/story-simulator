@@ -3,13 +3,16 @@ from collections import OrderedDict
 from pathlib import Path
 
 import anthropic
+import ibis
 import yaml
-from iacs.architect import Architect
+from iacs.etl_system import ETLSystem
+from iacs.registry import Registry
 
 from story_simulator.config import ENVIRONMENT_ID, PROD_AGENT_ID, resolve_anthropic_api_key
 from story_simulator.systems import (
     ArchivistAgentSystem,
     DEFAULT_RENDER_PATH,
+    EtlLoaderSystem,
     InputSystem,
     MapSystem,
     ResolverAgentSystem,
@@ -101,11 +104,14 @@ class EnsembleWorld(World):
     """A world simulated by an ordered pipeline of Systems.
 
     Each turn, `respond()` runs every System in `systems` order against the
-    same iacs `Architect`: by default, `MapSystem` first tags entities near
-    the player as active (based on where the player ended up last turn),
-    `InputSystem` registers the player's new input, `ResolverAgentSystem`
-    narrates what happens, `ArchivistAgentSystem` transcribes the exchange
-    into `world.yaml`, and `VisualizerSystem` re-renders the position plot.
+    same iacs `Registry`: by default, `EtlLoaderSystem` first loads any EC
+    files in `save_dir` that nothing has fed into the registry yet,
+    `MapSystem` then tags entities near the player as active (based on where
+    the player ended up last turn), `InputSystem` registers the player's new
+    input, `ResolverAgentSystem` narrates what happens, `ArchivistAgentSystem`
+    transcribes the exchange into `world.yaml` (feeding its output straight
+    into the registry via `ETLSystem`), and `VisualizerSystem` re-renders the
+    position plot.
 
     Defined here, alongside the other Worlds, rather than in
     story_simulator.systems — the System classes have no dependency on this
@@ -120,15 +126,15 @@ class EnsembleWorld(World):
         render_path: str | Path | None = None,
     ):
         self.save_dir = Path(save_dir) if save_dir is not None else None
-        self.architect = (
-            Architect.from_manifest(self.save_dir) if self.save_dir is not None else Architect()
-        )
+        self.etl = ETLSystem()
+        self.registry = Registry(ibis.duckdb.connect(), {})
         self.turn = 0
         self.systems = systems if systems is not None else self._default_systems(render_path)
 
     @staticmethod
     def _default_systems(render_path: str | Path | None) -> "OrderedDict[str, object]":
         return OrderedDict(
+            etl_loader=EtlLoaderSystem(),
             map=MapSystem(),
             input=InputSystem(),
             resolver=ResolverAgentSystem(),
@@ -145,7 +151,7 @@ class EnsembleWorld(World):
             input_system.receive(text)
 
         for system in self.systems.values():
-            system.step(self.architect, self.save_dir, self.turn)
+            system.step(self.registry, self.etl, self.save_dir, self.turn)
 
         resolver = next(
             (s for s in self.systems.values() if isinstance(s, ResolverAgentSystem)), None

@@ -47,3 +47,56 @@ physics_components:
         - description: A tag component indicating that the associated entity is at the
             origin of the coordinate system.
         - component_type
+
+turn_log_components:
+    command:
+        - description: Scratch component recording the player's raw input for a turn.
+            Written by InputSystem onto the turn_log entity and read back by
+            ResolverAgentSystem/ArchivistAgentSystem instead of being passed
+            between them directly.
+        - component_type
+        - field:
+            text:
+                description: The player's raw input text.
+                type: str
+                nullable: false
+            turn:
+                description: The turn counter this command was captured on.
+                type: int
+                nullable: false
+    narration:
+        - description: Scratch component recording the World Soul's narration for a turn.
+            Written by ResolverAgentSystem onto the turn_log entity and read back
+            by ArchivistAgentSystem.
+        - component_type
+        - field:
+            text:
+                description: The World Soul's narration text.
+                type: str
+                nullable: false
+            turn:
+                description: The turn counter this narration was produced on.
+                type: int
+                nullable: false
+    active:
+        - description: Scratch tag component marking an entity as active (within
+            radius of the player) for a turn. Written by MapSystem onto the
+            turn_log entity, one instance per active entity.
+        - component_type
+        - field:
+            target:
+                description: Alias of the entity that is active.
+                type: str
+                nullable: false
+            kind:
+                description: Either "character" or "object".
+                type: str
+                nullable: false
+            label:
+                description: The active entity's interaction_type or object type.
+                type: str
+                nullable: false
+            turn:
+                description: The turn counter this tag applies to.
+                type: int
+                nullable: false

@@ -1,4 +1,5 @@
-from story_simulator.world import EnsembleWorld, World
+from story_simulator.systems import EnsembleWorld
+from story_simulator.world import World
 
 
 class Interpreter:

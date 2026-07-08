@@ -54,6 +54,12 @@ def parse_args(argv=None):
         default="./data/default",
         help="Directory for the ensemble world's save data.",
     )
+    parser.add_argument(
+        "--render-path",
+        default=None,
+        help="Where to overwrite an SVG render of entity positions each turn "
+        "(default: render.svg next to --save-dir).",
+    )
     parser.add_argument("--host", default=DEFAULT_HOST)
     parser.add_argument("--port", type=int, default=DEFAULT_PORT)
     return parser.parse_args(argv)

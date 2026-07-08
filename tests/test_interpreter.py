@@ -1,5 +1,6 @@
 from story_simulator.interpreter import Interpreter
-from story_simulator.world import EnsembleWorld, MirrorWorld
+from story_simulator.systems import EnsembleWorld
+from story_simulator.world import MirrorWorld
 
 
 def test_defaults_to_ensemble_world():

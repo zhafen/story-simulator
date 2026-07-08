@@ -7,6 +7,14 @@ import yaml
 from iacs.architect import Architect
 
 from story_simulator.config import ENVIRONMENT_ID, PROD_AGENT_ID, resolve_anthropic_api_key
+from story_simulator.systems import (
+    ArchivistAgentSystem,
+    DEFAULT_RENDER_PATH,
+    InputSystem,
+    MapSystem,
+    ResolverAgentSystem,
+    VisualizerSystem,
+)
 
 PROD_AGENT_CONFIG_PATH = Path(__file__).parent / "agent.yaml"
 TEST_AGENT_CONFIG_PATH = Path(__file__).parent / "agent.test.yaml"
@@ -99,9 +107,10 @@ class EnsembleWorld(World):
     narrates what happens, `ArchivistAgentSystem` transcribes the exchange
     into `world.yaml`, and `VisualizerSystem` re-renders the position plot.
 
-    Defined here (with the System classes imported lazily) rather than in
-    story_simulator.systems, since systems.py itself needs `World`/
-    `AgentWorld` from this module for `ResolverAgentSystem`'s default agent.
+    Defined here, alongside the other Worlds, rather than in
+    story_simulator.systems — the System classes have no dependency on this
+    module (each `AgentSystem` manages its own Anthropic client rather than
+    delegating to a `World`), so there's no circular import to dodge.
     """
 
     def __init__(
@@ -119,15 +128,6 @@ class EnsembleWorld(World):
 
     @staticmethod
     def _default_systems(render_path: str | Path | None) -> "OrderedDict[str, object]":
-        from story_simulator.render import DEFAULT_RENDER_PATH
-        from story_simulator.systems import (
-            ArchivistAgentSystem,
-            InputSystem,
-            MapSystem,
-            ResolverAgentSystem,
-            VisualizerSystem,
-        )
-
         return OrderedDict(
             map=MapSystem(),
             input=InputSystem(),
@@ -137,8 +137,6 @@ class EnsembleWorld(World):
         )
 
     def respond(self, text: str) -> str:
-        from story_simulator.systems import InputSystem, ResolverAgentSystem
-
         self.turn += 1
         input_system = next(
             (s for s in self.systems.values() if isinstance(s, InputSystem)), None

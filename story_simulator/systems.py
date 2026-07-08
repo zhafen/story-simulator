@@ -16,18 +16,22 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 
 import anthropic
+import matplotlib
 import yaml
 from iacs.architect import Architect
 
-from story_simulator.config import resolve_anthropic_api_key
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+
+from story_simulator.config import ENVIRONMENT_ID, PROD_AGENT_ID, resolve_anthropic_api_key
 from story_simulator.mcp_client import open_iacs_mcp_session
-from story_simulator.render import DEFAULT_RENDER_PATH, render_positions
-from story_simulator.world import AgentWorld, World
 
 WORLD_YAML_FILENAME = "world.yaml"
 MAX_ARCHIVIST_TOOL_TURNS = 8
 DEFAULT_ACTIVE_ENTITY_RADIUS = 20.0
+DEFAULT_RENDER_PATH = Path("render.svg")
 
+PROD_AGENT_CONFIG_PATH = Path(__file__).parent / "agent.yaml"
 PROD_ARCHIVIST_CONFIG_PATH = Path(__file__).parent / "archivist.yaml"
 TEST_ARCHIVIST_CONFIG_PATH = Path(__file__).parent / "archivist.test.yaml"
 
@@ -106,12 +110,24 @@ class ResolverAgentSystem(AgentSystem):
     """Resolves what the player sees and what happens, via the Resolver agent.
 
     Reads the turn's player input and active entities from the registry,
-    prompts `world_soul` (an `AgentWorld` by default), and writes the result
-    back as an agent-type `input` component on the player entity.
+    prompts the hosted Anthropic Agents/Sessions platform directly (its own
+    client and session, independent of the `World` hierarchy), and writes
+    the result back as an agent-type `input` component on the player entity.
+    This duplicates `AgentWorld`'s session-management logic rather than
+    delegating to it, so this System has no dependency on story_simulator.world.
     """
 
-    def __init__(self, world_soul: World | None = None):
-        self.world_soul = world_soul or AgentWorld()
+    def __init__(
+        self,
+        agent_id: str = PROD_AGENT_ID,
+        environment_id: str = ENVIRONMENT_ID,
+        config_path: Path = PROD_AGENT_CONFIG_PATH,
+    ):
+        self.client = anthropic.Anthropic(api_key=resolve_anthropic_api_key())
+        self.agent_id = agent_id
+        self.environment_id = environment_id
+        self.config_path = config_path
+        self.session_id = None
         self.last_response: str = ""
 
     def step(self, architect: Architect, save_dir: Path | None, turn: int) -> None:
@@ -122,11 +138,63 @@ class ResolverAgentSystem(AgentSystem):
             return
 
         active_aliases = _active_aliases(save_dir)
-        response = self.world_soul.respond(_build_prompt(command_text, active_aliases))
+        response = self._respond(_build_prompt(command_text, active_aliases))
         self.last_response = response
 
         alias = _ensure_player_alias(save_dir, architect)
         _add_input(save_dir, alias, response, "agent", turn)
+
+    def _load_config(self) -> dict:
+        local = yaml.safe_load(self.config_path.read_text())
+        if not local.get("system"):
+            local["system"] = yaml.safe_load(PROD_AGENT_CONFIG_PATH.read_text())["system"]
+        return local
+
+    def _sync_agent(self) -> None:
+        local = self._load_config()
+        current = self.client.beta.agents.retrieve(self.agent_id)
+        self.client.beta.agents.update(
+            self.agent_id,
+            version=current.version,
+            name=local["name"],
+            description=local.get("description", ""),
+            model=local["model"],
+            system=local.get("system"),
+            tools=local.get("tools", []),
+        )
+
+    def _start_session(self) -> None:
+        self._sync_agent()
+        session = self.client.beta.sessions.create(
+            agent=self.agent_id,
+            environment_id=self.environment_id,
+        )
+        self.session_id = session.id
+        print(f"Session: https://platform.claude.com/workspaces/default/sessions/{session.id}")
+
+    def _respond(self, text: str) -> str:
+        if self.session_id is None:
+            self._start_session()
+        with self.client.beta.sessions.events.stream(session_id=self.session_id) as stream:
+            self.client.beta.sessions.events.send(
+                session_id=self.session_id,
+                events=[{"type": "user.message", "content": [{"type": "text", "text": text}]}],
+            )
+            return self._drain(stream)
+
+    def _drain(self, stream) -> str:
+        text_parts = []
+        for event in stream:
+            if event.type == "agent.message":
+                for block in event.content:
+                    if block.type == "text":
+                        text_parts.append(block.text)
+            elif event.type == "session.status_terminated":
+                break
+            elif event.type == "session.status_idle":
+                if event.stop_reason.type != "requires_action":
+                    break
+        return "".join(text_parts)
 
 
 class ArchivistAgentSystem(AgentSystem):
@@ -226,7 +294,24 @@ class VisualizerSystem(System):
     def step(self, architect: Architect, save_dir: Path | None, turn: int) -> None:
         if save_dir is None:
             return
-        render_positions(architect, self.render_path)
+        has_positions = "position" in architect.registry.component_types
+        if has_positions:
+            position = architect.view("position")
+            df = position.execute()
+
+        fig, ax = plt.subplots()
+        if has_positions and not df.empty:
+            ax.scatter(df["position.x"], df["position.y"])
+            for _, row in df.iterrows():
+                ax.annotate(
+                    row["entity_id.alias"],
+                    (row["position.x"], row["position.y"]),
+                    xytext=(5, 5),
+                    textcoords="offset points",
+                )
+        ax.set_aspect("equal", adjustable="datalim")
+        fig.savefig(self.render_path)
+        plt.close(fig)
 
 
 _WRITE_WORLD_FILE_TOOL = {

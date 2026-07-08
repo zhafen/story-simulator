@@ -202,25 +202,27 @@ def test_ensemble_world_forwards_text_to_input_system(tmp_path):
     assert _latest_input(world.save_dir, "player", turn=1) == "open the door"
 
 
-def test_ensemble_world_returns_resolvers_last_response(tmp_path):
+def test_ensemble_world_returns_resolvers_last_response(tmp_path, monkeypatch):
+    mock_client = _make_mock_client("sesn_test123", events=None)
+    monkeypatch.setattr("story_simulator.systems.anthropic.Anthropic", lambda **kwargs: mock_client)
+
     world = EnsembleWorld(
-        systems=OrderedDict(
-            input=InputSystem(),
-            resolver=ResolverAgentSystem(
-                world_soul=MagicMock(respond=lambda text: "the world responds")
-            ),
-        ),
+        systems=OrderedDict(input=InputSystem(), resolver=ResolverAgentSystem()),
         save_dir=tmp_path / "save",
     )
 
-    assert world.respond("open the door") == "the world responds"
+    assert world.respond("open the door") == "hello back"
 
 
-def test_ensemble_world_returns_empty_string_without_save_dir():
-    resolver = ResolverAgentSystem(world_soul=MagicMock(respond=lambda text: "the world responds"))
+def test_ensemble_world_returns_empty_string_without_save_dir(monkeypatch):
+    mock_client = _make_mock_client("sesn_test123", events=None)
+    monkeypatch.setattr("story_simulator.systems.anthropic.Anthropic", lambda **kwargs: mock_client)
+
+    resolver = ResolverAgentSystem()
     world = EnsembleWorld(systems=OrderedDict(input=InputSystem(), resolver=resolver))
 
     assert world.respond("open the door") == ""
+    mock_client.beta.sessions.create.assert_not_called()
 
 
 def test_ensemble_world_returns_empty_string_without_a_resolver():
@@ -228,10 +230,10 @@ def test_ensemble_world_returns_empty_string_without_a_resolver():
     assert world.respond("open the door") == ""
 
 
-def test_ensemble_world_full_turn_updates_active_entities_next_turn(tmp_path):
+def test_ensemble_world_full_turn_updates_active_entities_next_turn(tmp_path, monkeypatch):
     save_dir = tmp_path / "save"
-    world_soul = MagicMock(spec=World)
-    world_soul.respond.return_value = "the world responds"
+    mock_client = _make_mock_client("sesn_test123", events=None)
+    monkeypatch.setattr("story_simulator.systems.anthropic.Anthropic", lambda **kwargs: mock_client)
 
     def _record(architect, *_args):
         _write_world_yaml(save_dir, _SAMPLE_WORLD_YAML)
@@ -243,16 +245,20 @@ def test_ensemble_world_full_turn_updates_active_entities_next_turn(tmp_path):
     systems = OrderedDict(
         map=MapSystem(radius=10.0),
         input=InputSystem(),
-        resolver=ResolverAgentSystem(world_soul=world_soul),
+        resolver=ResolverAgentSystem(),
         archivist=archivist,
     )
     world = EnsembleWorld(systems=systems, save_dir=save_dir)
 
+    def _sent_text():
+        events = mock_client.beta.sessions.events.send.call_args.kwargs["events"]
+        return events[0]["content"][0]["text"]
+
     world.respond("look around")
-    world_soul.respond.assert_called_with("look around")
+    assert _sent_text() == "look around"
 
     world.respond("say hello")
 
-    prompt = world_soul.respond.call_args.args[0]
+    prompt = _sent_text()
     assert "nearby_npc" in prompt
     assert prompt.endswith("Player input: say hello")

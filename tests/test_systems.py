@@ -14,9 +14,29 @@ from story_simulator.systems import (
     VisualizerSystem,
     WORLD_YAML_FILENAME,
     _active_aliases,
+    _add_input,
     _latest_input,
 )
-from story_simulator.world import World
+
+
+def _make_mock_client(session_id, events):
+    text_block = MagicMock(type="text", text="hello back")
+    message_event = MagicMock(type="agent.message", content=[text_block])
+    idle_event = MagicMock(type="session.status_idle", stop_reason=MagicMock(type="end_turn"))
+
+    mock_stream = MagicMock()
+    mock_stream.__enter__.return_value = events or [message_event, idle_event]
+    mock_stream.__exit__.return_value = False
+
+    mock_client = MagicMock()
+    mock_client.beta.sessions.create.return_value = MagicMock(id=session_id)
+    mock_client.beta.sessions.events.stream.return_value = mock_stream
+    return mock_client
+
+
+def _sent_text(mock_client):
+    events = mock_client.beta.sessions.events.send.call_args.kwargs["events"]
+    return events[0]["content"][0]["text"]
 
 
 def test_system_cannot_be_instantiated():
@@ -141,12 +161,12 @@ def test_map_system_untags_entities_that_leave_radius(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-def test_resolver_agent_system_calls_world_soul_and_records_reply(tmp_path):
+def test_resolver_agent_system_calls_agent_and_records_reply(tmp_path, monkeypatch):
     save_dir = tmp_path / "save"
-    world_soul = MagicMock(spec=World)
-    world_soul.respond.return_value = "the world responds"
+    mock_client = _make_mock_client("sesn_test123", events=None)
+    monkeypatch.setattr("story_simulator.systems.anthropic.Anthropic", lambda **kwargs: mock_client)
 
-    resolver = ResolverAgentSystem(world_soul=world_soul)
+    resolver = ResolverAgentSystem()
     architect = Architect()
     input_system = InputSystem()
     input_system.receive("open the door")
@@ -154,44 +174,45 @@ def test_resolver_agent_system_calls_world_soul_and_records_reply(tmp_path):
 
     resolver.step(architect, save_dir, turn=1)
 
-    world_soul.respond.assert_called_once_with("open the door")
-    assert resolver.last_response == "the world responds"
-    assert _latest_input(save_dir, "agent", turn=1) == "the world responds"
+    assert _sent_text(mock_client) == "open the door"
+    assert resolver.last_response == "hello back"
+    assert _latest_input(save_dir, "agent", turn=1) == "hello back"
 
 
-def test_resolver_agent_system_includes_active_entities_in_prompt(tmp_path):
+def test_resolver_agent_system_includes_active_entities_in_prompt(tmp_path, monkeypatch):
     save_dir = tmp_path / "save"
     _write_world_yaml(save_dir, _SAMPLE_WORLD_YAML)
     architect = Architect.from_manifest(save_dir)
-    world_soul = MagicMock(spec=World)
-    world_soul.respond.return_value = "the world responds"
+    mock_client = _make_mock_client("sesn_test123", events=None)
+    monkeypatch.setattr("story_simulator.systems.anthropic.Anthropic", lambda **kwargs: mock_client)
 
     MapSystem(radius=10.0).step(architect, save_dir, turn=1)
     input_system = InputSystem()
     input_system.receive("look around")
     input_system.step(architect, save_dir, turn=1)
-    ResolverAgentSystem(world_soul=world_soul).step(architect, save_dir, turn=1)
+    ResolverAgentSystem().step(architect, save_dir, turn=1)
 
-    prompt = world_soul.respond.call_args.args[0]
-    assert prompt == "Active entities nearby: nearby_npc\nPlayer input: look around"
+    assert _sent_text(mock_client) == "Active entities nearby: nearby_npc\nPlayer input: look around"
 
 
-def test_resolver_agent_system_does_nothing_without_command(tmp_path):
+def test_resolver_agent_system_does_nothing_without_command(tmp_path, monkeypatch):
     save_dir = tmp_path / "save"
-    world_soul = MagicMock(spec=World)
+    mock_client = _make_mock_client("sesn_test123", events=None)
+    monkeypatch.setattr("story_simulator.systems.anthropic.Anthropic", lambda **kwargs: mock_client)
 
-    ResolverAgentSystem(world_soul=world_soul).step(Architect(), save_dir, turn=1)
+    ResolverAgentSystem().step(Architect(), save_dir, turn=1)
 
-    world_soul.respond.assert_not_called()
+    mock_client.beta.sessions.create.assert_not_called()
 
 
-def test_resolver_agent_system_does_nothing_without_save_dir():
-    world_soul = MagicMock(spec=World)
-    resolver = ResolverAgentSystem(world_soul=world_soul)
+def test_resolver_agent_system_does_nothing_without_save_dir(monkeypatch):
+    mock_client = _make_mock_client("sesn_test123", events=None)
+    monkeypatch.setattr("story_simulator.systems.anthropic.Anthropic", lambda **kwargs: mock_client)
+    resolver = ResolverAgentSystem()
 
     resolver.step(Architect(), None, turn=1)
 
-    world_soul.respond.assert_not_called()
+    mock_client.beta.sessions.create.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
@@ -226,9 +247,7 @@ def test_archivist_agent_system_dispatches_mcp_and_local_tools(tmp_path, monkeyp
     input_system = InputSystem()
     input_system.receive("I look around")
     input_system.step(architect, save_dir, turn=1)
-    ResolverAgentSystem(world_soul=MagicMock(respond=lambda text: "you see a door")).step(
-        architect, save_dir, turn=1
-    )
+    _add_input(save_dir, "player", "you see a door", "agent", 1)
 
     mcp_tool_use = _make_tool_use_block("describe_format", {}, "tool_1")
     write_tool_use = _make_tool_use_block(
@@ -275,27 +294,30 @@ def test_archivist_agent_system_dispatches_mcp_and_local_tools(tmp_path, monkeyp
 # ---------------------------------------------------------------------------
 
 
-def test_visualizer_system_renders_positions(tmp_path, monkeypatch):
+def test_visualizer_system_renders_positions(tmp_path):
     save_dir = tmp_path / "save"
+    _write_world_yaml(save_dir, _SAMPLE_WORLD_YAML)
+    architect = Architect.from_manifest(save_dir)
     render_path = tmp_path / "render.svg"
-    architect = Architect()
-
-    calls = []
-    monkeypatch.setattr(
-        "story_simulator.systems.render_positions", lambda a, p: calls.append((a, p))
-    )
 
     VisualizerSystem(render_path=render_path).step(architect, save_dir, turn=1)
 
-    assert calls == [(architect, render_path)]
+    assert render_path.exists()
+    assert "nearby_npc" in render_path.read_text()
 
 
-def test_visualizer_system_does_nothing_without_save_dir(monkeypatch):
-    calls = []
-    monkeypatch.setattr(
-        "story_simulator.systems.render_positions", lambda a, p: calls.append((a, p))
-    )
+def test_visualizer_system_renders_without_crashing_when_no_positions_exist(tmp_path):
+    save_dir = tmp_path / "save"
+    render_path = tmp_path / "render.svg"
 
-    VisualizerSystem().step(Architect(), None, turn=1)
+    VisualizerSystem(render_path=render_path).step(Architect(), save_dir, turn=1)
 
-    assert calls == []
+    assert render_path.exists()
+
+
+def test_visualizer_system_does_nothing_without_save_dir(tmp_path):
+    render_path = tmp_path / "render.svg"
+
+    VisualizerSystem(render_path=render_path).step(Architect(), None, turn=1)
+
+    assert not render_path.exists()

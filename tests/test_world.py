@@ -1,19 +1,20 @@
-from contextlib import asynccontextmanager
+from collections import OrderedDict
 from unittest.mock import MagicMock
 
 import pytest
 from iacs.architect import Architect
 
-from story_simulator.world import (
-    AgentWorld,
-    Archivist,
-    IacsArchivist,
-    Sentinel,
-    World,
-    MirrorWorld,
-    EnsembleWorld,
+from story_simulator.systems import (
+    ArchivistAgentSystem,
+    InputSystem,
+    MapSystem,
+    ResolverAgentSystem,
+    System,
+    VisualizerSystem,
     WORLD_YAML_FILENAME,
+    _latest_input,
 )
+from story_simulator.world import AgentWorld, EnsembleWorld, World, MirrorWorld
 
 
 def test_base_world_cannot_be_instantiated():
@@ -122,160 +123,9 @@ def test_agent_world_inherits_system_from_prod_config_when_omitted(tmp_path, mon
     )
 
 
-def test_archivist_cannot_be_instantiated():
-    with pytest.raises(TypeError):
-        Archivist()
-
-
-def test_ensemble_world_returns_world_soul_response():
-    world_soul = MagicMock(spec=World)
-    world_soul.respond.return_value = "the world responds"
-
-    world = EnsembleWorld(world_soul=world_soul)
-    result = world.respond("open the door")
-
-    assert result == "the world responds"
-    world_soul.respond.assert_called_once_with("open the door")
-
-
-def test_ensemble_world_passes_exchange_to_archivist():
-    world_soul = MagicMock(spec=World)
-    world_soul.respond.return_value = "the world responds"
-    archivist = MagicMock(spec=Archivist)
-
-    world = EnsembleWorld(world_soul=world_soul, archivist=archivist)
-    world.respond("open the door")
-
-    archivist.record.assert_called_once_with("open the door", "the world responds")
-
-
-def test_ensemble_world_works_without_an_archivist():
-    world_soul = MagicMock(spec=World)
-    world_soul.respond.return_value = "the world responds"
-
-    world = EnsembleWorld(world_soul=world_soul)
-
-    assert world.respond("open the door") == "the world responds"
-
-
-def test_ensemble_world_creates_an_architect_at_startup():
-    world_soul = MagicMock(spec=World)
-
-    world = EnsembleWorld(world_soul=world_soul)
-
-    assert isinstance(world.architect, Architect)
-
-
-def test_ensemble_world_architect_loads_from_save_dir(tmp_path):
-    save_dir = tmp_path / "save"
-    save_dir.mkdir()
-    (save_dir / WORLD_YAML_FILENAME).write_text("player:\n    - origin\n")
-    world_soul = MagicMock(spec=World)
-
-    world = EnsembleWorld(world_soul=world_soul, save_dir=save_dir)
-
-    assert world.architect.get("origin").count().execute() == 1
-
-
-def test_ensemble_world_refreshes_architect_after_each_turn(tmp_path):
-    save_dir = tmp_path / "save"
-    world_soul = MagicMock(spec=World)
-    world_soul.respond.return_value = "the world responds"
-    archivist = MagicMock(spec=Archivist)
-
-    world = EnsembleWorld(world_soul=world_soul, archivist=archivist, save_dir=save_dir)
-    assert world.architect.get("origin").count().execute() == 0
-
-    def write_world_file(*_args):
-        save_dir.mkdir(parents=True, exist_ok=True)
-        (save_dir / WORLD_YAML_FILENAME).write_text("player:\n    - origin\n")
-
-    archivist.record.side_effect = write_world_file
-    world.respond("open the door")
-
-    assert world.architect.get("origin").count().execute() == 1
-
-
-def test_ensemble_world_defaults_to_iacs_archivist_when_save_dir_given(tmp_path):
-    save_dir = tmp_path / "save"
-    world_soul = MagicMock(spec=World)
-
-    world = EnsembleWorld(world_soul=world_soul, save_dir=save_dir)
-
-    assert isinstance(world.systems[0], IacsArchivist)
-    assert world.systems[0].save_dir == save_dir
-
-
-def test_ensemble_world_loops_over_all_systems():
-    world_soul = MagicMock(spec=World)
-    world_soul.respond.return_value = "the world responds"
-    system_a = MagicMock(spec=Archivist)
-    system_b = MagicMock(spec=Archivist)
-
-    world = EnsembleWorld(world_soul=world_soul, archivist=system_a)
-    world.systems.append(system_b)
-    world.respond("open the door")
-
-    system_a.record.assert_called_once_with("open the door", "the world responds")
-    system_b.record.assert_called_once_with("open the door", "the world responds")
-
-
-def _make_tool_use_block(tool_name, tool_input, block_id):
-    block = MagicMock(type="tool_use", input=tool_input, id=block_id)
-    block.name = tool_name
-    return block
-
-
-def test_iacs_archivist_reads_and_writes_world_file(tmp_path):
-    archivist = IacsArchivist(tmp_path / "save")
-
-    assert archivist._read_world_file() == "(world.yaml does not exist yet)"
-
-    archivist._write_world_file("player:\n    - origin\n")
-
-    assert archivist._read_world_file() == "player:\n    - origin\n"
-    assert (archivist.save_dir / WORLD_YAML_FILENAME).read_text() == "player:\n    - origin\n"
-
-
-def test_iacs_archivist_dispatches_mcp_and_local_tools(tmp_path, monkeypatch):
-    save_dir = tmp_path / "save"
-
-    mcp_tool_use = _make_tool_use_block("describe_format", {}, "tool_1")
-    write_tool_use = _make_tool_use_block(
-        "write_world_file", {"content": "player:\n    - origin\n"}, "tool_2"
-    )
-    final_text = MagicMock(type="text", text="done")
-
-    responses = [
-        MagicMock(content=[mcp_tool_use], stop_reason="tool_use"),
-        MagicMock(content=[write_tool_use], stop_reason="tool_use"),
-        MagicMock(content=[final_text], stop_reason="end_turn"),
-    ]
-    mock_client = MagicMock()
-    mock_client.messages.create.side_effect = responses
-    monkeypatch.setattr("story_simulator.world.anthropic.Anthropic", lambda **kwargs: mock_client)
-
-    mcp_calls = []
-
-    class FakeMcpSession:
-        tools = [{"name": "describe_format", "description": "", "input_schema": {}}]
-
-        async def call_tool(self, name, arguments):
-            mcp_calls.append((name, arguments))
-            return "format guide text"
-
-    @asynccontextmanager
-    async def fake_open_iacs_mcp_session(manifest_dir):
-        yield FakeMcpSession()
-
-    monkeypatch.setattr("story_simulator.world.open_iacs_mcp_session", fake_open_iacs_mcp_session)
-
-    archivist = IacsArchivist(save_dir)
-    archivist.record("I look around", "you see a door")
-
-    assert mcp_calls == [("describe_format", {})]
-    assert (save_dir / WORLD_YAML_FILENAME).read_text() == "player:\n    - origin\n"
-    assert mock_client.messages.create.call_count == 3
+# ---------------------------------------------------------------------------
+# EnsembleWorld
+# ---------------------------------------------------------------------------
 
 
 def _write_world_yaml(save_dir, content):
@@ -290,7 +140,6 @@ player:
     - position:
         x: 0.0
         y: 0.0
-        z: 0.0
 
 nearby_npc:
     - character:
@@ -298,77 +147,118 @@ nearby_npc:
     - position:
         x: 3.0
         y: 4.0
-        z: 0.0
-
-distant_rock:
-    - object:
-        type: rock
-    - position:
-        x: 500.0
-        y: 0.0
-        z: 0.0
 """
 
 
-def test_sentinel_returns_empty_list_without_player_data():
-    assert Sentinel().find_active_entities(Architect()) == []
+def test_ensemble_world_creates_an_architect_at_startup():
+    world = EnsembleWorld(systems=OrderedDict())
+    assert isinstance(world.architect, Architect)
 
 
-def test_sentinel_finds_characters_and_objects_within_radius(tmp_path):
+def test_ensemble_world_architect_loads_from_save_dir(tmp_path):
     save_dir = tmp_path / "save"
-    _write_world_yaml(save_dir, _SAMPLE_WORLD_YAML)
-    architect = Architect.from_manifest(save_dir)
+    _write_world_yaml(save_dir, "player:\n    - origin\n")
 
-    active = Sentinel(radius=10.0).find_active_entities(architect)
+    world = EnsembleWorld(systems=OrderedDict(), save_dir=save_dir)
 
-    assert {"id": "nearby_npc", "kind": "character", "label": "npc"} in active
-    assert not any(e["id"] == "distant_rock" for e in active)
-    assert not any(e["id"] == "player" for e in active)
+    assert world.architect.get("origin").count().execute() == 1
 
 
-def test_sentinel_excludes_entities_outside_radius(tmp_path):
-    save_dir = tmp_path / "save"
-    _write_world_yaml(save_dir, _SAMPLE_WORLD_YAML)
-    architect = Architect.from_manifest(save_dir)
+def test_ensemble_world_default_systems_run_in_order(tmp_path):
+    world = EnsembleWorld(save_dir=tmp_path / "save")
+    assert list(world.systems) == ["map", "input", "resolver", "archivist", "visualizer"]
+    assert isinstance(world.systems["map"], MapSystem)
+    assert isinstance(world.systems["input"], InputSystem)
+    assert isinstance(world.systems["resolver"], ResolverAgentSystem)
+    assert isinstance(world.systems["archivist"], ArchivistAgentSystem)
+    assert isinstance(world.systems["visualizer"], VisualizerSystem)
 
-    active = Sentinel(radius=1.0).find_active_entities(architect)
 
-    assert active == []
+def test_ensemble_world_loops_over_all_systems_in_order():
+    calls = []
+
+    def _make_system(name):
+        system = MagicMock(spec=System)
+        system.step.side_effect = lambda *args: calls.append(name)
+        return system
+
+    systems = OrderedDict(a=_make_system("a"), b=_make_system("b"), c=_make_system("c"))
+    world = EnsembleWorld(systems=systems)
+
+    world.respond("open the door")
+
+    assert calls == ["a", "b", "c"]
+    for system in systems.values():
+        system.step.assert_called_once_with(world.architect, world.save_dir, 1)
 
 
-def test_ensemble_world_stores_active_entities_after_a_turn(tmp_path):
-    save_dir = tmp_path / "save"
-    world_soul = MagicMock(spec=World)
-    world_soul.respond.return_value = "the world responds"
-    archivist = MagicMock(spec=Archivist)
-    archivist.record.side_effect = lambda *_args: _write_world_yaml(save_dir, _SAMPLE_WORLD_YAML)
+def test_ensemble_world_forwards_text_to_input_system(tmp_path):
+    input_system = InputSystem()
+    world = EnsembleWorld(systems=OrderedDict(input=input_system), save_dir=tmp_path / "save")
+
+    world.respond("open the door")
+
+    assert input_system._pending_text is None  # consumed by step()
+    assert _latest_input(world.save_dir, "player", turn=1) == "open the door"
+
+
+def test_ensemble_world_returns_resolvers_last_response(tmp_path, monkeypatch):
+    mock_client = _make_mock_client("sesn_test123", events=None)
+    monkeypatch.setattr("story_simulator.systems.anthropic.Anthropic", lambda **kwargs: mock_client)
 
     world = EnsembleWorld(
-        world_soul=world_soul, archivist=archivist, save_dir=save_dir, sentinel=Sentinel(radius=10.0)
+        systems=OrderedDict(input=InputSystem(), resolver=ResolverAgentSystem()),
+        save_dir=tmp_path / "save",
     )
-    assert world.active_entities == []
 
-    world.respond("look around")
-
-    assert {"id": "nearby_npc", "kind": "character", "label": "npc"} in world.active_entities
-    assert not any(e["id"] == "distant_rock" for e in world.active_entities)
+    assert world.respond("open the door") == "hello back"
 
 
-def test_ensemble_world_includes_active_entities_in_next_prompt(tmp_path):
+def test_ensemble_world_returns_empty_string_without_save_dir(monkeypatch):
+    mock_client = _make_mock_client("sesn_test123", events=None)
+    monkeypatch.setattr("story_simulator.systems.anthropic.Anthropic", lambda **kwargs: mock_client)
+
+    resolver = ResolverAgentSystem()
+    world = EnsembleWorld(systems=OrderedDict(input=InputSystem(), resolver=resolver))
+
+    assert world.respond("open the door") == ""
+    mock_client.beta.sessions.create.assert_not_called()
+
+
+def test_ensemble_world_returns_empty_string_without_a_resolver():
+    world = EnsembleWorld(systems=OrderedDict())
+    assert world.respond("open the door") == ""
+
+
+def test_ensemble_world_full_turn_updates_active_entities_next_turn(tmp_path, monkeypatch):
     save_dir = tmp_path / "save"
-    world_soul = MagicMock(spec=World)
-    world_soul.respond.return_value = "the world responds"
-    archivist = MagicMock(spec=Archivist)
-    archivist.record.side_effect = lambda *_args: _write_world_yaml(save_dir, _SAMPLE_WORLD_YAML)
+    mock_client = _make_mock_client("sesn_test123", events=None)
+    monkeypatch.setattr("story_simulator.systems.anthropic.Anthropic", lambda **kwargs: mock_client)
 
-    world = EnsembleWorld(
-        world_soul=world_soul, archivist=archivist, save_dir=save_dir, sentinel=Sentinel(radius=10.0)
+    def _record(architect, *_args):
+        _write_world_yaml(save_dir, _SAMPLE_WORLD_YAML)
+        architect.load_manifest(save_dir)
+
+    archivist = MagicMock(spec=System)
+    archivist.step.side_effect = _record
+
+    systems = OrderedDict(
+        map=MapSystem(radius=10.0),
+        input=InputSystem(),
+        resolver=ResolverAgentSystem(),
+        archivist=archivist,
     )
+    world = EnsembleWorld(systems=systems, save_dir=save_dir)
+
+    def _sent_text():
+        events = mock_client.beta.sessions.events.send.call_args.kwargs["events"]
+        return events[0]["content"][0]["text"]
+
     world.respond("look around")
-    world_soul.respond.assert_called_with("look around")
+    assert _sent_text() == "look around"
 
     world.respond("say hello")
 
-    prompt = world_soul.respond.call_args.args[0]
+    prompt = _sent_text()
     assert "nearby_npc" in prompt
     assert prompt.endswith("Player input: say hello")

@@ -1,9 +1,5 @@
-from pathlib import Path
-
 from story_simulator.interpreter import Interpreter
 from story_simulator.world import EnsembleWorld, MirrorWorld
-
-DATA_DIR = Path(__file__).parent / "data"
 
 
 def test_startup_and_exit():
@@ -15,16 +11,16 @@ def test_startup_and_exit():
     p.input("/quit")
     assert p.stopped
 
-def test_startup_one_loop_save():
+def test_startup_one_loop_save(tmp_path):
     """This test starts up an EnsembleWorld, and does a single
     loop, with the player character asking a simple question.
     This should trigger at least:
-    1. The WorldSoul agent responding to the player.
-    2. The Archivist transcribing entities described by the WorldSoul into iacs EC files, with the help of the iacs MCP.
+    1. The Resolver agent responding to the player.
+    2. The Archivist transcribing entities described by the Resolver into iacs EC files, with the help of the iacs MCP.
     """
 
     # Setup
-    save_dir = DATA_DIR / "test_save"
+    save_dir = tmp_path / "test_save"
     w = EnsembleWorld(save_dir=save_dir)
     p = Interpreter(w)
 

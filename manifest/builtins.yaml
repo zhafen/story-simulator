@@ -47,3 +47,33 @@ physics_components:
         - description: A tag component indicating that the associated entity is at the
             origin of the coordinate system.
         - component_type
+
+turn_components:
+    input:
+        - description: A turn's raw text, owned by the player entity — either the
+            player's own command or the Resolver's narrated reply to it,
+            distinguished by `type`. Written by InputSystem/ResolverAgentSystem
+            and read back by ResolverAgentSystem/ArchivistAgentSystem instead of
+            being passed between them directly.
+        - component_type
+        - field:
+            text:
+                description: The turn's raw text.
+                type: str
+                nullable: false
+            type:
+                description: Who produced this input.
+                type: str
+                nullable: false
+                range:
+                    - player
+                    - agent
+            turn:
+                description: The turn counter this input was produced on.
+                type: int
+                nullable: false
+    active:
+        - description: Tag component marking an entity as active (within radius of
+            the player) for the current turn. Written directly onto each active
+            entity by MapSystem, and removed once the entity falls out of range.
+        - component_type

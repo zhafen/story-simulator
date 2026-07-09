@@ -3,15 +3,19 @@ from collections import OrderedDict
 from pathlib import Path
 
 import anthropic
+import ibis
 import yaml
-from iacs.architect import Architect
+from iacs.etl_system import ETLSystem
+from iacs.registry import Registry
 
 from story_simulator.config import ENVIRONMENT_ID, PROD_AGENT_ID, resolve_anthropic_api_key
 from story_simulator.systems import (
     ArchivistAgentSystem,
     DEFAULT_RENDER_PATH,
+    ETLLoaderSystem,
     InputSystem,
     MapSystem,
+    REGISTRY_DB_FILENAME,
     ResolverAgentSystem,
     VisualizerSystem,
 )
@@ -101,11 +105,27 @@ class EnsembleWorld(World):
     """A world simulated by an ordered pipeline of Systems.
 
     Each turn, `respond()` runs every System in `systems` order against the
-    same iacs `Architect`: by default, `MapSystem` first tags entities near
+    same iacs `Registry` — the sole channel Systems use to communicate.
+    `world.yaml` is only ever a derived, human/AI-readable export of that
+    registry (written by `ArchivistAgentSystem`); it's never read back in as
+    authoritative. By default: `ETLLoaderSystem` first loads any
+    not-yet-loaded EC files from `save_dir`, `MapSystem` tags entities near
     the player as active (based on where the player ended up last turn),
     `InputSystem` registers the player's new input, `ResolverAgentSystem`
     narrates what happens, `ArchivistAgentSystem` transcribes the exchange
-    into `world.yaml`, and `VisualizerSystem` re-renders the position plot.
+    and re-exports `world.yaml`, and `VisualizerSystem` re-renders the
+    position plot.
+
+    The registry itself — the actual save data — lives in
+    `save_dir/registry.duckdb`: when `save_dir` is given, `Registry.from_database`
+    opens that file directly (creating it if it doesn't exist yet) rather
+    than an in-memory connection, so every `registry.merge`/`registry.update`
+    write lands straight in the file. DuckDB persists writes on a live
+    connection automatically (confirmed: a second, independent connection to
+    the same file sees a change immediately, with no explicit save step in
+    between), so there's no separate `to_database` call after each turn —
+    that would just be reopening a second connection to a file the first
+    connection is already keeping current.
 
     Defined here, alongside the other Worlds, rather than in
     story_simulator.systems — the System classes have no dependency on this
@@ -120,15 +140,21 @@ class EnsembleWorld(World):
         render_path: str | Path | None = None,
     ):
         self.save_dir = Path(save_dir) if save_dir is not None else None
-        self.architect = (
-            Architect.from_manifest(self.save_dir) if self.save_dir is not None else Architect()
-        )
+        self.etl = ETLSystem()
+        self.registry = self._load_registry()
         self.turn = 0
         self.systems = systems if systems is not None else self._default_systems(render_path)
+
+    def _load_registry(self) -> Registry:
+        if self.save_dir is not None:
+            self.save_dir.mkdir(parents=True, exist_ok=True)
+            return Registry.from_database(self.save_dir / REGISTRY_DB_FILENAME)
+        return Registry(ibis.duckdb.connect(), {})
 
     @staticmethod
     def _default_systems(render_path: str | Path | None) -> "OrderedDict[str, object]":
         return OrderedDict(
+            etl_loader=ETLLoaderSystem(),
             map=MapSystem(),
             input=InputSystem(),
             resolver=ResolverAgentSystem(),
@@ -145,7 +171,7 @@ class EnsembleWorld(World):
             input_system.receive(text)
 
         for system in self.systems.values():
-            system.step(self.architect, self.save_dir, self.turn)
+            system.step(self.registry, self.etl, self.save_dir, self.turn)
 
         resolver = next(
             (s for s in self.systems.values() if isinstance(s, ResolverAgentSystem)), None

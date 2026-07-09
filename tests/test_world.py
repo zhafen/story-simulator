@@ -7,13 +7,14 @@ from iacs.registry import Registry
 
 from story_simulator.systems import (
     ArchivistAgentSystem,
-    EtlLoaderSystem,
+    ETLLoaderSystem,
     InputSystem,
     MapSystem,
+    REGISTRY_DB_FILENAME,
     ResolverAgentSystem,
     System,
     VisualizerSystem,
-    WORLD_YAML_FILENAME,
+    WORLD_FILE_ID,
     _latest_input,
     _merge_yaml_string,
 )
@@ -131,11 +132,6 @@ def test_agent_world_inherits_system_from_prod_config_when_omitted(tmp_path, mon
 # ---------------------------------------------------------------------------
 
 
-def _write_world_yaml(save_dir, content):
-    save_dir.mkdir(parents=True, exist_ok=True)
-    (save_dir / WORLD_YAML_FILENAME).write_text(content)
-
-
 _SAMPLE_WORLD_YAML = """
 player:
     - character:
@@ -162,9 +158,10 @@ def test_ensemble_world_creates_an_empty_registry_and_etl_at_startup():
 
 def test_ensemble_world_loads_save_dir_on_first_turn_via_etl_loader(tmp_path):
     save_dir = tmp_path / "save"
-    _write_world_yaml(save_dir, "player:\n    - origin\n")
+    save_dir.mkdir(parents=True)
+    (save_dir / "extra.yaml").write_text("player:\n    - origin\n")
 
-    world = EnsembleWorld(systems=OrderedDict(etl_loader=EtlLoaderSystem()), save_dir=save_dir)
+    world = EnsembleWorld(systems=OrderedDict(etl_loader=ETLLoaderSystem()), save_dir=save_dir)
     world.respond("look around")
 
     assert world.registry.get("origin").count().execute() == 1
@@ -175,7 +172,7 @@ def test_ensemble_world_default_systems_run_in_order(tmp_path):
     assert list(world.systems) == [
         "etl_loader", "map", "input", "resolver", "archivist", "visualizer"
     ]
-    assert isinstance(world.systems["etl_loader"], EtlLoaderSystem)
+    assert isinstance(world.systems["etl_loader"], ETLLoaderSystem)
     assert isinstance(world.systems["map"], MapSystem)
     assert isinstance(world.systems["input"], InputSystem)
     assert isinstance(world.systems["resolver"], ResolverAgentSystem)
@@ -208,7 +205,7 @@ def test_ensemble_world_forwards_text_to_input_system(tmp_path):
     world.respond("open the door")
 
     assert input_system._pending_text is None  # consumed by step()
-    assert _latest_input(world.save_dir, "player", turn=1) == "open the door"
+    assert _latest_input(world.registry, "player", turn=1) == "open the door"
 
 
 def test_ensemble_world_returns_resolvers_last_response(tmp_path, monkeypatch):
@@ -245,8 +242,7 @@ def test_ensemble_world_full_turn_updates_active_entities_next_turn(tmp_path, mo
     monkeypatch.setattr("story_simulator.systems.anthropic.Anthropic", lambda **kwargs: mock_client)
 
     def _record(registry, etl, *_args):
-        _write_world_yaml(save_dir, _SAMPLE_WORLD_YAML)
-        _merge_yaml_string(registry, etl, "archivist", _SAMPLE_WORLD_YAML)
+        _merge_yaml_string(registry, etl, WORLD_FILE_ID, _SAMPLE_WORLD_YAML)
 
     archivist = MagicMock(spec=System)
     archivist.step.side_effect = _record
@@ -271,3 +267,34 @@ def test_ensemble_world_full_turn_updates_active_entities_next_turn(tmp_path, mo
     prompt = _sent_text()
     assert "nearby_npc" in prompt
     assert prompt.endswith("Player input: say hello")
+
+
+def test_ensemble_world_persists_registry_to_database_after_each_turn(tmp_path):
+    save_dir = tmp_path / "save"
+
+    def _record(registry, etl, *_args):
+        _merge_yaml_string(registry, etl, WORLD_FILE_ID, "player:\n    - origin\n")
+
+    system = MagicMock(spec=System)
+    system.step.side_effect = _record
+    world = EnsembleWorld(systems=OrderedDict(system=system), save_dir=save_dir)
+
+    world.respond("hello")
+
+    assert (save_dir / REGISTRY_DB_FILENAME).exists()
+
+
+def test_ensemble_world_restores_registry_from_database_on_next_startup(tmp_path):
+    save_dir = tmp_path / "save"
+
+    def _record(registry, etl, *_args):
+        _merge_yaml_string(registry, etl, WORLD_FILE_ID, "player:\n    - origin\n")
+
+    system = MagicMock(spec=System)
+    system.step.side_effect = _record
+    world = EnsembleWorld(systems=OrderedDict(system=system), save_dir=save_dir)
+    world.respond("hello")
+
+    reloaded = EnsembleWorld(systems=OrderedDict(), save_dir=save_dir)
+
+    assert reloaded.registry.get("origin").count().execute() == 1

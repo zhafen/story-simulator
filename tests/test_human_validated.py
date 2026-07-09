@@ -31,16 +31,16 @@ def test_startup_one_loop_save(tmp_path):
     # In the base scenario, there should be the following entities:
     # The player, with at least a position component and a player_character component
     # The door, with at least a position component
-    a = w.registry
+    r = w.registry
     # At least two positions
-    assert a.get("position").count().execute() >= 2
+    assert r.get("position").count().execute() >= 2
     # One origin
-    assert a.get("origin").count().execute() == 1
+    assert r.get("origin").count().execute() == 1
     # One character, of interaction type player
-    assert (characters := a.get("character")).count().execute() == 1
+    assert (characters := r.get("character")).count().execute() == 1
     assert characters.filter(characters.interaction_type == "player").count().execute() == 1
     # At least one object, which is a door
-    assert (objects := a.get("object")).count().execute() >= 1
+    assert (objects := r.get("object")).count().execute() >= 1
     assert objects.filter(objects.type.contains("door")).count().execute() == 1
     # At least two appearance components
-    assert a.get("appearance").count().execute() >= 2
+    assert r.get("appearance").count().execute() >= 2

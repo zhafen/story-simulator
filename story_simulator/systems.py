@@ -2,14 +2,17 @@
 
 Every turn, `EnsembleWorld` calls `step()` on each `System` in a fixed order.
 Systems never call each other directly or pass return values between one
-another; instead they communicate through the iacs `Registry` (a shared,
-long-lived object every System mutates via `registry.merge(...)`) and
-`world.yaml` on disk, so every value lives on the entity that produced it:
-the player entity owns `input` components (its own commands and the
-Resolver's narrated replies, distinguished by `type`), and each nearby
-character/object owns a bare `active` tag for the turn. `EtlLoaderSystem`
-runs first each turn to pick up any EC files in `save_dir` that nothing has
-fed into the registry yet.
+another; instead they communicate exclusively through the iacs `Registry`
+(a shared, long-lived object every System reads and mutates directly), so
+every value lives on the entity that produced it: the player entity owns
+`input` components (its own commands and the Resolver's narrated replies,
+distinguished by `type`), and each nearby character/object owns a bare
+`active` tag for the turn. `ETLLoaderSystem` runs first each turn to pick up
+any EC files in `save_dir` that nothing has fed into the registry yet.
+`world.yaml` is only ever a derived, human/AI-readable export of the
+registry (written by `ArchivistAgentSystem`) — nothing reads it back in as
+authoritative; the actual save data is the registry itself, persisted via
+`Registry.to_database`/`Registry.from_database`.
 """
 
 import asyncio
@@ -21,6 +24,7 @@ import anthropic
 import matplotlib
 import yaml
 from iacs.dataflows import base_etl
+from iacs.dataflows.etl import export_manifest
 from iacs.etl_system import ETLSystem
 from iacs.registry import Registry
 
@@ -31,6 +35,8 @@ from story_simulator.config import ENVIRONMENT_ID, PROD_AGENT_ID, resolve_anthro
 from story_simulator.mcp_client import open_iacs_mcp_session
 
 WORLD_YAML_FILENAME = "world.yaml"
+REGISTRY_DB_FILENAME = "registry.duckdb"
+WORLD_FILE_ID = "world"
 MAX_ARCHIVIST_TOOL_TURNS = 8
 DEFAULT_ACTIVE_ENTITY_RADIUS = 20.0
 DEFAULT_RENDER_PATH = Path("render.svg")
@@ -49,17 +55,19 @@ class System(ABC):
         raise NotImplementedError
 
 
-class EtlLoaderSystem(System):
+class ETLLoaderSystem(System):
     """Loads any not-yet-loaded EC files from `save_dir` into the registry.
 
     Runs first each turn so every other System sees the latest on-disk
     state. Tracks every file path already merged in `loaded_files`, so a
-    file is loaded exactly once: later edits to an already-loaded file (e.g.
-    `world.yaml`, which `ArchivistAgentSystem` keeps rewriting) reach the
-    registry directly via that System's own `ETLSystem` merge rather than by
-    rescanning here. This System exists to pick up files nothing else has
-    fed in yet, such as a save directory's pre-existing `world.yaml` on
-    startup, or a new file dropped into `save_dir` mid-game.
+    file is loaded exactly once. `world.yaml` is always skipped: it's a
+    derived export of the registry (see `_export_world_yaml`), not an
+    independent source, and reloading it would mint duplicate entities under
+    a different file identifier than the `WORLD_FILE_ID` every direct
+    registry merge already uses. This System exists to pick up files
+    nothing else has fed in yet, such as a save directory's pre-existing,
+    hand-authored EC manifests on startup, or a new one dropped into
+    `save_dir` mid-game.
     """
 
     def __init__(self):
@@ -71,7 +79,12 @@ class EtlLoaderSystem(System):
         save_dir = Path(save_dir)
         if not save_dir.exists():
             return
-        found = {f for pattern in EC_FILE_GLOBS for f in save_dir.rglob(pattern)}
+        found = {
+            f
+            for pattern in EC_FILE_GLOBS
+            for f in save_dir.rglob(pattern)
+            if f.name != WORLD_YAML_FILENAME
+        }
         new_files = sorted(found - self.loaded_files)
         if not new_files:
             return
@@ -94,8 +107,8 @@ class InputSystem(System):
     def step(self, registry: Registry, etl: ETLSystem, save_dir: Path | None, turn: int) -> None:
         if save_dir is None or self._pending_text is None:
             return
-        alias = _ensure_player_alias(save_dir, registry, etl)
-        _add_input(save_dir, alias, self._pending_text, "player", turn)
+        alias = _ensure_player_alias(registry, etl)
+        _add_input(registry, etl, alias, self._pending_text, "player", turn)
         self._pending_text = None
 
 
@@ -140,7 +153,7 @@ class MapSystem(System):
                 if math.dist(pos, player_pos) <= self.radius:
                     active_aliases.add(alias)
 
-        _sync_active_tags(save_dir, active_aliases)
+        _sync_active_tags(registry, etl, active_aliases)
 
 
 class ResolverAgentSystem(AgentSystem):
@@ -170,16 +183,16 @@ class ResolverAgentSystem(AgentSystem):
     def step(self, registry: Registry, etl: ETLSystem, save_dir: Path | None, turn: int) -> None:
         if save_dir is None:
             return
-        command_text = _latest_input(save_dir, "player", turn)
+        command_text = _latest_input(registry, "player", turn)
         if command_text is None:
             return
 
-        active_aliases = _active_aliases(save_dir)
+        active_aliases = _active_aliases(registry)
         response = self._respond(_build_prompt(command_text, active_aliases))
         self.last_response = response
 
-        alias = _ensure_player_alias(save_dir, registry, etl)
-        _add_input(save_dir, alias, response, "agent", turn)
+        alias = _ensure_player_alias(registry, etl)
+        _add_input(registry, etl, alias, response, "agent", turn)
 
     def _load_config(self) -> dict:
         local = yaml.safe_load(self.config_path.read_text())
@@ -247,7 +260,10 @@ class ArchivistAgentSystem(AgentSystem):
     since no MCP tool writes new EC files. The content of the last
     `write_world_file` call is fed straight to `ETLSystem` as a YAML string
     and merged into the registry, rather than reloading `save_dir` from
-    disk.
+    disk. `world.yaml` itself is regenerated from the registry (via iacs's
+    `export_manifest`) before and after the tool loop, so `read_world_file`
+    sees the full current save data and the on-disk export stays in sync
+    with whatever this step merged in.
     """
 
     def __init__(self, config_path: Path = PROD_ARCHIVIST_CONFIG_PATH):
@@ -262,16 +278,18 @@ class ArchivistAgentSystem(AgentSystem):
     def step(self, registry: Registry, etl: ETLSystem, save_dir: Path | None, turn: int) -> None:
         if save_dir is None:
             return
-        command_text = _latest_input(save_dir, "player", turn)
-        narration_text = _latest_input(save_dir, "agent", turn)
+        command_text = _latest_input(registry, "player", turn)
+        narration_text = _latest_input(registry, "agent", turn)
         if command_text is None or narration_text is None:
             return
         save_dir = Path(save_dir)
         save_dir.mkdir(parents=True, exist_ok=True)
+        _export_world_yaml(registry, etl, save_dir)
         self._last_content = None
         asyncio.run(self._record_async(save_dir, command_text, narration_text))
         if self._last_content is not None:
-            _merge_yaml_string(registry, etl, _world_yaml_file_id(save_dir), self._last_content)
+            _merge_yaml_string(registry, etl, WORLD_FILE_ID, self._last_content)
+            _export_world_yaml(registry, etl, save_dir)
 
     async def _record_async(self, save_dir: Path, player_input: str, world_response: str) -> None:
         async with open_iacs_mcp_session(save_dir) as mcp:
@@ -386,60 +404,70 @@ _READ_WORLD_FILE_TOOL = {
 }
 
 
-def _read_world_yaml(save_dir: Path) -> dict:
-    path = Path(save_dir) / WORLD_YAML_FILENAME
-    if not path.exists():
-        return {}
-    return yaml.safe_load(path.read_text()) or {}
-
-
-def _write_world_yaml(save_dir: Path, data: dict) -> None:
-    save_dir = Path(save_dir)
-    save_dir.mkdir(parents=True, exist_ok=True)
-    (save_dir / WORLD_YAML_FILENAME).write_text(yaml.safe_dump(data, sort_keys=False))
-
-
-def _world_yaml_file_id(save_dir: Path) -> str:
-    """The file identifier iacs would assign world.yaml if loaded from disk.
-
-    Entity IDs are hashed from `{file_id}:{entity_path}`, so a direct
-    yaml-string merge must be keyed with the exact identifier iacs's own
-    directory scan (`_file_id` in `iacs.dataflows.etl.load_manifest`) would
-    give the real file, or the same entity would mint a different hash each
-    time and never dedupe against itself across turns.
-    """
-    path = Path(save_dir) / WORLD_YAML_FILENAME
-    try:
-        return str(path.relative_to(Path.cwd()))
-    except ValueError:
-        return str(path)
-
-
-def _add_input(save_dir: Path, alias: str, text: str, type_: str, turn: int) -> None:
-    """Append an `input` component instance onto `alias`'s entity."""
-    data = _read_world_yaml(save_dir)
-    components = data.setdefault(alias, [])
-    components.append({"input": {"text": text, "type": type_, "turn": turn}})
-    _write_world_yaml(save_dir, data)
-
-
-def _sync_active_tags(save_dir: Path, active_aliases: set[str]) -> None:
-    """Add/remove the bare `active` tag on each entity to match `active_aliases`."""
-    data = _read_world_yaml(save_dir)
-    for alias, components in data.items():
-        has_tag = "active" in components
-        should_have_tag = alias in active_aliases
-        if should_have_tag and not has_tag:
-            components.append("active")
-        elif not should_have_tag and has_tag:
-            components.remove("active")
-    _write_world_yaml(save_dir, data)
-
-
 def _merge_yaml_string(registry: Registry, etl: ETLSystem, key: str, yaml_text: str) -> None:
     """Run the ETL pipeline on a raw YAML string and merge the result into `registry`."""
     new_registry = etl.execute(base_etl, input_dirs=[], yaml_strings={key: yaml_text})
     registry.merge(new_registry)
+    new_registry.close()
+
+
+def _export_world_yaml(registry: Registry, etl: ETLSystem, save_dir: Path) -> None:
+    """Regenerate `world.yaml` as a human/AI-readable export of the registry's state.
+
+    Purely a derived artifact — the registry (persisted via
+    `Registry.to_database`/`Registry.from_database`) is the actual save
+    data, and nothing reads this file back in. Written via iacs's own
+    `export_manifest` dataflow, which writes one output file per original
+    source identifier; every direct registry merge in this module uses
+    `WORLD_FILE_ID` ("world"), which `export_manifest` suffixes into
+    `world.yaml`.
+    """
+    etl.execute(export_manifest, registry=registry, output_dir=str(save_dir))
+
+
+def _input_history(registry: Registry, alias: str) -> list[dict]:
+    """Return every existing `input` component instance on `alias`'s entity."""
+    if "input" not in registry.component_types:
+        return []
+    view = registry.view(["input.text", "input.type", "input.turn"])
+    df = view.filter(view["entity_id.alias"] == alias).execute()
+    return [
+        {"text": row["input.text"], "type": row["input.type"], "turn": row["input.turn"]}
+        for _, row in df.iterrows()
+    ]
+
+
+def _add_input(registry: Registry, etl: ETLSystem, alias: str, text: str, type_: str, turn: int) -> None:
+    """Merge a new `input` component instance onto `alias`'s entity.
+
+    Rebuilds and overwrites the whole `input` component table from
+    `alias`'s full history plus the new instance, rather than unioning in
+    just the new row — `registry.merge` would otherwise collide every call
+    on the same `component_index` (each call's YAML fragment is its own
+    single-item list, always indexed 0). Safe to overwrite wholesale: only
+    `InputSystem`/`ResolverAgentSystem` ever write `input`, and always onto
+    the one player entity.
+    """
+    history = _input_history(registry, alias) + [{"text": text, "type": type_, "turn": turn}]
+    data = {alias: [{"input": h} for h in history]}
+    new_registry = etl.execute(base_etl, input_dirs=[], yaml_strings={WORLD_FILE_ID: yaml.safe_dump(data, sort_keys=False)})
+    # .to_pyarrow() materializes the data so it can cross from new_registry's
+    # connection into registry's (mirrors Registry.merge's own approach).
+    registry.update({"input": new_registry.get("input").to_pyarrow()})
+    new_registry.close()
+
+
+def _sync_active_tags(registry: Registry, etl: ETLSystem, active_aliases: set[str]) -> None:
+    """Overwrite the `active` component table so it exactly matches `active_aliases`.
+
+    Rebuilt from scratch and overwritten (not merged) every call, since
+    `registry.merge` only unions rows in and can't drop the tag from
+    entities that left the radius. Safe to overwrite wholesale: `MapSystem`
+    is the only writer of `active`.
+    """
+    data = {alias: ["active"] for alias in sorted(active_aliases)}
+    new_registry = etl.execute(base_etl, input_dirs=[], yaml_strings={WORLD_FILE_ID: yaml.safe_dump(data, sort_keys=False)})
+    registry.update({"active": new_registry.get("active").to_pyarrow()})
     new_registry.close()
 
 
@@ -471,7 +499,7 @@ def _player_position(registry: Registry) -> tuple[str, tuple[float, float]] | No
     return row["entity_id.alias"], (float(row["position.x"]), float(row["position.y"]))
 
 
-def _ensure_player_alias(save_dir: Path, registry: Registry, etl: ETLSystem) -> str:
+def _ensure_player_alias(registry: Registry, etl: ETLSystem) -> str:
     """Return the player entity's alias, seeding a minimal one if none exists yet.
 
     On the very first turn there's no player entity for InputSystem/
@@ -483,35 +511,18 @@ def _ensure_player_alias(save_dir: Path, registry: Registry, etl: ETLSystem) -> 
     alias = _player_alias(registry)
     if alias is not None:
         return alias
-    data = _read_world_yaml(save_dir)
-    if "player" not in data:
-        data["player"] = [{"character": {"interaction_type": "player"}}]
-        _write_world_yaml(save_dir, data)
-        _merge_yaml_string(
-            registry, etl, _world_yaml_file_id(save_dir), yaml.safe_dump(data, sort_keys=False)
-        )
+    data = {"player": [{"character": {"interaction_type": "player"}}]}
+    _merge_yaml_string(registry, etl, WORLD_FILE_ID, yaml.safe_dump(data, sort_keys=False))
     return "player"
 
 
-def _load_manifest_registry(save_dir: Path) -> Registry:
-    """Run the full ETL pipeline over `save_dir` and return a fresh, throwaway Registry."""
-    return ETLSystem().execute(base_etl, input_dirs=[str(save_dir)])
-
-
-def _latest_input(save_dir: Path, type_: str, turn: int) -> str | None:
+def _latest_input(registry: Registry, type_: str, turn: int) -> str | None:
     """Return the `type_`-authored input's text for `turn`, or None if not written yet.
-
-    Reads through a fresh, throwaway Registry scoped to `save_dir` rather
-    than the long-lived one EnsembleWorld keeps, so a same-turn write by an
-    earlier System (e.g. InputSystem, moments before ResolverAgentSystem
-    runs) is visible without reloading (and thereby accumulating history
-    into) the long-lived registry.
 
     Without a validated schema loaded, iacs keeps field values as raw
     strings rather than casting `turn` to int, so the comparison is done on
     the string form of `turn` to stay dtype-agnostic.
     """
-    registry = _load_manifest_registry(save_dir)
     if "input" not in registry.component_types:
         return None
     i = registry.get("input")
@@ -522,9 +533,8 @@ def _latest_input(save_dir: Path, type_: str, turn: int) -> str | None:
     return matches.iloc[-1]["text"]
 
 
-def _active_aliases(save_dir: Path) -> set[str]:
+def _active_aliases(registry: Registry) -> set[str]:
     """Return the aliases of every entity currently tagged `active`."""
-    registry = _load_manifest_registry(save_dir)
     if "active" not in registry.component_types:
         return set()
     view = registry.view("active")

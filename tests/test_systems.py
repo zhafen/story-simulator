@@ -21,6 +21,9 @@ from story_simulator.systems import (
     _active_aliases,
     _add_input,
     _latest_input,
+    _latest_positions,
+    _merge_yaml_string,
+    _player_position,
 )
 
 
@@ -385,6 +388,103 @@ def test_archivist_agent_system_dispatches_mcp_and_local_tools(tmp_path, monkeyp
     exported = (save_dir / WORLD_YAML_FILENAME).read_text()
     assert "player" in exported
     assert "origin" in exported
+
+
+# ---------------------------------------------------------------------------
+# Position history (turn-stamped SCD)
+# ---------------------------------------------------------------------------
+
+
+def test_latest_positions_resolves_conflicting_writes_by_turn():
+    registry = _empty_registry()
+    etl = ETLSystem()
+    _merge_yaml_string(
+        registry, etl, WORLD_FILE_ID, "player:\n    - position:\n        x: 0.0\n        y: 0.0\n", turn=1
+    )
+    _merge_yaml_string(
+        registry, etl, WORLD_FILE_ID, "player:\n    - position:\n        x: 5.0\n        y: 5.0\n", turn=2
+    )
+
+    # Both writes are retained as history, not overwritten...
+    assert registry.get("position").count().execute() == 2
+    # ...but the higher turn wins when resolving the current position.
+    latest = _latest_positions(registry)
+    row = latest[latest["entity_id.alias"] == "player"].iloc[0]
+    assert (float(row["position.x"]), float(row["position.y"])) == (5.0, 5.0)
+
+
+def test_player_position_resolves_to_latest_turn():
+    registry = _empty_registry()
+    etl = ETLSystem()
+    _merge_yaml_string(
+        registry,
+        etl,
+        WORLD_FILE_ID,
+        "player:\n    - character:\n        interaction_type: player\n    - position:\n        x: 0.0\n        y: 0.0\n",
+        turn=1,
+    )
+    _merge_yaml_string(
+        registry, etl, WORLD_FILE_ID, "player:\n    - position:\n        x: 5.0\n        y: 5.0\n", turn=2
+    )
+
+    assert _player_position(registry) == ("player", (5.0, 5.0))
+
+
+def test_archivist_agent_system_stamps_turn_on_position_writes(tmp_path, monkeypatch):
+    """A position written on turn 2, with no `turn` in the model's own YAML, wins over turn 1's.
+
+    Regression test for the bug that motivated adding `turn` to `position`:
+    the Archivist's freeform YAML never mentions `turn`, so `_merge_yaml_string`
+    has to stamp it in automatically for `_latest_positions` to have anything
+    to resolve conflicting writes by.
+    """
+    save_dir = tmp_path / "save"
+    registry = _empty_registry()
+    etl = ETLSystem()
+    final_text = MagicMock(type="text", text="done")
+
+    def _turn_responses(content):
+        return [
+            MagicMock(content=[_make_tool_use_block("write_world_file", {"content": content}, "tool_write")], stop_reason="tool_use"),
+            MagicMock(content=[final_text], stop_reason="end_turn"),
+        ]
+
+    mock_client = MagicMock()
+    mock_client.messages.create.side_effect = (
+        _turn_responses("player:\n    - position:\n        x: 0.0\n        y: 0.0\n")
+        + _turn_responses("player:\n    - position:\n        x: 5.0\n        y: 5.0\n")
+    )
+    monkeypatch.setattr("story_simulator.systems.anthropic.Anthropic", lambda **kwargs: mock_client)
+
+    class FakeMcpSession:
+        tools = []
+
+        async def call_tool(self, name, arguments):
+            raise AssertionError("no MCP tools expected in this test")
+
+    @asynccontextmanager
+    async def fake_open_iacs_mcp_session(manifest_dir):
+        yield FakeMcpSession()
+
+    monkeypatch.setattr("story_simulator.systems.open_iacs_mcp_session", fake_open_iacs_mcp_session)
+
+    archivist = ArchivistAgentSystem()
+    input_system = InputSystem()
+
+    input_system.receive("I look around")
+    input_system.step(registry, etl, save_dir, turn=1)
+    _add_input(registry, etl, "player", "you see a clearing", "agent", 1)
+    archivist.step(registry, etl, save_dir, turn=1)
+
+    input_system.receive("I walk east")
+    input_system.step(registry, etl, save_dir, turn=2)
+    _add_input(registry, etl, "player", "you arrive at a river", "agent", 2)
+    archivist.step(registry, etl, save_dir, turn=2)
+
+    # Both turns' writes persist as history...
+    assert registry.get("position").count().execute() == 2
+    # ...but the turn stamped in automatically resolves them to turn 2's value.
+    assert _player_position(registry) == ("player", (5.0, 5.0))
 
 
 # ---------------------------------------------------------------------------

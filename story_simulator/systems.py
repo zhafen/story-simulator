@@ -21,7 +21,9 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 
 import anthropic
+import ibis
 import matplotlib
+import pandas as pd
 import yaml
 from iacs.dataflows import base_etl
 from iacs.dataflows.etl import export_manifest
@@ -151,17 +153,20 @@ class MapSystem(System):
         if player is None:
             return
         player_alias, player_pos = player
+        # entity_id.alias is left out here: label_df (below) already carries its
+        # own copy via registry.view(), and merging on entity_id would otherwise
+        # produce two colliding entity_id.alias columns.
+        positions = _latest_positions(registry)[["entity_id", "position.x", "position.y"]]
 
         active_aliases = set()
         for component, label_field in (("character", "interaction_type"), ("object", "type")):
             if component not in registry.component_types:
                 continue
-            view = registry.view([f"{component}.{label_field}", "position.x", "position.y"])
             try:
-                df = view.execute()
+                label_df = registry.view([f"{component}.{label_field}"]).execute()
             except KeyError:
                 continue
-            for _, row in df.iterrows():
+            for _, row in label_df.merge(positions, on="entity_id").iterrows():
                 alias = row["entity_id.alias"]
                 if alias == player_alias:
                     continue
@@ -317,7 +322,7 @@ class ArchivistAgentSystem(AgentSystem):
         self._last_content = None
         asyncio.run(self._record_async(save_dir, command_text, narration_text))
         if self._last_content is not None:
-            _merge_yaml_string(registry, etl, WORLD_FILE_ID, self._last_content)
+            _merge_yaml_string(registry, etl, WORLD_FILE_ID, self._last_content, turn)
             _export_world_yaml(registry, etl, save_dir)
 
     async def _record_async(self, save_dir: Path, player_input: str, world_response: str) -> None:
@@ -387,8 +392,7 @@ class VisualizerSystem(System):
             return
         has_positions = "position" in registry.component_types
         if has_positions:
-            position = registry.view("position")
-            df = position.execute()
+            df = _latest_positions(registry)
 
         fig, ax = plt.subplots()
         if has_positions and not df.empty:
@@ -433,9 +437,23 @@ _READ_WORLD_FILE_TOOL = {
 }
 
 
-def _merge_yaml_string(registry: Registry, etl: ETLSystem, key: str, yaml_text: str) -> None:
-    """Run the ETL pipeline on a raw YAML string and merge the result into `registry`."""
+def _merge_yaml_string(
+    registry: Registry, etl: ETLSystem, key: str, yaml_text: str, turn: int | None = None
+) -> None:
+    """Run the ETL pipeline on a raw YAML string and merge the result into `registry`.
+
+    If `turn` is given, stamps it onto every `position` row before merging.
+    Unlike `input` (whose `turn` is set explicitly by `_add_input`), `position`
+    is written from the Archivist's freeform YAML, which has no reason to know
+    about the turn counter — so it's filled in here instead. `position` rows
+    accumulate across turns rather than being overwritten (`registry.merge`
+    only unions rows in), so this `turn` column is what lets readers resolve
+    which row is current; see `_latest_positions`.
+    """
     new_registry = etl.execute(base_etl, input_dirs=[], yaml_strings={key: yaml_text})
+    if turn is not None and "position" in new_registry.component_types:
+        stamped = new_registry.get("position").mutate(turn=ibis.literal(turn))
+        new_registry.update({"position": stamped})
     registry.merge(new_registry)
     new_registry.close()
 
@@ -511,21 +529,59 @@ def _player_alias(registry: Registry) -> str | None:
     return df.iloc[0]["entity_id.alias"]
 
 
+def _latest_positions(registry: Registry) -> pd.DataFrame:
+    """Return one row per entity: its highest-turn `position`.
+
+    `position` rows accumulate across turns rather than being overwritten
+    (`registry.merge` only unions rows in; see `_merge_yaml_string`), so
+    "current position" has to be resolved at read time instead of read
+    directly off the table. Rows with no `turn` (e.g. hand-authored save
+    files loaded without one) sort as oldest. Ties — including an entity
+    with no `turn`-stamped row at all — are broken by keeping the last row
+    in join order, mirroring `_latest_input`'s `.iloc[-1]` convention.
+    """
+    columns = ["entity_id", "entity_id.alias", "position.x", "position.y", "position.z", "position.turn"]
+    if "position" not in registry.component_types:
+        return pd.DataFrame(columns=columns)
+    # `position`'s columns aren't schema-validated (no manifest_dir is wired
+    # into the ETLSystem() this module uses), so a given merge's YAML may not
+    # have mentioned every field (e.g. no `z`, or no `turn` on hand-authored
+    # save data) — read the raw table and backfill absent fields as null
+    # rather than assuming `registry.view` will find them.
+    pos = registry.get("position").execute()
+    for field in ("x", "y", "z", "turn"):
+        if field not in pos.columns:
+            pos[field] = None
+    # entity_id.alias is for display only; the merge/groupby key below has to
+    # be the actual entity_id, since aliases aren't guaranteed unique.
+    aliases = registry.view(["entity_id.alias"]).execute()
+    df = aliases.merge(pos[["entity_id", "x", "y", "z", "turn"]], on="entity_id")
+    df = df.rename(columns={"x": "position.x", "y": "position.y", "z": "position.z", "turn": "position.turn"})
+    sort_key = pd.to_numeric(df["position.turn"], errors="coerce").fillna(-1)
+    df = df.iloc[sort_key.argsort(kind="stable")]
+    return df.groupby("entity_id", as_index=False).tail(1)[columns]
+
+
 def _player_position(registry: Registry) -> tuple[str, tuple[float, float]] | None:
     """Return (alias, (x, y)) for the player entity, or None if not known yet."""
     if "character" not in registry.component_types:
         return None
     if "position" not in registry.component_types:
         return None
-    view = registry.view(["character.interaction_type", "position.x", "position.y"])
+    char_view = registry.view(["character.interaction_type"])
     try:
-        df = view.filter(view["character.interaction_type"] == "player").execute()
+        char_df = char_view.filter(char_view["character.interaction_type"] == "player").execute()
     except KeyError:
         return None
-    if df.empty:
+    if char_df.empty:
         return None
-    row = df.iloc[0]
-    return row["entity_id.alias"], (float(row["position.x"]), float(row["position.y"]))
+    alias, entity_id = char_df.iloc[0]["entity_id.alias"], char_df.iloc[0]["entity_id"]
+    positions = _latest_positions(registry)
+    match = positions[positions["entity_id"] == entity_id]
+    if match.empty:
+        return None
+    row = match.iloc[0]
+    return alias, (float(row["position.x"]), float(row["position.y"]))
 
 
 def _ensure_player_alias(registry: Registry, etl: ETLSystem) -> str:

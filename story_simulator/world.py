@@ -114,10 +114,18 @@ class EnsembleWorld(World):
     `InputSystem` registers the player's new input, `ResolverAgentSystem`
     narrates what happens, `ArchivistAgentSystem` transcribes the exchange
     and re-exports `world.yaml`, and `VisualizerSystem` re-renders the
-    position plot. After every turn the registry itself — the actual save
-    data — is persisted to `save_dir/registry.duckdb` via
-    `Registry.to_database`, and restored from there via `Registry.from_database`
-    the next time an `EnsembleWorld` is constructed with the same `save_dir`.
+    position plot.
+
+    The registry itself — the actual save data — lives in
+    `save_dir/registry.duckdb`: when `save_dir` is given, `Registry.from_database`
+    opens that file directly (creating it if it doesn't exist yet) rather
+    than an in-memory connection, so every `registry.merge`/`registry.update`
+    write lands straight in the file. DuckDB persists writes on a live
+    connection automatically (confirmed: a second, independent connection to
+    the same file sees a change immediately, with no explicit save step in
+    between), so there's no separate `to_database` call after each turn —
+    that would just be reopening a second connection to a file the first
+    connection is already keeping current.
 
     Defined here, alongside the other Worlds, rather than in
     story_simulator.systems — the System classes have no dependency on this
@@ -139,9 +147,8 @@ class EnsembleWorld(World):
 
     def _load_registry(self) -> Registry:
         if self.save_dir is not None:
-            db_path = self.save_dir / REGISTRY_DB_FILENAME
-            if db_path.exists():
-                return Registry.from_database(db_path)
+            self.save_dir.mkdir(parents=True, exist_ok=True)
+            return Registry.from_database(self.save_dir / REGISTRY_DB_FILENAME)
         return Registry(ibis.duckdb.connect(), {})
 
     @staticmethod
@@ -165,10 +172,6 @@ class EnsembleWorld(World):
 
         for system in self.systems.values():
             system.step(self.registry, self.etl, self.save_dir, self.turn)
-
-        if self.save_dir is not None:
-            self.save_dir.mkdir(parents=True, exist_ok=True)
-            self.registry.to_database(self.save_dir / REGISTRY_DB_FILENAME)
 
         resolver = next(
             (s for s in self.systems.values() if isinstance(s, ResolverAgentSystem)), None

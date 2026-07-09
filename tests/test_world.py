@@ -269,19 +269,27 @@ def test_ensemble_world_full_turn_updates_active_entities_next_turn(tmp_path, mo
     assert prompt.endswith("Player input: say hello")
 
 
-def test_ensemble_world_persists_registry_to_database_after_each_turn(tmp_path):
+def test_ensemble_world_connects_registry_straight_to_its_database_file(tmp_path):
     save_dir = tmp_path / "save"
 
-    def _record(registry, etl, *_args):
-        _merge_yaml_string(registry, etl, WORLD_FILE_ID, "player:\n    - origin\n")
+    world = EnsembleWorld(systems=OrderedDict(), save_dir=save_dir)
 
-    system = MagicMock(spec=System)
-    system.step.side_effect = _record
-    world = EnsembleWorld(systems=OrderedDict(system=system), save_dir=save_dir)
-
-    world.respond("hello")
-
+    # The registry is backed by save_dir/registry.duckdb from construction
+    # on (DuckDB persists writes on a live connection automatically), not
+    # just after some explicit save step following a turn.
     assert (save_dir / REGISTRY_DB_FILENAME).exists()
+
+
+def test_ensemble_world_registry_writes_are_durable_without_an_explicit_save(tmp_path):
+    save_dir = tmp_path / "save"
+    world = EnsembleWorld(systems=OrderedDict(), save_dir=save_dir)
+    _merge_yaml_string(world.registry, world.etl, WORLD_FILE_ID, "player:\n    - origin\n")
+
+    # A totally independent connection to the same file, opened without
+    # `world` ever calling anything like `to_database`, should already see
+    # the write.
+    fresh = Registry.from_database(save_dir / REGISTRY_DB_FILENAME)
+    assert fresh.get("origin").count().execute() == 1
 
 
 def test_ensemble_world_restores_registry_from_database_on_next_startup(tmp_path):

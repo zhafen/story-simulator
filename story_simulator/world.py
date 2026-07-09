@@ -163,6 +163,16 @@ class EnsembleWorld(World):
         )
 
     def respond(self, text: str) -> str:
+        """
+        Components
+        ----------
+        - todo: Can we avoid passing the text in? Maybe instead using a system that
+            directly calls Python's input module, in the case of cli. If we set up an
+            app later then a different system that's hooked up to FastAPI.
+        - todo: That might also fix the weirdness going on below with looping through
+            the systems to find the resolver.
+        - todo: After this change, we'll want to probably call this function "update".
+        """
         self.turn += 1
         input_system = next(
             (s for s in self.systems.values() if isinstance(s, InputSystem)), None

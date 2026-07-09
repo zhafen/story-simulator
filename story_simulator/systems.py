@@ -68,6 +68,13 @@ class ETLLoaderSystem(System):
     nothing else has fed in yet, such as a save directory's pre-existing,
     hand-authored EC manifests on startup, or a new one dropped into
     `save_dir` mid-game.
+
+    Components
+    ----------
+    - todo: I don't think we track loaded_files across sessions, so there's a risk of
+        duplication if the same file exists. I think instead we should ensure iacs
+        tracks the files loaded as part of the load_manifest etl and then just refer
+        to that.
     """
 
     def __init__(self):
@@ -113,7 +120,12 @@ class InputSystem(System):
 
 
 class AgentSystem(System, ABC):
-    """Base class for Systems whose step() calls out to an Anthropic agent."""
+    """Base class for Systems whose step() calls out to an Anthropic agent.
+
+    Components
+    ----------
+    - todo: Why have this defined here, instead of adjacent to the agent systems?
+    """
 
 
 class MapSystem(System):
@@ -123,6 +135,10 @@ class MapSystem(System):
     (this System runs before `InputSystem`/`ResolverAgentSystem` each turn),
     and adds/removes a bare `active` tag directly on each entity as it enters
     or leaves range.
+
+    Components
+    ----------
+    - todo: Reincorporate z-axis.
     """
 
     def __init__(self, radius: float = DEFAULT_ACTIVE_ENTITY_RADIUS):
@@ -181,6 +197,11 @@ class ResolverAgentSystem(AgentSystem):
         self.last_response: str = ""
 
     def step(self, registry: Registry, etl: ETLSystem, save_dir: Path | None, turn: int) -> None:
+        """
+        Components
+        ----------
+        - todo: What does _ensure_player_alias do?
+        """
         if save_dir is None:
             return
         command_text = _latest_input(registry, "player", turn)
@@ -264,6 +285,14 @@ class ArchivistAgentSystem(AgentSystem):
     `export_manifest`) before and after the tool loop, so `read_world_file`
     sees the full current save data and the on-disk export stays in sync
     with whatever this step merged in.
+
+    Components
+    ----------
+    - todo: The docstrings are too verbose, explaining a lot of old context-specific
+        reasoning. That's true for this entity and others.
+    - todo: Not sure we need to export world.yaml every turn.
+    - todo: The tools should be handled fully as part of iacs. We shouldn't need custom
+        tools for iacs I/O.
     """
 
     def __init__(self, config_path: Path = PROD_ARCHIVIST_CONFIG_PATH):

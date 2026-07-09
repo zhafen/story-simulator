@@ -137,7 +137,10 @@ class MapSystem(System):
         if player is None:
             return
         player_alias, player_pos = player
-        positions = _latest_positions(registry)[["entity_id.alias", "position.x", "position.y"]]
+        # entity_id.alias is left out here: label_df (below) already carries its
+        # own copy via registry.view(), and merging on entity_id would otherwise
+        # produce two colliding entity_id.alias columns.
+        positions = _latest_positions(registry)[["entity_id", "position.x", "position.y"]]
 
         active_aliases = set()
         for component, label_field in (("character", "interaction_type"), ("object", "type")):
@@ -147,7 +150,7 @@ class MapSystem(System):
                 label_df = registry.view([f"{component}.{label_field}"]).execute()
             except KeyError:
                 continue
-            for _, row in label_df.merge(positions, on="entity_id.alias").iterrows():
+            for _, row in label_df.merge(positions, on="entity_id").iterrows():
                 alias = row["entity_id.alias"]
                 if alias == player_alias:
                     continue
@@ -508,7 +511,7 @@ def _latest_positions(registry: Registry) -> pd.DataFrame:
     with no `turn`-stamped row at all — are broken by keeping the last row
     in join order, mirroring `_latest_input`'s `.iloc[-1]` convention.
     """
-    columns = ["entity_id.alias", "position.x", "position.y", "position.z", "position.turn"]
+    columns = ["entity_id", "entity_id.alias", "position.x", "position.y", "position.z", "position.turn"]
     if "position" not in registry.component_types:
         return pd.DataFrame(columns=columns)
     # `position`'s columns aren't schema-validated (no manifest_dir is wired
@@ -520,12 +523,14 @@ def _latest_positions(registry: Registry) -> pd.DataFrame:
     for field in ("x", "y", "z", "turn"):
         if field not in pos.columns:
             pos[field] = None
+    # entity_id.alias is for display only; the merge/groupby key below has to
+    # be the actual entity_id, since aliases aren't guaranteed unique.
     aliases = registry.view(["entity_id.alias"]).execute()
     df = aliases.merge(pos[["entity_id", "x", "y", "z", "turn"]], on="entity_id")
     df = df.rename(columns={"x": "position.x", "y": "position.y", "z": "position.z", "turn": "position.turn"})
     sort_key = pd.to_numeric(df["position.turn"], errors="coerce").fillna(-1)
     df = df.iloc[sort_key.argsort(kind="stable")]
-    return df.groupby("entity_id.alias", as_index=False).tail(1)[columns]
+    return df.groupby("entity_id", as_index=False).tail(1)[columns]
 
 
 def _player_position(registry: Registry) -> tuple[str, tuple[float, float]] | None:
@@ -541,9 +546,9 @@ def _player_position(registry: Registry) -> tuple[str, tuple[float, float]] | No
         return None
     if char_df.empty:
         return None
-    alias = char_df.iloc[0]["entity_id.alias"]
+    alias, entity_id = char_df.iloc[0]["entity_id.alias"], char_df.iloc[0]["entity_id"]
     positions = _latest_positions(registry)
-    match = positions[positions["entity_id.alias"] == alias]
+    match = positions[positions["entity_id"] == entity_id]
     if match.empty:
         return None
     row = match.iloc[0]

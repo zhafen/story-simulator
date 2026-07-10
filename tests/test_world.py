@@ -1,7 +1,9 @@
 from collections import OrderedDict
+from contextlib import asynccontextmanager
 from unittest.mock import MagicMock
 
 import pytest
+import yaml
 from iacs.etl_system import ETLSystem
 from iacs.registry import Registry
 
@@ -19,6 +21,29 @@ from story_simulator.systems import (
     _merge_yaml_string,
 )
 from story_simulator.world import AgentWorld, EnsembleWorld, World, MirrorWorld
+
+
+def _write_setting(tmp_path, text=""):
+    """Blank setting.yaml fixture, so ResolverAgentSystem tests here aren't
+    affected by the real, narrative-length default in setting.yaml."""
+    path = tmp_path / "setting.yaml"
+    path.write_text(yaml.safe_dump({"setting": text}))
+    return path
+
+
+class _FakeMcpSession:
+    """Fake iacs MCP session whose view_entity call reports a canned description."""
+
+    tools = []
+
+    async def call_tool(self, name, arguments):
+        assert name == "view_entity"
+        return f"{arguments['entity_id']} description"
+
+
+@asynccontextmanager
+async def _fake_open_iacs_mcp_session(manifest_dir):
+    yield _FakeMcpSession()
 
 
 def test_base_world_cannot_be_instantiated():
@@ -240,6 +265,7 @@ def test_ensemble_world_full_turn_updates_active_entities_next_turn(tmp_path, mo
     save_dir = tmp_path / "save"
     mock_client = _make_mock_client("sesn_test123", events=None)
     monkeypatch.setattr("story_simulator.systems.anthropic.Anthropic", lambda **kwargs: mock_client)
+    monkeypatch.setattr("story_simulator.systems.open_iacs_mcp_session", _fake_open_iacs_mcp_session)
 
     def _record(registry, etl, *_args):
         _merge_yaml_string(registry, etl, WORLD_FILE_ID, _SAMPLE_WORLD_YAML)
@@ -250,7 +276,7 @@ def test_ensemble_world_full_turn_updates_active_entities_next_turn(tmp_path, mo
     systems = OrderedDict(
         map=MapSystem(radius=10.0),
         input=InputSystem(),
-        resolver=ResolverAgentSystem(),
+        resolver=ResolverAgentSystem(setting_path=_write_setting(tmp_path)),
         archivist=archivist,
     )
     world = EnsembleWorld(systems=systems, save_dir=save_dir)

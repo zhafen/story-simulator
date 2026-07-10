@@ -3,6 +3,7 @@ from unittest.mock import MagicMock
 
 import ibis
 import pytest
+import yaml
 from iacs.dataflows import base_etl
 from iacs.etl_system import ETLSystem
 from iacs.registry import Registry
@@ -60,6 +61,33 @@ def _make_mock_client(session_id, events):
 def _sent_text(mock_client):
     events = mock_client.beta.sessions.events.send.call_args.kwargs["events"]
     return events[0]["content"][0]["text"]
+
+
+def _write_setting(tmp_path, text=""):
+    """Write a setting.yaml fixture and return its path.
+
+    Defaults to an empty setting so ResolverAgentSystem tests that don't care
+    about the setting aren't affected by the real, narrative-length default
+    in story_simulator/setting.yaml.
+    """
+    path = tmp_path / "setting.yaml"
+    path.write_text(yaml.safe_dump({"setting": text}))
+    return path
+
+
+class _FakeMcpSession:
+    """Fake iacs MCP session whose view_entity call reports a canned description."""
+
+    tools = []
+
+    async def call_tool(self, name, arguments):
+        assert name == "view_entity"
+        return f"{arguments['entity_id']} description"
+
+
+@asynccontextmanager
+async def _fake_open_iacs_mcp_session(manifest_dir):
+    yield _FakeMcpSession()
 
 
 def test_system_cannot_be_instantiated():
@@ -257,7 +285,7 @@ def test_resolver_agent_system_calls_agent_and_records_reply(tmp_path, monkeypat
     mock_client = _make_mock_client("sesn_test123", events=None)
     monkeypatch.setattr("story_simulator.systems.anthropic.Anthropic", lambda **kwargs: mock_client)
 
-    resolver = ResolverAgentSystem()
+    resolver = ResolverAgentSystem(setting_path=_write_setting(tmp_path))
     registry = _empty_registry()
     etl = ETLSystem()
     input_system = InputSystem()
@@ -266,6 +294,8 @@ def test_resolver_agent_system_calls_agent_and_records_reply(tmp_path, monkeypat
 
     resolver.step(registry, etl, save_dir, turn=1)
 
+    # No active entities and no setting configured, so the prompt reduces to
+    # the bare player input, and no iacs MCP session is opened at all.
     assert _sent_text(mock_client) == "open the door"
     assert resolver.last_response == "hello back"
     assert _latest_input(registry, "agent", turn=1) == "hello back"
@@ -277,14 +307,39 @@ def test_resolver_agent_system_includes_active_entities_in_prompt(tmp_path, monk
     etl = ETLSystem()
     mock_client = _make_mock_client("sesn_test123", events=None)
     monkeypatch.setattr("story_simulator.systems.anthropic.Anthropic", lambda **kwargs: mock_client)
+    monkeypatch.setattr("story_simulator.systems.open_iacs_mcp_session", _fake_open_iacs_mcp_session)
 
     MapSystem(radius=10.0).step(registry, etl, save_dir, turn=1)
     input_system = InputSystem()
     input_system.receive("look around")
     input_system.step(registry, etl, save_dir, turn=1)
-    ResolverAgentSystem().step(registry, etl, save_dir, turn=1)
+    ResolverAgentSystem(setting_path=_write_setting(tmp_path)).step(registry, etl, save_dir, turn=1)
 
-    assert _sent_text(mock_client) == "Active entities nearby: nearby_npc\nPlayer input: look around"
+    assert _sent_text(mock_client) == (
+        "Active entities nearby: nearby_npc\n"
+        "Entity details:\n"
+        "nearby_npc description\n"
+        "Player input: look around"
+    )
+
+
+def test_resolver_agent_system_includes_setting_in_prompt(tmp_path, monkeypatch):
+    save_dir = tmp_path / "save"
+    mock_client = _make_mock_client("sesn_test123", events=None)
+    monkeypatch.setattr("story_simulator.systems.anthropic.Anthropic", lambda **kwargs: mock_client)
+
+    resolver = ResolverAgentSystem(setting_path=_write_setting(tmp_path, "a quiet clearing"))
+    registry = _empty_registry()
+    etl = ETLSystem()
+    input_system = InputSystem()
+    input_system.receive("open the door")
+    input_system.step(registry, etl, save_dir, turn=1)
+
+    resolver.step(registry, etl, save_dir, turn=1)
+
+    assert _sent_text(mock_client) == (
+        "World setting: a quiet clearing\nPlayer input: open the door"
+    )
 
 
 def test_resolver_agent_system_does_nothing_without_command(tmp_path, monkeypatch):

@@ -47,6 +47,7 @@ EC_FILE_GLOBS = ("*.yaml", "*.yml", "*.py", "*.csv")
 PROD_AGENT_CONFIG_PATH = Path(__file__).parent / "agent.yaml"
 PROD_ARCHIVIST_CONFIG_PATH = Path(__file__).parent / "archivist.yaml"
 TEST_ARCHIVIST_CONFIG_PATH = Path(__file__).parent / "archivist.test.yaml"
+SETTING_CONFIG_PATH = Path(__file__).parent / "setting.yaml"
 
 
 class System(ABC):
@@ -186,6 +187,16 @@ class ResolverAgentSystem(AgentSystem):
     the result back as an agent-type `input` component on the player entity.
     This duplicates `AgentWorld`'s session-management logic rather than
     delegating to it, so this System has no dependency on story_simulator.world.
+
+    The world's setting (its starting premise) lives in `setting.yaml`
+    rather than being baked into the agent's system prompt, so `_build_prompt`
+    can fold it into every turn instead of relying on the model to remember
+    it from the start of a session. The hosted Agents/Sessions platform this
+    System narrates through only accepts MCP servers reachable by URL, so it
+    can't attach the local stdio `iacs-mcp` subprocess directly (see
+    `ArchivistAgentSystem`); instead, this System talks to `iacs-mcp` itself
+    as a plain MCP client (`_gather_entity_details`) to look up what's known
+    about each active entity, and folds that into the prompt text too.
     """
 
     def __init__(
@@ -193,11 +204,13 @@ class ResolverAgentSystem(AgentSystem):
         agent_id: str = PROD_AGENT_ID,
         environment_id: str = ENVIRONMENT_ID,
         config_path: Path = PROD_AGENT_CONFIG_PATH,
+        setting_path: Path = SETTING_CONFIG_PATH,
     ):
         self.client = anthropic.Anthropic(api_key=resolve_anthropic_api_key())
         self.agent_id = agent_id
         self.environment_id = environment_id
         self.config_path = config_path
+        self.setting_path = setting_path
         self.session_id = None
         self.last_response: str = ""
 
@@ -214,11 +227,34 @@ class ResolverAgentSystem(AgentSystem):
             return
 
         active_aliases = _active_aliases(registry)
-        response = self._respond(_build_prompt(command_text, active_aliases))
+        entity_details = asyncio.run(self._gather_entity_details(Path(save_dir), active_aliases))
+        prompt = _build_prompt(
+            command_text,
+            active_aliases,
+            setting=_load_setting(self.setting_path),
+            entity_details=entity_details,
+        )
+        response = self._respond(prompt)
         self.last_response = response
 
         alias = _ensure_player_alias(registry, etl)
         _add_input(registry, etl, alias, response, "agent", turn)
+
+    async def _gather_entity_details(self, save_dir: Path, active_aliases: set[str]) -> str:
+        """Ask the local iacs MCP server what's known about each active entity.
+
+        Only opens a session when there's something to look up, so turns
+        with no active entities (including every "does nothing" early-return
+        case) never pay for spawning the `iacs-mcp` subprocess.
+        """
+        if not active_aliases:
+            return ""
+        async with open_iacs_mcp_session(save_dir) as mcp:
+            views = [
+                await mcp.call_tool("view_entity", {"entity_id": alias})
+                for alias in sorted(active_aliases)
+            ]
+        return "\n".join(views)
 
     def _load_config(self) -> dict:
         local = yaml.safe_load(self.config_path.read_text())
@@ -627,9 +663,30 @@ def _active_aliases(registry: Registry) -> set[str]:
     return set(df["entity_id.alias"])
 
 
-def _build_prompt(text: str, active_aliases: set[str]) -> str:
-    """Combine the player's input with the list of active entities."""
-    if not active_aliases:
+def _load_setting(path: Path = SETTING_CONFIG_PATH) -> str:
+    """Return the world's setting text from `path` (see setting.yaml), or "" if unset."""
+    data = yaml.safe_load(path.read_text()) or {}
+    return data.get("setting") or ""
+
+
+def _build_prompt(
+    text: str, active_aliases: set[str], setting: str = "", entity_details: str = ""
+) -> str:
+    """Assemble a turn's prompt from the world's setting, active entities, and the player's input.
+
+    `setting` and `entity_details` are each folded in as their own
+    out-of-character line/block, but only when non-empty, so a call with
+    neither (the common case in tests) still reduces to the bare
+    "Player input: ..." line it always has.
+    """
+    parts = []
+    if setting:
+        parts.append(f"World setting: {setting}")
+    if active_aliases:
+        parts.append(f"Active entities nearby: {', '.join(sorted(active_aliases))}")
+    if entity_details:
+        parts.append(f"Entity details:\n{entity_details}")
+    if not parts:
         return text
-    entities = ", ".join(sorted(active_aliases))
-    return f"Active entities nearby: {entities}\nPlayer input: {text}"
+    parts.append(f"Player input: {text}")
+    return "\n".join(parts)

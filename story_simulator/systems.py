@@ -16,6 +16,7 @@ authoritative; the actual save data is the registry itself, persisted via
 """
 
 import asyncio
+import itertools
 import math
 from abc import ABC, abstractmethod
 from pathlib import Path
@@ -23,6 +24,7 @@ from pathlib import Path
 import anthropic
 import ibis
 import matplotlib
+import numpy as np
 import pandas as pd
 import yaml
 from iacs.dataflows import base_etl
@@ -396,17 +398,134 @@ class VisualizerSystem(System):
 
         fig, ax = plt.subplots()
         if has_positions and not df.empty:
-            ax.scatter(df["position.x"], df["position.y"])
-            for _, row in df.iterrows():
+            # `position.x`/`position.y` come from `_latest_positions`'s unvalidated
+            # columns, so they may still be raw strings; coerce to float so they
+            # plot as true numeric coordinates instead of matplotlib silently
+            # falling back to a categorical axis (which the label placement math
+            # below assumes isn't happening).
+            x = pd.to_numeric(df["position.x"], errors="coerce")
+            y = pd.to_numeric(df["position.y"], errors="coerce")
+            ax.scatter(x, y)
+            annotations = [
                 ax.annotate(
-                    row["entity_id.alias"],
-                    (row["position.x"], row["position.y"]),
-                    xytext=(5, 5),
-                    textcoords="offset points",
+                    alias,
+                    xy=(xi, yi),
+                    xytext=_offset_data_point(ax, (xi, yi), 5, 5),
+                    textcoords="data",
+                    arrowprops=dict(arrowstyle="-", color="0.5", linewidth=0.5, shrinkA=0, shrinkB=2),
                 )
+                for alias, xi, yi in zip(df["entity_id.alias"], x, y)
+            ]
+            _avoid_overlapping_labels(fig, ax, annotations)
+            _expand_limits_to_fit_labels(fig, ax, annotations)
         ax.set_aspect("equal", adjustable="datalim")
-        fig.savefig(self.render_path)
+        # bbox_inches="tight": a label nudged clear of an overlap can land
+        # further from its point than the figure's fixed canvas allows,
+        # otherwise clipping it at the image edge instead of just avoiding
+        # the overlap it was pushed away from.
+        fig.savefig(self.render_path, bbox_inches="tight")
         plt.close(fig)
+
+
+def _offset_data_point(ax, xy: tuple[float, float], dx_pts: float, dy_pts: float) -> tuple[float, float]:
+    """Convert a (dx_pts, dy_pts) offset in points into a nearby data-coordinate point.
+
+    Lets label placement start from the same "a few points up and to the
+    right" position the old `textcoords="offset points"` annotations used,
+    while keeping every subsequent move in data coordinates so
+    `_avoid_overlapping_labels` can freely reposition labels via `xyann`.
+    """
+    origin_px = ax.transData.transform(xy)
+    points_to_px = ax.figure.dpi / 72.0
+    shifted_px = origin_px + np.array([dx_pts, dy_pts]) * points_to_px
+    return tuple(ax.transData.inverted().transform(shifted_px))
+
+
+def _avoid_overlapping_labels(fig, ax, annotations: list, max_iterations: int = 60, padding_px: float = 2.0) -> None:
+    """Nudge annotation labels apart, in place, until their bounding boxes stop overlapping.
+
+    Each pass measures every label's on-screen bounding box once (via the
+    renderer) and, for every overlapping pair found in that snapshot, pushes
+    both labels apart along whichever single axis (x or y) has the smaller
+    penetration — the standard minimum-translation-vector fix for two
+    overlapping boxes. Pushing along one axis at a time (rather than both,
+    which is what a naive read of "overlap" suggests) keeps each correction
+    to the least displacement that actually clears it; pushing both axes at
+    once was found to compound diagonally across many mutually-overlapping
+    labels and fling some of them far off into empty space while others
+    stayed stuck. Measuring once per pass rather than re-measuring after
+    every individual nudge is deliberate: `get_window_extent`'s font-metrics
+    work is the dominant cost here, and re-measuring per-nudge turns a dense
+    cluster (where most of the O(labels^2) pairs overlap at once) into an
+    O(labels^3)-ish worst case — dozens of labels stacked on the same point
+    was observed to take minutes rather than seconds. Repeats because
+    resolving one pair can create or reveal an overlap elsewhere; stops as
+    soon as a pass makes no moves, or after `max_iterations` as a safety cap
+    that bounds worst-case cost for pathological/dense layouts (leaving a
+    few such labels still overlapping is preferable to a multi-second stall
+    once a turn).
+    """
+    if len(annotations) < 2:
+        return
+    # One draw suffices to obtain a renderer: `get_window_extent(renderer)`
+    # recomputes each label's bbox from its *current* position and the
+    # renderer's font metrics on every call, so re-measuring after a nudge
+    # doesn't require redrawing the whole figure (scatter points, axes,
+    # arrows, ...) on every one of up to `max_iterations` passes.
+    fig.canvas.draw()
+    renderer = fig.canvas.get_renderer()
+    for _ in range(max_iterations):
+        boxes = [annotation.get_window_extent(renderer) for annotation in annotations]
+        moved = False
+        for i, j in itertools.combinations(range(len(annotations)), 2):
+            bi, bj = boxes[i], boxes[j]
+            overlap_x = min(bi.x1, bj.x1) - max(bi.x0, bj.x0)
+            overlap_y = min(bi.y1, bj.y1) - max(bi.y0, bj.y0)
+            if overlap_x <= 0 or overlap_y <= 0:
+                continue
+            moved = True
+            dx = (bj.x0 + bj.x1) - (bi.x0 + bi.x1)
+            dy = (bj.y0 + bj.y1) - (bi.y0 + bi.y1)
+            if overlap_x <= overlap_y:
+                sign = 1.0 if dx > 0 else (-1.0 if dx < 0 else (1.0 if j > i else -1.0))
+                push = sign * (overlap_x / 2 + padding_px)
+                _nudge_label(ax, annotations[i], -push, 0.0)
+                _nudge_label(ax, annotations[j], push, 0.0)
+            else:
+                sign = 1.0 if dy > 0 else (-1.0 if dy < 0 else (1.0 if j > i else -1.0))
+                push = sign * (overlap_y / 2 + padding_px)
+                _nudge_label(ax, annotations[i], 0.0, -push)
+                _nudge_label(ax, annotations[j], 0.0, push)
+        if not moved:
+            return
+
+
+def _nudge_label(ax, annotation, dx_px: float, dy_px: float) -> None:
+    """Shift an annotation's text position by a pixel offset, keeping it in data coordinates."""
+    current_px = ax.transData.transform(annotation.xyann)
+    annotation.xyann = tuple(ax.transData.inverted().transform(current_px + np.array([dx_px, dy_px])))
+
+
+def _expand_limits_to_fit_labels(fig, ax, annotations: list) -> None:
+    """Grow the axes' view limits so every (possibly repositioned) label stays visible.
+
+    Text isn't included in matplotlib's autoscaling, so a label
+    `_avoid_overlapping_labels` pushed toward a dense cluster's edge can end
+    up outside the view the scatter points alone would produce, clipping it
+    out of the render entirely. Feeding each label's data-space bounding box
+    into `update_datalim` lets `autoscale_view` widen the limits to include
+    them, the same way it already accounts for the plotted points.
+    """
+    fig.canvas.draw()
+    renderer = fig.canvas.get_renderer()
+    inv = ax.transData.inverted()
+    corners = []
+    for annotation in annotations:
+        bbox = annotation.get_window_extent(renderer)
+        corners.append(inv.transform((bbox.x0, bbox.y0)))
+        corners.append(inv.transform((bbox.x1, bbox.y1)))
+    ax.update_datalim(corners)
+    ax.autoscale_view()
 
 
 _WRITE_WORLD_FILE_TOOL = {

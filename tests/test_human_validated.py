@@ -1,3 +1,5 @@
+import pytest
+
 from story_simulator.interpreter import Interpreter
 from story_simulator.world import EnsembleWorld, MirrorWorld
 
@@ -11,6 +13,7 @@ def test_startup_and_exit():
     p.input("/quit")
     assert p.stopped
 
+@pytest.mark.live
 def test_startup_one_loop_save(tmp_path):
     """This test starts up an EnsembleWorld, and does a single
     loop, with the player character asking a simple question.

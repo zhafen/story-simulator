@@ -19,3 +19,6 @@ iacs = { path = "iacs", editable = true }
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "live: tests that call the real Anthropic API (require ANTHROPIC_API_KEY, cost money, excluded from CI)",
+]

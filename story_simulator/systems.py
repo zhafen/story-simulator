@@ -188,15 +188,14 @@ class ResolverAgentSystem(AgentSystem):
     delegating to it, so this System has no dependency on story_simulator.world.
 
     The world's starting premise (the door, the empty expanse, the player)
-    isn't special-cased text — it's just another hand-authored EC save file
-    (`data/default/setting.yaml`) that `ETLLoaderSystem` loads into the
-    registry like any other, so it reaches the Resolver the same way
-    everything else does: as an active entity. The hosted Agents/Sessions
-    platform this System narrates through only accepts MCP servers reachable
-    by URL, so it can't attach the local stdio `iacs-mcp` subprocess directly
-    (see `ArchivistAgentSystem`); instead, this System talks to `iacs-mcp`
-    itself as a plain MCP client (`_gather_entity_details`) to look up what's
-    known about each active entity, and folds that into the prompt text.
+    lives in `data/default/setting.yaml`, a hand-authored EC save file that
+    `ETLLoaderSystem` loads into the registry, so it reaches the Resolver as
+    an active entity. The hosted Agents/Sessions platform this System
+    narrates through only accepts MCP servers reachable by URL, so it can't
+    attach the local stdio `iacs-mcp` subprocess directly (see
+    `ArchivistAgentSystem`); instead, this System talks to `iacs-mcp` itself
+    as a plain MCP client (`_gather_entity_details`) to look up what's known
+    about each active entity, and folds that into the prompt text.
     """
 
     def __init__(

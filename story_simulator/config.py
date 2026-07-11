@@ -1,8 +1,15 @@
 import os
+from pathlib import Path
 
 PROD_AGENT_ID = "agent_01AxMwvbKDkfbVZd73DLNiAy"
 TEST_AGENT_ID = "agent_01FVJeTDVA2mMkYHzkaYvZLo"
 ENVIRONMENT_ID = "env_01Rhk13fhp1wwS3RgiDQcK2g"
+
+# The story-simulator's own component/field schema (position, character, ...).
+# Every base_etl call needs this in `input_dirs` for its component types to
+# be schema-validated — without it, validate_components has no field
+# definitions for them and passes their data through unvalidated/untyped.
+MANIFEST_DIR = Path(__file__).parent.parent / "manifest"
 
 
 def resolve_anthropic_api_key() -> str | None:

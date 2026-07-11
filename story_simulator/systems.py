@@ -35,7 +35,7 @@ from iacs.registry import Registry
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-from story_simulator.config import ENVIRONMENT_ID, PROD_AGENT_ID, resolve_anthropic_api_key
+from story_simulator.config import ENVIRONMENT_ID, MANIFEST_DIR, PROD_AGENT_ID, resolve_anthropic_api_key
 from story_simulator.mcp_client import open_iacs_mcp_session
 
 WORLD_YAML_FILENAME = "world.yaml"
@@ -99,7 +99,7 @@ class ETLLoaderSystem(System):
         new_files = sorted(found - self.loaded_files)
         if not new_files:
             return
-        new_registry = etl.execute(base_etl, input_dirs=[str(f) for f in new_files])
+        new_registry = etl.execute(base_etl, input_dirs=[str(MANIFEST_DIR), *(str(f) for f in new_files)])
         registry.merge(new_registry)
         new_registry.close()
         self.loaded_files.update(new_files)
@@ -288,16 +288,17 @@ class ArchivistAgentSystem(AgentSystem):
     since no MCP tool writes new EC files. The content of the last
     `write_world_file` call is fed straight to `ETLSystem` as a YAML string
     and merged into the registry, rather than reloading `save_dir` from
-    disk. `world.yaml` itself is regenerated from the registry (via iacs's
-    `export_manifest`) before and after the tool loop, so `read_world_file`
-    sees the full current save data and the on-disk export stays in sync
-    with whatever this step merged in.
+    disk. `world.yaml` is no longer regenerated from the registry every
+    turn — the registry itself (persisted via `Registry.from_database`) is
+    already the durable save, so `read_world_file`/`write_world_file` just
+    read/write whatever the Archivist itself last wrote to disk; see
+    `_export_world_yaml` for the on-demand regeneration these tools used to
+    trigger automatically.
 
     Components
     ----------
     - todo: The docstrings are too verbose, explaining a lot of old context-specific
         reasoning. That's true for this entity and others.
-    - todo: Not sure we need to export world.yaml every turn.
     - todo: The tools should be handled fully as part of iacs. We shouldn't need custom
         tools for iacs I/O.
     """
@@ -320,12 +321,10 @@ class ArchivistAgentSystem(AgentSystem):
             return
         save_dir = Path(save_dir)
         save_dir.mkdir(parents=True, exist_ok=True)
-        _export_world_yaml(registry, etl, save_dir)
         self._last_content = None
         asyncio.run(self._record_async(save_dir, command_text, narration_text))
         if self._last_content is not None:
             _merge_yaml_string(registry, etl, WORLD_FILE_ID, self._last_content, turn)
-            _export_world_yaml(registry, etl, save_dir)
 
     async def _record_async(self, save_dir: Path, player_input: str, world_response: str) -> None:
         async with open_iacs_mcp_session(save_dir) as mcp:
@@ -398,23 +397,16 @@ class VisualizerSystem(System):
 
         fig, ax = plt.subplots()
         if has_positions and not df.empty:
-            # `position.x`/`position.y` come from `_latest_positions`'s unvalidated
-            # columns, so they may still be raw strings; coerce to float so they
-            # plot as true numeric coordinates instead of matplotlib silently
-            # falling back to a categorical axis (which the label placement math
-            # below assumes isn't happening).
-            x = pd.to_numeric(df["position.x"], errors="coerce")
-            y = pd.to_numeric(df["position.y"], errors="coerce")
-            ax.scatter(x, y)
+            ax.scatter(df["position.x"], df["position.y"])
             annotations = [
                 ax.annotate(
-                    alias,
-                    xy=(xi, yi),
-                    xytext=_offset_data_point(ax, (xi, yi), 5, 5),
+                    row["entity_id.alias"],
+                    xy=(row["position.x"], row["position.y"]),
+                    xytext=_offset_data_point(ax, (row["position.x"], row["position.y"]), 5, 5),
                     textcoords="data",
                     arrowprops=dict(arrowstyle="-", color="0.5", linewidth=0.5, shrinkA=0, shrinkB=2),
                 )
-                for alias, xi, yi in zip(df["entity_id.alias"], x, y)
+                for _, row in df.iterrows()
             ]
             _avoid_overlapping_labels(fig, ax, annotations)
             _expand_limits_to_fit_labels(fig, ax, annotations)
@@ -569,7 +561,7 @@ def _merge_yaml_string(
     only unions rows in), so this `turn` column is what lets readers resolve
     which row is current; see `_latest_positions`.
     """
-    new_registry = etl.execute(base_etl, input_dirs=[], yaml_strings={key: yaml_text})
+    new_registry = etl.execute(base_etl, input_dirs=[str(MANIFEST_DIR)], yaml_strings={key: yaml_text})
     if turn is not None and "position" in new_registry.component_types:
         stamped = new_registry.get("position").mutate(turn=ibis.literal(turn))
         new_registry.update({"position": stamped})
@@ -587,6 +579,13 @@ def _export_world_yaml(registry: Registry, etl: ETLSystem, save_dir: Path) -> No
     source identifier; every direct registry merge in this module uses
     `WORLD_FILE_ID` ("world"), which `export_manifest` suffixes into
     `world.yaml`.
+
+    No longer called automatically each turn — `Registry`'s own persistence
+    already covers saving, and `export_manifest` has no notion of this
+    project's own `manifest/` schema entities being "builtins" the way
+    iacs's bundled ones are, so an automatic per-turn export would also dump
+    a stray copy of `manifest/` into `save_dir`. Kept as a standalone
+    utility for an eventual explicit/user-triggered export.
     """
     etl.execute(export_manifest, registry=registry, output_dir=str(save_dir))
 
@@ -616,7 +615,9 @@ def _add_input(registry: Registry, etl: ETLSystem, alias: str, text: str, type_:
     """
     history = _input_history(registry, alias) + [{"text": text, "type": type_, "turn": turn}]
     data = {alias: [{"input": h} for h in history]}
-    new_registry = etl.execute(base_etl, input_dirs=[], yaml_strings={WORLD_FILE_ID: yaml.safe_dump(data, sort_keys=False)})
+    new_registry = etl.execute(
+        base_etl, input_dirs=[str(MANIFEST_DIR)], yaml_strings={WORLD_FILE_ID: yaml.safe_dump(data, sort_keys=False)}
+    )
     # .to_pyarrow() materializes the data so it can cross from new_registry's
     # connection into registry's (mirrors Registry.merge's own approach).
     registry.update({"input": new_registry.get("input").to_pyarrow()})
@@ -632,7 +633,9 @@ def _sync_active_tags(registry: Registry, etl: ETLSystem, active_aliases: set[st
     is the only writer of `active`.
     """
     data = {alias: ["active"] for alias in sorted(active_aliases)}
-    new_registry = etl.execute(base_etl, input_dirs=[], yaml_strings={WORLD_FILE_ID: yaml.safe_dump(data, sort_keys=False)})
+    new_registry = etl.execute(
+        base_etl, input_dirs=[str(MANIFEST_DIR)], yaml_strings={WORLD_FILE_ID: yaml.safe_dump(data, sort_keys=False)}
+    )
     registry.update({"active": new_registry.get("active").to_pyarrow()})
     new_registry.close()
 
@@ -654,31 +657,16 @@ def _latest_positions(registry: Registry) -> pd.DataFrame:
     `position` rows accumulate across turns rather than being overwritten
     (`registry.merge` only unions rows in; see `_merge_yaml_string`), so
     "current position" has to be resolved at read time instead of read
-    directly off the table. Rows with no `turn` (e.g. hand-authored save
-    files loaded without one) sort as oldest. Ties — including an entity
-    with no `turn`-stamped row at all — are broken by keeping the last row
-    in join order, mirroring `_latest_input`'s `.iloc[-1]` convention.
+    directly off the table. Delegated to `Registry.view_current`, which
+    resolves this the same way for any component with a field flagged
+    `time_dimension: true` — see `turn`'s definition in
+    `manifest/builtins.yaml` — rather than reimplementing that resolution
+    by hand here.
     """
     columns = ["entity_id", "entity_id.alias", "position.x", "position.y", "position.z", "position.turn"]
     if "position" not in registry.component_types:
         return pd.DataFrame(columns=columns)
-    # `position`'s columns aren't schema-validated (no manifest_dir is wired
-    # into the ETLSystem() this module uses), so a given merge's YAML may not
-    # have mentioned every field (e.g. no `z`, or no `turn` on hand-authored
-    # save data) — read the raw table and backfill absent fields as null
-    # rather than assuming `registry.view` will find them.
-    pos = registry.get("position").execute()
-    for field in ("x", "y", "z", "turn"):
-        if field not in pos.columns:
-            pos[field] = None
-    # entity_id.alias is for display only; the merge/groupby key below has to
-    # be the actual entity_id, since aliases aren't guaranteed unique.
-    aliases = registry.view(["entity_id.alias"]).execute()
-    df = aliases.merge(pos[["entity_id", "x", "y", "z", "turn"]], on="entity_id")
-    df = df.rename(columns={"x": "position.x", "y": "position.y", "z": "position.z", "turn": "position.turn"})
-    sort_key = pd.to_numeric(df["position.turn"], errors="coerce").fillna(-1)
-    df = df.iloc[sort_key.argsort(kind="stable")]
-    return df.groupby("entity_id", as_index=False).tail(1)[columns]
+    return registry.view_current(["position.x", "position.y", "position.z", "position.turn"]).execute()[columns]
 
 
 def _player_position(registry: Registry) -> tuple[str, tuple[float, float]] | None:

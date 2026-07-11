@@ -9,6 +9,7 @@ from iacs.dataflows import base_etl
 from iacs.etl_system import ETLSystem
 from iacs.registry import Registry
 
+from story_simulator.config import MANIFEST_DIR
 from story_simulator.systems import (
     AgentSystem,
     ArchivistAgentSystem,
@@ -43,7 +44,7 @@ def _registry_from_yaml(yaml_text: str) -> Registry:
     under, or entities created here won't line up with tags/inputs those
     Systems attach later.
     """
-    return ETLSystem().execute(base_etl, input_dirs=[], yaml_strings={WORLD_FILE_ID: yaml_text})
+    return ETLSystem().execute(base_etl, input_dirs=[str(MANIFEST_DIR)], yaml_strings={WORLD_FILE_ID: yaml_text})
 
 
 def _make_mock_client(session_id, events):
@@ -387,11 +388,9 @@ def test_archivist_agent_system_dispatches_mcp_and_local_tools(tmp_path, monkeyp
     # The written content was fed straight to ETLSystem and merged in,
     # without rereading save_dir from disk.
     assert registry.get("origin").count().execute() == 1
-    # world.yaml is regenerated from the registry afterward (not a verbatim
-    # copy of the model's raw tool call), so check its content loosely.
-    exported = (save_dir / WORLD_YAML_FILENAME).read_text()
-    assert "player" in exported
-    assert "origin" in exported
+    # world.yaml is no longer regenerated from the registry; `write_world_file`
+    # writes the model's raw content straight to disk, verbatim.
+    assert (save_dir / WORLD_YAML_FILENAME).read_text() == "player:\n    - origin\n"
 
 
 # ---------------------------------------------------------------------------

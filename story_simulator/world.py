@@ -106,15 +106,15 @@ class EnsembleWorld(World):
 
     Each turn, `respond()` runs every System in `systems` order against the
     same iacs `Registry` — the sole channel Systems use to communicate.
-    `world.yaml` is only ever a derived, human/AI-readable export of that
-    registry (written by `ArchivistAgentSystem`); it's never read back in as
-    authoritative. By default: `ETLLoaderSystem` first loads any
-    not-yet-loaded EC files from `save_dir`, `MapSystem` tags entities near
-    the player as active (based on where the player ended up last turn),
-    `InputSystem` registers the player's new input, `ResolverAgentSystem`
-    narrates what happens, `ArchivistAgentSystem` transcribes the exchange
-    and re-exports `world.yaml`, and `VisualizerSystem` re-renders the
-    position plot.
+    `world.yaml`, when present, is only ever a derived, human/AI-readable
+    export of that registry; it's never read back in as authoritative (see
+    `story_simulator.systems._export_world_yaml`). By default:
+    `ETLLoaderSystem` first loads any not-yet-loaded EC files from
+    `save_dir`, `MapSystem` tags entities near the player as active (based
+    on where the player ended up last turn), `InputSystem` registers the
+    player's new input, `ResolverAgentSystem` narrates what happens,
+    `ArchivistAgentSystem` transcribes the exchange, and `VisualizerSystem`
+    re-renders the position plot.
 
     The registry itself — the actual save data — lives in
     `save_dir/registry.duckdb`: when `save_dir` is given, `Registry.from_database`

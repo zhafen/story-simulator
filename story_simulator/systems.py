@@ -288,12 +288,11 @@ class ArchivistAgentSystem(AgentSystem):
     since no MCP tool writes new EC files. The content of the last
     `write_world_file` call is fed straight to `ETLSystem` as a YAML string
     and merged into the registry, rather than reloading `save_dir` from
-    disk. `world.yaml` is no longer regenerated from the registry every
-    turn — the registry itself (persisted via `Registry.from_database`) is
-    already the durable save, so `read_world_file`/`write_world_file` just
+    disk. The registry itself (persisted via `Registry.from_database`) is
+    the durable save, so `read_world_file`/`write_world_file` just
     read/write whatever the Archivist itself last wrote to disk; see
-    `_export_world_yaml` for the on-demand regeneration these tools used to
-    trigger automatically.
+    `_export_world_yaml` for regenerating `world.yaml` from the registry
+    on demand.
 
     Components
     ----------
@@ -580,12 +579,11 @@ def _export_world_yaml(registry: Registry, etl: ETLSystem, save_dir: Path) -> No
     `WORLD_FILE_ID` ("world"), which `export_manifest` suffixes into
     `world.yaml`.
 
-    No longer called automatically each turn — `Registry`'s own persistence
-    already covers saving, and `export_manifest` has no notion of this
-    project's own `manifest/` schema entities being "builtins" the way
-    iacs's bundled ones are, so an automatic per-turn export would also dump
-    a stray copy of `manifest/` into `save_dir`. Kept as a standalone
-    utility for an eventual explicit/user-triggered export.
+    A standalone utility, not part of the per-turn System pipeline:
+    `export_manifest` has no notion of this project's own `manifest/`
+    schema entities being "builtins" the way iacs's bundled ones are, so
+    calling this every turn would also dump a stray copy of `manifest/`
+    into `save_dir`. Intended for an explicit/user-triggered export.
     """
     etl.execute(export_manifest, registry=registry, output_dir=str(save_dir))
 
@@ -657,16 +655,26 @@ def _latest_positions(registry: Registry) -> pd.DataFrame:
     `position` rows accumulate across turns rather than being overwritten
     (`registry.merge` only unions rows in; see `_merge_yaml_string`), so
     "current position" has to be resolved at read time instead of read
-    directly off the table. Delegated to `Registry.view_current`, which
-    resolves this the same way for any component with a field flagged
-    `time_dimension: true` — see `turn`'s definition in
-    `manifest/builtins.yaml` — rather than reimplementing that resolution
-    by hand here.
+    directly off the table. Grouped by `entity_id` alone rather than
+    `Registry.view_current` (which additionally groups by
+    `component_index`): a `position` entry's `component_index` reflects
+    where it fell in whichever YAML fragment produced it, which isn't
+    stable across the independent merges (`_merge_yaml_string`,
+    `ETLLoaderSystem`) that accumulate one entity's position history, so
+    grouping on it would split that history into multiple unrelated
+    "current" rows instead of collapsing it to one. Rows with no `turn`
+    (e.g. hand-authored save files loaded without one) sort as oldest.
+    Ties — including an entity with no `turn`-stamped row at all — are
+    broken by keeping the last row in join order, mirroring
+    `_latest_input`'s `.iloc[-1]` convention.
     """
     columns = ["entity_id", "entity_id.alias", "position.x", "position.y", "position.z", "position.turn"]
     if "position" not in registry.component_types:
         return pd.DataFrame(columns=columns)
-    return registry.view_current(["position.x", "position.y", "position.z", "position.turn"]).execute()[columns]
+    df = registry.view(["position.x", "position.y", "position.z", "position.turn"]).execute()
+    sort_key = pd.to_numeric(df["position.turn"], errors="coerce").fillna(-1)
+    df = df.iloc[sort_key.argsort(kind="stable")]
+    return df.groupby("entity_id", as_index=False).tail(1)[columns]
 
 
 def _player_position(registry: Registry) -> tuple[str, tuple[float, float]] | None:

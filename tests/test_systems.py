@@ -388,8 +388,8 @@ def test_archivist_agent_system_dispatches_mcp_and_local_tools(tmp_path, monkeyp
     # The written content was fed straight to ETLSystem and merged in,
     # without rereading save_dir from disk.
     assert registry.get("origin").count().execute() == 1
-    # world.yaml is no longer regenerated from the registry; `write_world_file`
-    # writes the model's raw content straight to disk, verbatim.
+    # `write_world_file` writes the model's raw content straight to disk,
+    # verbatim (world.yaml isn't regenerated from the registry).
     assert (save_dir / WORLD_YAML_FILENAME).read_text() == "player:\n    - origin\n"
 
 

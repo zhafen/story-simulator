@@ -44,10 +44,9 @@ DEFAULT_ACTIVE_ENTITY_RADIUS = 20.0
 DEFAULT_RENDER_PATH = Path("render.svg")
 EC_FILE_GLOBS = ("*.yaml", "*.yml", "*.py", "*.csv")
 
-PROD_AGENT_CONFIG_PATH = Path(__file__).parent / "agent.yaml"
+PROD_RESOLVER_CONFIG_PATH = Path(__file__).parent / "resolver.yaml"
 PROD_ARCHIVIST_CONFIG_PATH = Path(__file__).parent / "archivist.yaml"
 TEST_ARCHIVIST_CONFIG_PATH = Path(__file__).parent / "archivist.test.yaml"
-SETTING_CONFIG_PATH = Path(__file__).parent / "setting.yaml"
 
 
 class System(ABC):
@@ -188,29 +187,28 @@ class ResolverAgentSystem(AgentSystem):
     This duplicates `AgentWorld`'s session-management logic rather than
     delegating to it, so this System has no dependency on story_simulator.world.
 
-    The world's setting (its starting premise) lives in `setting.yaml`
-    rather than being baked into the agent's system prompt, so `_build_prompt`
-    can fold it into every turn instead of relying on the model to remember
-    it from the start of a session. The hosted Agents/Sessions platform this
-    System narrates through only accepts MCP servers reachable by URL, so it
-    can't attach the local stdio `iacs-mcp` subprocess directly (see
-    `ArchivistAgentSystem`); instead, this System talks to `iacs-mcp` itself
-    as a plain MCP client (`_gather_entity_details`) to look up what's known
-    about each active entity, and folds that into the prompt text too.
+    The world's starting premise (the door, the empty expanse, the player)
+    isn't special-cased text — it's just another hand-authored EC save file
+    (`data/default/setting.yaml`) that `ETLLoaderSystem` loads into the
+    registry like any other, so it reaches the Resolver the same way
+    everything else does: as an active entity. The hosted Agents/Sessions
+    platform this System narrates through only accepts MCP servers reachable
+    by URL, so it can't attach the local stdio `iacs-mcp` subprocess directly
+    (see `ArchivistAgentSystem`); instead, this System talks to `iacs-mcp`
+    itself as a plain MCP client (`_gather_entity_details`) to look up what's
+    known about each active entity, and folds that into the prompt text.
     """
 
     def __init__(
         self,
         agent_id: str = PROD_AGENT_ID,
         environment_id: str = ENVIRONMENT_ID,
-        config_path: Path = PROD_AGENT_CONFIG_PATH,
-        setting_path: Path = SETTING_CONFIG_PATH,
+        config_path: Path = PROD_RESOLVER_CONFIG_PATH,
     ):
         self.client = anthropic.Anthropic(api_key=resolve_anthropic_api_key())
         self.agent_id = agent_id
         self.environment_id = environment_id
         self.config_path = config_path
-        self.setting_path = setting_path
         self.session_id = None
         self.last_response: str = ""
 
@@ -228,12 +226,7 @@ class ResolverAgentSystem(AgentSystem):
 
         active_aliases = _active_aliases(registry)
         entity_details = asyncio.run(self._gather_entity_details(Path(save_dir), active_aliases))
-        prompt = _build_prompt(
-            command_text,
-            active_aliases,
-            setting=_load_setting(self.setting_path),
-            entity_details=entity_details,
-        )
+        prompt = _build_prompt(command_text, active_aliases, entity_details=entity_details)
         response = self._respond(prompt)
         self.last_response = response
 
@@ -259,7 +252,7 @@ class ResolverAgentSystem(AgentSystem):
     def _load_config(self) -> dict:
         local = yaml.safe_load(self.config_path.read_text())
         if not local.get("system"):
-            local["system"] = yaml.safe_load(PROD_AGENT_CONFIG_PATH.read_text())["system"]
+            local["system"] = yaml.safe_load(PROD_RESOLVER_CONFIG_PATH.read_text())["system"]
         return local
 
     def _sync_agent(self) -> None:
@@ -663,25 +656,15 @@ def _active_aliases(registry: Registry) -> set[str]:
     return set(df["entity_id.alias"])
 
 
-def _load_setting(path: Path = SETTING_CONFIG_PATH) -> str:
-    """Return the world's setting text from `path` (see setting.yaml), or "" if unset."""
-    data = yaml.safe_load(path.read_text()) or {}
-    return data.get("setting") or ""
+def _build_prompt(text: str, active_aliases: set[str], entity_details: str = "") -> str:
+    """Assemble a turn's prompt from the active entities, their details, and the player's input.
 
-
-def _build_prompt(
-    text: str, active_aliases: set[str], setting: str = "", entity_details: str = ""
-) -> str:
-    """Assemble a turn's prompt from the world's setting, active entities, and the player's input.
-
-    `setting` and `entity_details` are each folded in as their own
-    out-of-character line/block, but only when non-empty, so a call with
-    neither (the common case in tests) still reduces to the bare
-    "Player input: ..." line it always has.
+    `entity_details` is folded in as its own out-of-character block, but only
+    when non-empty, so a call without it (the common case in tests) still
+    reduces to the same "Active entities nearby: .../Player input: ..." shape
+    this always had.
     """
     parts = []
-    if setting:
-        parts.append(f"World setting: {setting}")
     if active_aliases:
         parts.append(f"Active entities nearby: {', '.join(sorted(active_aliases))}")
     if entity_details:

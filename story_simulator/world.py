@@ -20,8 +20,8 @@ from story_simulator.systems import (
     VisualizerSystem,
 )
 
-PROD_AGENT_CONFIG_PATH = Path(__file__).parent / "agent.yaml"
-TEST_AGENT_CONFIG_PATH = Path(__file__).parent / "agent.test.yaml"
+PROD_RESOLVER_CONFIG_PATH = Path(__file__).parent / "resolver.yaml"
+TEST_RESOLVER_CONFIG_PATH = Path(__file__).parent / "resolver.test.yaml"
 
 
 class World(ABC):
@@ -40,7 +40,7 @@ class AgentWorld(World):
         self,
         agent_id: str = PROD_AGENT_ID,
         environment_id: str = ENVIRONMENT_ID,
-        config_path: Path = PROD_AGENT_CONFIG_PATH,
+        config_path: Path = PROD_RESOLVER_CONFIG_PATH,
     ):
         self.client = anthropic.Anthropic(api_key=resolve_anthropic_api_key())
         self.agent_id = agent_id
@@ -51,7 +51,7 @@ class AgentWorld(World):
     def _load_config(self) -> dict:
         local = yaml.safe_load(self.config_path.read_text())
         if not local.get("system"):
-            local["system"] = yaml.safe_load(PROD_AGENT_CONFIG_PATH.read_text())["system"]
+            local["system"] = yaml.safe_load(PROD_RESOLVER_CONFIG_PATH.read_text())["system"]
         return local
 
     def _sync_agent(self) -> None:

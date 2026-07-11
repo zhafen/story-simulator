@@ -5,13 +5,13 @@ from dotenv import load_dotenv
 
 from story_simulator.config import TEST_AGENT_ID
 from story_simulator.interpreter import Interpreter
-from story_simulator.world import AgentWorld, EnsembleWorld, MirrorWorld, TEST_AGENT_CONFIG_PATH
+from story_simulator.world import AgentWorld, EnsembleWorld, MirrorWorld, TEST_RESOLVER_CONFIG_PATH
 
 BANNER = "story-simulator REPL. Type /quit to exit."
 
 WORLDS = {
     "agent": lambda args: AgentWorld(),
-    "agent-test": lambda args: AgentWorld(agent_id=TEST_AGENT_ID, config_path=TEST_AGENT_CONFIG_PATH),
+    "agent-test": lambda args: AgentWorld(agent_id=TEST_AGENT_ID, config_path=TEST_RESOLVER_CONFIG_PATH),
     "mirror": lambda args: MirrorWorld(),
     "ensemble": lambda args: EnsembleWorld(
         save_dir=args.save_dir,

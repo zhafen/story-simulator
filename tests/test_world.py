@@ -3,7 +3,6 @@ from contextlib import asynccontextmanager
 from unittest.mock import MagicMock
 
 import pytest
-import yaml
 from iacs.etl_system import ETLSystem
 from iacs.registry import Registry
 
@@ -21,14 +20,6 @@ from story_simulator.systems import (
     _merge_yaml_string,
 )
 from story_simulator.world import AgentWorld, EnsembleWorld, World, MirrorWorld
-
-
-def _write_setting(tmp_path, text=""):
-    """Blank setting.yaml fixture, so ResolverAgentSystem tests here aren't
-    affected by the real, narrative-length default in setting.yaml."""
-    path = tmp_path / "setting.yaml"
-    path.write_text(yaml.safe_dump({"setting": text}))
-    return path
 
 
 class _FakeMcpSession:
@@ -100,7 +91,7 @@ def test_agent_world_reuses_session_across_calls(monkeypatch):
 
 
 def test_agent_world_syncs_agent_config_from_repo_file(tmp_path, monkeypatch):
-    config_path = tmp_path / "agent.yaml"
+    config_path = tmp_path / "resolver.yaml"
     config_path.write_text("name: Test Agent\nmodel: claude-haiku-4-5\nsystem: Be terse.\n")
 
     mock_client = _make_mock_client("sesn_test123", events=None)
@@ -123,13 +114,13 @@ def test_agent_world_syncs_agent_config_from_repo_file(tmp_path, monkeypatch):
 
 
 def test_agent_world_inherits_system_from_prod_config_when_omitted(tmp_path, monkeypatch):
-    prod_config_path = tmp_path / "agent.yaml"
+    prod_config_path = tmp_path / "resolver.yaml"
     prod_config_path.write_text(
         "name: Prod Agent\nmodel: claude-opus-4-8\nsystem: Shared instructions.\n"
     )
-    monkeypatch.setattr("story_simulator.world.PROD_AGENT_CONFIG_PATH", prod_config_path)
+    monkeypatch.setattr("story_simulator.world.PROD_RESOLVER_CONFIG_PATH", prod_config_path)
 
-    test_config_path = tmp_path / "agent.test.yaml"
+    test_config_path = tmp_path / "resolver.test.yaml"
     test_config_path.write_text("name: Test Agent\nmodel: claude-haiku-4-5\n")
 
     mock_client = _make_mock_client("sesn_test123", events=None)
@@ -276,7 +267,7 @@ def test_ensemble_world_full_turn_updates_active_entities_next_turn(tmp_path, mo
     systems = OrderedDict(
         map=MapSystem(radius=10.0),
         input=InputSystem(),
-        resolver=ResolverAgentSystem(setting_path=_write_setting(tmp_path)),
+        resolver=ResolverAgentSystem(),
         archivist=archivist,
     )
     world = EnsembleWorld(systems=systems, save_dir=save_dir)

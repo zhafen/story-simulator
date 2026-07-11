@@ -1,4 +1,5 @@
 from collections import OrderedDict
+from contextlib import asynccontextmanager
 from unittest.mock import MagicMock
 
 import pytest
@@ -19,6 +20,21 @@ from story_simulator.systems import (
     _merge_yaml_string,
 )
 from story_simulator.world import AgentWorld, EnsembleWorld, World, MirrorWorld
+
+
+class _FakeMcpSession:
+    """Fake iacs MCP session whose view_entity call reports a canned description."""
+
+    tools = []
+
+    async def call_tool(self, name, arguments):
+        assert name == "view_entity"
+        return f"{arguments['entity_id']} description"
+
+
+@asynccontextmanager
+async def _fake_open_iacs_mcp_session(manifest_dir):
+    yield _FakeMcpSession()
 
 
 def test_base_world_cannot_be_instantiated():
@@ -75,7 +91,7 @@ def test_agent_world_reuses_session_across_calls(monkeypatch):
 
 
 def test_agent_world_syncs_agent_config_from_repo_file(tmp_path, monkeypatch):
-    config_path = tmp_path / "agent.yaml"
+    config_path = tmp_path / "resolver.yaml"
     config_path.write_text("name: Test Agent\nmodel: claude-haiku-4-5\nsystem: Be terse.\n")
 
     mock_client = _make_mock_client("sesn_test123", events=None)
@@ -98,13 +114,13 @@ def test_agent_world_syncs_agent_config_from_repo_file(tmp_path, monkeypatch):
 
 
 def test_agent_world_inherits_system_from_prod_config_when_omitted(tmp_path, monkeypatch):
-    prod_config_path = tmp_path / "agent.yaml"
+    prod_config_path = tmp_path / "resolver.yaml"
     prod_config_path.write_text(
         "name: Prod Agent\nmodel: claude-opus-4-8\nsystem: Shared instructions.\n"
     )
-    monkeypatch.setattr("story_simulator.world.PROD_AGENT_CONFIG_PATH", prod_config_path)
+    monkeypatch.setattr("story_simulator.world.PROD_RESOLVER_CONFIG_PATH", prod_config_path)
 
-    test_config_path = tmp_path / "agent.test.yaml"
+    test_config_path = tmp_path / "resolver.test.yaml"
     test_config_path.write_text("name: Test Agent\nmodel: claude-haiku-4-5\n")
 
     mock_client = _make_mock_client("sesn_test123", events=None)
@@ -240,6 +256,7 @@ def test_ensemble_world_full_turn_updates_active_entities_next_turn(tmp_path, mo
     save_dir = tmp_path / "save"
     mock_client = _make_mock_client("sesn_test123", events=None)
     monkeypatch.setattr("story_simulator.systems.anthropic.Anthropic", lambda **kwargs: mock_client)
+    monkeypatch.setattr("story_simulator.systems.open_iacs_mcp_session", _fake_open_iacs_mcp_session)
 
     def _record(registry, etl, *_args):
         _merge_yaml_string(registry, etl, WORLD_FILE_ID, _SAMPLE_WORLD_YAML)

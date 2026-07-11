@@ -1,0 +1,27 @@
+player:
+    - character:
+        interaction_type: player
+    - position:
+        x: 0
+        y: 0
+    - origin
+    - appearance:
+        value: a traveler, pausing at the edge of a quiet space
+
+door:
+    - object:
+        type: door
+    - position:
+        x: 2
+        y: 0
+    - appearance:
+        value: a plain door; what's on its far side isn't visible yet
+
+expanse:
+    - object:
+        type: expanse
+    - position:
+        x: 0
+        y: 0
+    - appearance:
+        value: an empty, quiet space, without walls or horizon

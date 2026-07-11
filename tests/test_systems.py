@@ -62,6 +62,21 @@ def _sent_text(mock_client):
     return events[0]["content"][0]["text"]
 
 
+class _FakeMcpSession:
+    """Fake iacs MCP session whose view_entity call reports a canned description."""
+
+    tools = []
+
+    async def call_tool(self, name, arguments):
+        assert name == "view_entity"
+        return f"{arguments['entity_id']} description"
+
+
+@asynccontextmanager
+async def _fake_open_iacs_mcp_session(manifest_dir):
+    yield _FakeMcpSession()
+
+
 def test_system_cannot_be_instantiated():
     with pytest.raises(TypeError):
         System()
@@ -266,6 +281,8 @@ def test_resolver_agent_system_calls_agent_and_records_reply(tmp_path, monkeypat
 
     resolver.step(registry, etl, save_dir, turn=1)
 
+    # No active entities, so the prompt reduces to the bare player input, and
+    # no iacs MCP session is opened at all.
     assert _sent_text(mock_client) == "open the door"
     assert resolver.last_response == "hello back"
     assert _latest_input(registry, "agent", turn=1) == "hello back"
@@ -277,6 +294,7 @@ def test_resolver_agent_system_includes_active_entities_in_prompt(tmp_path, monk
     etl = ETLSystem()
     mock_client = _make_mock_client("sesn_test123", events=None)
     monkeypatch.setattr("story_simulator.systems.anthropic.Anthropic", lambda **kwargs: mock_client)
+    monkeypatch.setattr("story_simulator.systems.open_iacs_mcp_session", _fake_open_iacs_mcp_session)
 
     MapSystem(radius=10.0).step(registry, etl, save_dir, turn=1)
     input_system = InputSystem()
@@ -284,7 +302,12 @@ def test_resolver_agent_system_includes_active_entities_in_prompt(tmp_path, monk
     input_system.step(registry, etl, save_dir, turn=1)
     ResolverAgentSystem().step(registry, etl, save_dir, turn=1)
 
-    assert _sent_text(mock_client) == "Active entities nearby: nearby_npc\nPlayer input: look around"
+    assert _sent_text(mock_client) == (
+        "Active entities nearby: nearby_npc\n"
+        "Entity details:\n"
+        "nearby_npc description\n"
+        "Player input: look around"
+    )
 
 
 def test_resolver_agent_system_does_nothing_without_command(tmp_path, monkeypatch):

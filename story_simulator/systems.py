@@ -44,7 +44,7 @@ DEFAULT_ACTIVE_ENTITY_RADIUS = 20.0
 DEFAULT_RENDER_PATH = Path("render.svg")
 EC_FILE_GLOBS = ("*.yaml", "*.yml", "*.py", "*.csv")
 
-PROD_AGENT_CONFIG_PATH = Path(__file__).parent / "agent.yaml"
+PROD_RESOLVER_CONFIG_PATH = Path(__file__).parent / "resolver.yaml"
 PROD_ARCHIVIST_CONFIG_PATH = Path(__file__).parent / "archivist.yaml"
 TEST_ARCHIVIST_CONFIG_PATH = Path(__file__).parent / "archivist.test.yaml"
 
@@ -186,13 +186,23 @@ class ResolverAgentSystem(AgentSystem):
     the result back as an agent-type `input` component on the player entity.
     This duplicates `AgentWorld`'s session-management logic rather than
     delegating to it, so this System has no dependency on story_simulator.world.
+
+    The world's starting premise (the door, the empty expanse, the player)
+    lives in `data/default/setting.yaml`, a hand-authored EC save file that
+    `ETLLoaderSystem` loads into the registry, so it reaches the Resolver as
+    an active entity. The hosted Agents/Sessions platform this System
+    narrates through only accepts MCP servers reachable by URL, so it can't
+    attach the local stdio `iacs-mcp` subprocess directly (see
+    `ArchivistAgentSystem`); instead, this System talks to `iacs-mcp` itself
+    as a plain MCP client (`_gather_entity_details`) to look up what's known
+    about each active entity, and folds that into the prompt text.
     """
 
     def __init__(
         self,
         agent_id: str = PROD_AGENT_ID,
         environment_id: str = ENVIRONMENT_ID,
-        config_path: Path = PROD_AGENT_CONFIG_PATH,
+        config_path: Path = PROD_RESOLVER_CONFIG_PATH,
     ):
         self.client = anthropic.Anthropic(api_key=resolve_anthropic_api_key())
         self.agent_id = agent_id
@@ -214,16 +224,34 @@ class ResolverAgentSystem(AgentSystem):
             return
 
         active_aliases = _active_aliases(registry)
-        response = self._respond(_build_prompt(command_text, active_aliases))
+        entity_details = asyncio.run(self._gather_entity_details(Path(save_dir), active_aliases))
+        prompt = _build_prompt(command_text, active_aliases, entity_details=entity_details)
+        response = self._respond(prompt)
         self.last_response = response
 
         alias = _ensure_player_alias(registry, etl)
         _add_input(registry, etl, alias, response, "agent", turn)
 
+    async def _gather_entity_details(self, save_dir: Path, active_aliases: set[str]) -> str:
+        """Ask the local iacs MCP server what's known about each active entity.
+
+        Only opens a session when there's something to look up, so turns
+        with no active entities (including every "does nothing" early-return
+        case) never pay for spawning the `iacs-mcp` subprocess.
+        """
+        if not active_aliases:
+            return ""
+        async with open_iacs_mcp_session(save_dir) as mcp:
+            views = [
+                await mcp.call_tool("view_entity", {"entity_id": alias})
+                for alias in sorted(active_aliases)
+            ]
+        return "\n".join(views)
+
     def _load_config(self) -> dict:
         local = yaml.safe_load(self.config_path.read_text())
         if not local.get("system"):
-            local["system"] = yaml.safe_load(PROD_AGENT_CONFIG_PATH.read_text())["system"]
+            local["system"] = yaml.safe_load(PROD_RESOLVER_CONFIG_PATH.read_text())["system"]
         return local
 
     def _sync_agent(self) -> None:
@@ -627,9 +655,20 @@ def _active_aliases(registry: Registry) -> set[str]:
     return set(df["entity_id.alias"])
 
 
-def _build_prompt(text: str, active_aliases: set[str]) -> str:
-    """Combine the player's input with the list of active entities."""
-    if not active_aliases:
+def _build_prompt(text: str, active_aliases: set[str], entity_details: str = "") -> str:
+    """Assemble a turn's prompt from the active entities, their details, and the player's input.
+
+    `entity_details` is folded in as its own out-of-character block, but only
+    when non-empty, so a call without it (the common case in tests) still
+    reduces to the same "Active entities nearby: .../Player input: ..." shape
+    this always had.
+    """
+    parts = []
+    if active_aliases:
+        parts.append(f"Active entities nearby: {', '.join(sorted(active_aliases))}")
+    if entity_details:
+        parts.append(f"Entity details:\n{entity_details}")
+    if not parts:
         return text
-    entities = ", ".join(sorted(active_aliases))
-    return f"Active entities nearby: {entities}\nPlayer input: {text}"
+    parts.append(f"Player input: {text}")
+    return "\n".join(parts)

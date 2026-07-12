@@ -1,12 +1,15 @@
+import itertools
 from contextlib import asynccontextmanager
 from unittest.mock import MagicMock
 
 import ibis
+import matplotlib.pyplot as plt
 import pytest
 from iacs.dataflows import base_etl
 from iacs.etl_system import ETLSystem
 from iacs.registry import Registry
 
+from story_simulator.config import MANIFEST_DIR
 from story_simulator.systems import (
     AgentSystem,
     ArchivistAgentSystem,
@@ -20,9 +23,11 @@ from story_simulator.systems import (
     WORLD_YAML_FILENAME,
     _active_aliases,
     _add_input,
+    _avoid_overlapping_labels,
     _latest_input,
     _latest_positions,
     _merge_yaml_string,
+    _offset_data_point,
     _player_position,
 )
 
@@ -39,7 +44,7 @@ def _registry_from_yaml(yaml_text: str) -> Registry:
     under, or entities created here won't line up with tags/inputs those
     Systems attach later.
     """
-    return ETLSystem().execute(base_etl, input_dirs=[], yaml_strings={WORLD_FILE_ID: yaml_text})
+    return ETLSystem().execute(base_etl, input_dirs=[str(MANIFEST_DIR)], yaml_strings={WORLD_FILE_ID: yaml_text})
 
 
 def _make_mock_client(session_id, events):
@@ -406,11 +411,9 @@ def test_archivist_agent_system_dispatches_mcp_and_local_tools(tmp_path, monkeyp
     # The written content was fed straight to ETLSystem and merged in,
     # without rereading save_dir from disk.
     assert registry.get("origin").count().execute() == 1
-    # world.yaml is regenerated from the registry afterward (not a verbatim
-    # copy of the model's raw tool call), so check its content loosely.
-    exported = (save_dir / WORLD_YAML_FILENAME).read_text()
-    assert "player" in exported
-    assert "origin" in exported
+    # `write_world_file` writes the model's raw content straight to disk,
+    # verbatim (world.yaml isn't regenerated from the registry).
+    assert (save_dir / WORLD_YAML_FILENAME).read_text() == "player:\n    - origin\n"
 
 
 # ---------------------------------------------------------------------------
@@ -541,3 +544,63 @@ def test_visualizer_system_does_nothing_without_save_dir(tmp_path):
     VisualizerSystem(render_path=render_path).step(_empty_registry(), ETLSystem(), None, turn=1)
 
     assert not render_path.exists()
+
+
+def _label_boxes(annotations):
+    fig = annotations[0].figure
+    fig.canvas.draw()
+    renderer = fig.canvas.get_renderer()
+    return [annotation.get_window_extent(renderer) for annotation in annotations]
+
+
+def _has_overlap(boxes):
+    for bi, bj in itertools.combinations(boxes, 2):
+        overlap_x = min(bi.x1, bj.x1) - max(bi.x0, bj.x0)
+        overlap_y = min(bi.y1, bj.y1) - max(bi.y0, bj.y0)
+        if overlap_x > 0 and overlap_y > 0:
+            return True
+    return False
+
+
+def test_avoid_overlapping_labels_separates_clustered_labels():
+    fig, ax = plt.subplots()
+    points = [(0.0, 0.0), (0.01, 0.01), (0.02, -0.01), (0.0, 0.02)]
+    ax.scatter([p[0] for p in points], [p[1] for p in points])
+    annotations = [
+        ax.annotate(
+            alias,
+            xy=xy,
+            xytext=_offset_data_point(ax, xy, 5, 5),
+            textcoords="data",
+            arrowprops=dict(arrowstyle="-"),
+        )
+        for xy, alias in zip(points, ["alice_the_brave", "bob", "a_very_long_alias", "sir_charles"])
+    ]
+    assert _has_overlap(_label_boxes(annotations))
+
+    _avoid_overlapping_labels(fig, ax, annotations)
+
+    assert not _has_overlap(_label_boxes(annotations))
+    plt.close(fig)
+
+
+def test_avoid_overlapping_labels_leaves_far_apart_labels_untouched():
+    fig, ax = plt.subplots()
+    points = [(0.0, 0.0), (100.0, 100.0)]
+    ax.scatter([p[0] for p in points], [p[1] for p in points])
+    annotations = [
+        ax.annotate(
+            alias,
+            xy=xy,
+            xytext=_offset_data_point(ax, xy, 5, 5),
+            textcoords="data",
+            arrowprops=dict(arrowstyle="-"),
+        )
+        for xy, alias in zip(points, ["alice", "bob"])
+    ]
+    original_positions = [annotation.xyann for annotation in annotations]
+
+    _avoid_overlapping_labels(fig, ax, annotations)
+
+    assert [annotation.xyann for annotation in annotations] == original_positions
+    plt.close(fig)

@@ -737,15 +737,15 @@ def _ensure_player_alias(registry: Registry, etl: ETLSystem) -> str:
 def _latest_input(registry: Registry, type_: str, turn: int) -> str | None:
     """Return the `type_`-authored input's text for `turn`, or None if not written yet.
 
-    Without a validated schema loaded, iacs keeps field values as raw
-    strings rather than casting `turn` to int, so the comparison is done on
-    the string form of `turn` to stay dtype-agnostic.
+    `input.turn` is schema-validated (type: int) by every ETL call that
+    produces it, so `turn` is compared directly rather than coercing to
+    string.
     """
     if "input" not in registry.component_types:
         return None
     i = registry.get("input")
     df = i.filter(i.type == type_).execute()
-    matches = df[df["turn"].astype(str) == str(turn)]
+    matches = df[df["turn"] == turn]
     if matches.empty:
         return None
     return matches.iloc[-1]["text"]

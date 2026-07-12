@@ -655,26 +655,16 @@ def _latest_positions(registry: Registry) -> pd.DataFrame:
     `position` rows accumulate across turns rather than being overwritten
     (`registry.merge` only unions rows in; see `_merge_yaml_string`), so
     "current position" has to be resolved at read time instead of read
-    directly off the table. Grouped by `entity_id` alone rather than
-    `Registry.view_current` (which additionally groups by
-    `component_index`): a `position` entry's `component_index` reflects
-    where it fell in whichever YAML fragment produced it, which isn't
-    stable across the independent merges (`_merge_yaml_string`,
-    `ETLLoaderSystem`) that accumulate one entity's position history, so
-    grouping on it would split that history into multiple unrelated
-    "current" rows instead of collapsing it to one. Rows with no `turn`
-    (e.g. hand-authored save files loaded without one) sort as oldest.
-    Ties — including an entity with no `turn`-stamped row at all — are
-    broken by keeping the last row in join order, mirroring
-    `_latest_input`'s `.iloc[-1]` convention.
+    directly off the table. Delegated to `Registry.view_current`, which
+    resolves this the same way for any component with a field flagged
+    `time_dimension: true` — see `turn`'s definition in
+    `manifest/builtins.yaml` — rather than reimplementing that resolution
+    by hand here.
     """
     columns = ["entity_id", "entity_id.alias", "position.x", "position.y", "position.z", "position.turn"]
     if "position" not in registry.component_types:
         return pd.DataFrame(columns=columns)
-    df = registry.view(["position.x", "position.y", "position.z", "position.turn"]).execute()
-    sort_key = pd.to_numeric(df["position.turn"], errors="coerce").fillna(-1)
-    df = df.iloc[sort_key.argsort(kind="stable")]
-    return df.groupby("entity_id", as_index=False).tail(1)[columns]
+    return registry.view_current(["position.x", "position.y", "position.z", "position.turn"]).execute()[columns]
 
 
 def _player_position(registry: Registry) -> tuple[str, tuple[float, float]] | None:

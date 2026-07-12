@@ -50,11 +50,12 @@ physics_components:
                     story_simulator.systems._merge_yaml_string), not authored
                     directly, so it stays nullable for rows loaded without one
                     (e.g. hand-authored save files). Entities can accumulate
-                    multiple position rows over time; the one with the
-                    highest turn is the current position (see
-                    story_simulator.systems._latest_positions).
+                    multiple position rows over time; flagged time_dimension so
+                    Registry.view_current resolves the row with the highest
+                    turn as the current position.
                 type: int
                 nullable: true
+                time_dimension: true
     origin:
         - description: A tag component indicating that the associated entity is at the
             origin of the coordinate system.

@@ -28,7 +28,11 @@ def test_startup_one_loop_save(tmp_path):
     p = Interpreter(w)
 
     # Do the loop
-    p.input("I look around. What do I see?")
+    stdout = p.input("I look around. What do I see?")
+
+    # The player should see mention of the empty expanse and the door.
+    assert "door" in stdout.lower()
+    assert "empty" in stdout.lower()
 
     # Load saved data using iacs
     # In the base scenario, there should be the following entities:

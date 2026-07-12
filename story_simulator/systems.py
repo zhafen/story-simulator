@@ -653,15 +653,26 @@ def _add_input(registry: Registry, etl: ETLSystem, alias: str, text: str, type_:
 def _sync_active_tags(registry: Registry, etl: ETLSystem, active_aliases: set[str]) -> None:
     """Overwrite the `active` component table so it exactly matches `active_aliases`.
 
-    Rebuilt from scratch and overwritten (not merged) every call, since
-    `registry.merge` only unions rows in and can't drop the tag from
-    entities that left the radius. Safe to overwrite wholesale: `MapSystem`
-    is the only writer of `active`.
+    Tagging an alias here mints its own `entity_id` (a hash of the "world"
+    file identifier plus the alias), distinct from the `entity_id` an entity
+    like a hand-authored `setting.yaml` door or expanse already has under its
+    real file path — `entity_id` is derived from `(file_id, entity_path)`,
+    not the alias alone (see iacs's `load_manifest.keyvalue_store`). Left as
+    a bare `registry.update`, the new `active` row's `entity_id` would have
+    no matching row in the registry's own `entity_id` table, so
+    `entity_id.alias` joins (e.g. `_active_aliases`'s `view("active")`) would
+    silently drop it. `registry.merge` first brings that `entity_id` row (and
+    any other `new_registry` metadata) in, deduplicated, so the alias
+    resolves; the immediately following `update` then still overwrites
+    `active` wholesale (`merge` only unions rows in and can't drop the tag
+    from entities that left the radius — `MapSystem` is `active`'s only
+    writer, so overwriting it is safe).
     """
     data = {alias: ["active"] for alias in sorted(active_aliases)}
     new_registry = etl.execute(
         base_etl, input_dirs=[str(MANIFEST_DIR)], yaml_strings={WORLD_FILE_ID: yaml.safe_dump(data, sort_keys=False)}
     )
+    registry.merge(new_registry)
     registry.update({"active": new_registry.get("active").to_pyarrow()})
     new_registry.close()
 

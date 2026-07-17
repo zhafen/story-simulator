@@ -3,7 +3,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-from story_simulator.config import TEST_AGENT_ID
+from story_simulator.config import LIVING_WORLD_DIR, TEST_AGENT_ID
 from story_simulator.interpreter import Interpreter
 from story_simulator.world import AgentWorld, EnsembleWorld, MirrorWorld, TEST_RESOLVER_CONFIG_PATH
 
@@ -20,16 +20,26 @@ WORLDS = {
 }
 
 
-DEFAULT_SAVE_DIR = "./data/default"
+DEFAULT_SAVE_DIR = "./data/sandbox"
 
 
 def parse_args(argv=None):
     parser = argparse.ArgumentParser()
     parser.add_argument("--world", choices=WORLDS, default="ensemble")
-    parser.add_argument(
+    save_dir_group = parser.add_mutually_exclusive_group()
+    save_dir_group.add_argument(
         "--save-dir",
-        default=DEFAULT_SAVE_DIR,
-        help="Directory for the ensemble world's save data.",
+        default=None,
+        help="Directory for the ensemble world's save data (default: a "
+        f"throwaway sandbox at {DEFAULT_SAVE_DIR}, seeded from the living world).",
+    )
+    save_dir_group.add_argument(
+        "--living",
+        dest="save_dir",
+        action="store_const",
+        const=str(LIVING_WORLD_DIR),
+        help="Keep editing the tracked, ever-growing living world at "
+        f"{LIVING_WORLD_DIR} instead of a throwaway sandbox copy.",
     )
     parser.add_argument(
         "--render-path",
@@ -37,7 +47,10 @@ def parse_args(argv=None):
         help="Where to overwrite an SVG render of entity positions each turn "
         "(default: render.svg next to --save-dir).",
     )
-    return parser.parse_args(argv)
+    args = parser.parse_args(argv)
+    if args.save_dir is None:
+        args.save_dir = DEFAULT_SAVE_DIR
+    return args
 
 
 def main(world=None, argv=None):

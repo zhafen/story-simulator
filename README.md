@@ -6,7 +6,7 @@
 ./run.sh
 ```
 
-Type `/quit` to exit. `run.sh` forwards any arguments to `story_simulator.cli`, e.g.
+Type `/help` to list available commands, or `/quit` to exit. `run.sh` forwards any arguments to `story_simulator.cli`, e.g.
 `./run.sh --world mirror`.
 
 Defaults to the `ensemble` world, saving to `./data/default` (override with `--world`/`--save-dir`).

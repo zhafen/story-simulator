@@ -12,8 +12,8 @@ door:
     - object:
         type: door
     - position:
-        x: 2
-        y: 0
+        x: 0
+        y: 2
     - appearance:
         value: a plain door; what's on its far side isn't visible yet
 
@@ -25,3 +25,14 @@ expanse:
         y: 0
     - appearance:
         value: an empty, quiet space, without walls or horizon
+
+test_book:
+    - object:
+        type: book
+    - position:
+        x: 0
+        y: 500
+    - appearance:
+        value: a small notebook, containing roughly fifty pages of graph paper
+    - writing:
+        value: "Testing, testing, 1, 2, 3"

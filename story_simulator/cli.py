@@ -7,7 +7,7 @@ from story_simulator.config import TEST_AGENT_ID
 from story_simulator.interpreter import Interpreter
 from story_simulator.world import AgentWorld, EnsembleWorld, MirrorWorld, TEST_RESOLVER_CONFIG_PATH
 
-BANNER = "story-simulator REPL. Type /quit to exit."
+BANNER = "story-simulator REPL. Type /help for commands, /quit to exit."
 
 WORLDS = {
     "agent": lambda args: AgentWorld(),

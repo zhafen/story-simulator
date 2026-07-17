@@ -14,7 +14,16 @@ def test_plain_text_returns_world_response():
 
 def test_unknown_command_returns_none_and_does_not_stop():
     interpreter = Interpreter(world=MirrorWorld())
-    assert interpreter.input("/help") is None
+    assert interpreter.input("/frobnicate") is None
+    assert interpreter.stopped is False
+
+
+def test_help_command_lists_available_commands():
+    interpreter = Interpreter(world=MirrorWorld())
+    response = interpreter.input("/help")
+    assert response is not None
+    assert "/help" in response
+    assert "/quit" in response
     assert interpreter.stopped is False
 
 

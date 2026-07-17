@@ -11,6 +11,12 @@ ENVIRONMENT_ID = "env_01Rhk13fhp1wwS3RgiDQcK2g"
 # definitions for them and passes their data through unvalidated/untyped.
 MANIFEST_DIR = Path(__file__).parent.parent / "manifest"
 
+# The world's starting premise (the player, the door, the empty expanse) as a
+# hand-authored EC save file. Seeded into any brand-new save_dir (see
+# story_simulator.world._seed_default_setting) so a fresh game always starts
+# from this premise instead of one the Resolver has to invent unprompted.
+DEFAULT_SETTING_PATH = Path(__file__).parent.parent / "data" / "default" / "setting.yaml"
+
 
 def resolve_anthropic_api_key() -> str | None:
     """Read the Anthropic API key from its app-specific env var.

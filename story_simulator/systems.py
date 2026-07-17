@@ -653,12 +653,30 @@ def _add_input(registry: Registry, etl: ETLSystem, alias: str, text: str, type_:
 def _sync_active_tags(registry: Registry, etl: ETLSystem, active_aliases: set[str]) -> None:
     """Overwrite the `active` component table so it exactly matches `active_aliases`.
 
+    Each alias's `active` tag is declared alongside an explicit `entity_id`
+    override (a bare `{entity_id: <hash>}` component iacs's `load_manifest`
+    resolves onto that hash's existing entity instead of minting a fresh one
+    — see `iacs.dataflows.etl.load_manifest.entity_id_overrides`), resolved
+    here from the registry's own `entity_id` table. Without it, the tag
+    would land on a new identity derived from this call's own synthetic
+    "world" source (entity_id is otherwise a hash of `(file_id,
+    entity_path)`, not the alias alone) — disconnected from the entity
+    `active_aliases` actually names, so `entity_id.alias`-joined reads (e.g.
+    `_active_aliases`'s `view("active")`) would never find it.
+
     Rebuilt from scratch and overwritten (not merged) every call, since
     `registry.merge` only unions rows in and can't drop the tag from
     entities that left the radius. Safe to overwrite wholesale: `MapSystem`
     is the only writer of `active`.
     """
-    data = {alias: ["active"] for alias in sorted(active_aliases)}
+    eids = registry.get("entity_id").execute()
+    data = {
+        alias: [
+            {"entity_id": eids.loc[eids["alias"] == alias, "value"].iloc[0]},
+            "active",
+        ]
+        for alias in sorted(active_aliases)
+    }
     new_registry = etl.execute(
         base_etl, input_dirs=[str(MANIFEST_DIR)], yaml_strings={WORLD_FILE_ID: yaml.safe_dump(data, sort_keys=False)}
     )

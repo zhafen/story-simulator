@@ -5,8 +5,8 @@ player:
         x: 0
         y: 0
     - origin
-    - appearance:
-        value: a traveler, pausing at the edge of a quiet space
+    - description:
+        value: A traveler, pausing at the edge of a quiet space.
 
 door:
     - object:
@@ -14,8 +14,8 @@ door:
     - position:
         x: 0
         y: 2
-    - appearance:
-        value: a plain door; what's on its far side isn't visible yet
+    - description:
+        value: A plain door; what's on its far side isn't visible yet.
 
 expanse:
     - object:
@@ -23,16 +23,36 @@ expanse:
     - position:
         x: 0
         y: 0
-    - appearance:
-        value: an empty, quiet space, without walls or horizon
+    - description:
+        value: An empty, quiet space, without walls or horizon.
 
-test_book:
-    - object:
-        type: book
-    - position:
-        x: 0
-        y: 500
-    - appearance:
-        value: a small notebook, containing roughly fifty pages of graph paper
-    - writing:
-        value: "Testing, testing, 1, 2, 3"
+journaling_desk:
+    journal:
+        - object:
+            type: journal
+        - position:
+            x: 0
+            y: 500
+        - description: >
+            A piece of leather bent in half around a small booklet of lined paper.
+            It rests on top of the desk and next to a pen.
+        - writing:
+            value: "Leave a note."
+    pen:
+        - object:
+            type: pen
+        - position:
+            x: 0
+            y: 500
+        - description: >
+            A capped fountain pen, jade green and faceted with a wide nib. The ink is
+            black. It rests next to a journal and on a desk.
+    desk:
+        - object:
+            type: desk
+        - position:
+            x: 0
+            y: 500
+        - description: >
+            A solid desk made of a deep reddish-brown wood.
+

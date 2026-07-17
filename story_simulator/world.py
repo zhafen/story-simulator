@@ -145,6 +145,14 @@ class EnsembleWorld(World):
         self.registry = self._load_registry()
         self.turn = 0
         self.systems = systems if systems is not None else self._default_systems(render_path)
+        # Run the pipeline once at turn 0, with no player input pending, so the
+        # starting state (loaded EC data, active tags from the player's initial
+        # position) is queryable right after construction rather than only
+        # after the first respond() call. ResolverAgentSystem/ArchivistAgentSystem
+        # are no-ops here (they bail out when there's no player input recorded
+        # for the turn), so this doesn't call out to any agent.
+        for system in self.systems.values():
+            system.step(self.registry, self.etl, self.save_dir, self.turn)
 
     def _load_registry(self) -> Registry:
         if self.save_dir is not None:

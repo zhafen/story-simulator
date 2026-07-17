@@ -226,7 +226,7 @@ class ResolverAgentSystem(AgentSystem):
             return
 
         active_aliases = _active_aliases(registry)
-        entity_details = asyncio.run(self._gather_entity_details(Path(save_dir), active_aliases))
+        entity_details = asyncio.run(self._gather_entity_details(Path(save_dir), _all_aliases(registry)))
         prompt = _build_prompt(command_text, active_aliases, entity_details=entity_details)
         response = self._respond(prompt)
         self.last_response = response
@@ -234,19 +234,28 @@ class ResolverAgentSystem(AgentSystem):
         alias = _ensure_player_alias(registry, etl)
         _add_input(registry, etl, alias, response, "agent", turn)
 
-    async def _gather_entity_details(self, save_dir: Path, active_aliases: set[str]) -> str:
-        """Ask the local iacs MCP server what's known about each active entity.
+    async def _gather_entity_details(self, save_dir: Path, aliases: set[str]) -> str:
+        """Ask the local iacs MCP server what's known about every entity in the world.
 
-        Only opens a session when there's something to look up, so turns
-        with no active entities (including every "does nothing" early-return
-        case) never pay for spawning the `iacs-mcp` subprocess.
+        Deliberately not scoped to just the `active` (nearby) tag: the
+        Resolver has to reason about the destination of a described move
+        (e.g. "walk 500 meters forward") before that destination's entities
+        are anywhere near the player's *current* position, since `MapSystem`
+        computes `active` from last turn's position and runs before this
+        System each turn. Passing every entity's details, positions
+        included, lets the Resolver work out spatially where a move lands
+        and narrate what's actually there, while `active_aliases` (see
+        `_build_prompt`) still tells it what's nearby right now for
+        continuity. Only opens a session when there's something to look up,
+        so a turn with no entities yet at all never pays for spawning the
+        `iacs-mcp` subprocess.
         """
-        if not active_aliases:
+        if not aliases:
             return ""
         async with open_iacs_mcp_session(save_dir) as mcp:
             views = [
                 await mcp.call_tool("view_entity", {"entity_id": alias})
-                for alias in sorted(active_aliases)
+                for alias in sorted(aliases)
             ]
         return "\n".join(views)
 
@@ -590,7 +599,12 @@ def _merge_yaml_string(
     """
     new_registry = etl.execute(base_etl, input_dirs=[str(MANIFEST_DIR)], yaml_strings={key: yaml_text})
     if turn is not None and "position" in new_registry.component_types:
-        stamped = new_registry.get("position").mutate(turn=ibis.literal(turn))
+        # Cast explicitly: a bare ibis.literal(turn) infers the smallest
+        # integer type that fits the value (int8 for small turn numbers),
+        # which conflicts with the schema-validated int64 "turn" column on
+        # any row already in the registry once `registry.merge`'s union
+        # tries to combine them.
+        stamped = new_registry.get("position").mutate(turn=ibis.literal(turn).cast("int64"))
         new_registry.update({"position": stamped})
     registry.merge(new_registry)
     new_registry.close()
@@ -628,6 +642,21 @@ def _input_history(registry: Registry, alias: str) -> list[dict]:
     ]
 
 
+def _entity_id_for_alias(registry: Registry, alias: str) -> str | None:
+    """Look up `alias`'s existing entity_id hash, or None if it's not known yet.
+
+    Used to pin a synthetic `WORLD_FILE_ID` YAML write onto an entity's
+    *existing* identity (see `_add_input`/`_sync_active_tags`) instead of
+    minting a fresh one, which `iacs.dataflows.etl.load_manifest.entity_id_overrides`
+    supports via a bare `{entity_id: <hash>}` component.
+    """
+    if "entity_id" not in registry.component_types:
+        return None
+    eids = registry.get("entity_id").execute()
+    match = eids.loc[eids["alias"] == alias, "value"]
+    return match.iloc[0] if not match.empty else None
+
+
 def _add_input(registry: Registry, etl: ETLSystem, alias: str, text: str, type_: str, turn: int) -> None:
     """Merge a new `input` component instance onto `alias`'s entity.
 
@@ -638,9 +667,24 @@ def _add_input(registry: Registry, etl: ETLSystem, alias: str, text: str, type_:
     single-item list, always indexed 0). Safe to overwrite wholesale: only
     `InputSystem`/`ResolverAgentSystem` ever write `input`, and always onto
     the one player entity.
+
+    Pins the write onto `alias`'s existing entity_id (see
+    `_entity_id_for_alias`) whenever one is already known — e.g. the player
+    entity from a hand-authored `setting.yaml` — rather than the fresh
+    identity a plain `{alias: [...]}` YAML fragment would otherwise mint
+    under this call's own synthetic "world" source. Without that override,
+    `_input_history`'s `entity_id.alias`-joined read would never find this
+    row (its entity_id has no matching `entity_id` table entry, since
+    `registry.update` below only overwrites `input`, not `entity_id`),
+    silently losing the just-written instance the next time history is
+    rebuilt.
     """
     history = _input_history(registry, alias) + [{"text": text, "type": type_, "turn": turn}]
-    data = {alias: [{"input": h} for h in history]}
+    entries = [{"input": h} for h in history]
+    entity_id = _entity_id_for_alias(registry, alias)
+    if entity_id is not None:
+        entries = [{"entity_id": entity_id}] + entries
+    data = {alias: entries}
     new_registry = etl.execute(
         base_etl, input_dirs=[str(MANIFEST_DIR)], yaml_strings={WORLD_FILE_ID: yaml.safe_dump(data, sort_keys=False)}
     )
@@ -654,27 +698,18 @@ def _sync_active_tags(registry: Registry, etl: ETLSystem, active_aliases: set[st
     """Overwrite the `active` component table so it exactly matches `active_aliases`.
 
     Each alias's `active` tag is declared alongside an explicit `entity_id`
-    override (a bare `{entity_id: <hash>}` component iacs's `load_manifest`
-    resolves onto that hash's existing entity instead of minting a fresh one
-    — see `iacs.dataflows.etl.load_manifest.entity_id_overrides`), resolved
-    here from the registry's own `entity_id` table. Without it, the tag
-    would land on a new identity derived from this call's own synthetic
-    "world" source (entity_id is otherwise a hash of `(file_id,
-    entity_path)`, not the alias alone) — disconnected from the entity
-    `active_aliases` actually names, so `entity_id.alias`-joined reads (e.g.
-    `_active_aliases`'s `view("active")`) would never find it.
+    override (see `_entity_id_for_alias`) so it lands on that alias's
+    existing entity rather than a fresh identity disconnected from it — see
+    `_add_input`'s docstring for why that matters for `entity_id.alias`-joined
+    reads (here, `_active_aliases`'s `view("active")`).
 
     Rebuilt from scratch and overwritten (not merged) every call, since
     `registry.merge` only unions rows in and can't drop the tag from
     entities that left the radius. Safe to overwrite wholesale: `MapSystem`
     is the only writer of `active`.
     """
-    eids = registry.get("entity_id").execute()
     data = {
-        alias: [
-            {"entity_id": eids.loc[eids["alias"] == alias, "value"].iloc[0]},
-            "active",
-        ]
+        alias: [{"entity_id": _entity_id_for_alias(registry, alias)}, "active"]
         for alias in sorted(active_aliases)
     }
     new_registry = etl.execute(
@@ -776,6 +811,13 @@ def _active_aliases(registry: Registry) -> set[str]:
     view = registry.view("active")
     df = view.execute()
     return set(df["entity_id.alias"])
+
+
+def _all_aliases(registry: Registry) -> set[str]:
+    """Return the aliases of every entity known to the registry."""
+    if "entity_id" not in registry.component_types:
+        return set()
+    return set(registry.get("entity_id").execute()["alias"])
 
 
 def _build_prompt(text: str, active_aliases: set[str], entity_details: str = "") -> str:

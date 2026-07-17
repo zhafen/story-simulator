@@ -90,17 +90,15 @@ def test_move(tmp_path):
         "journaling_desk.desk",
     ]
     active = r.view("active").execute()
-    assert pd.Series(starting_objects).isin(active["entity_alias"]).all()
-    assert (~pd.Series(destination_objects).isin(active["entity_alias"])).all()
+    assert pd.Series(starting_objects).isin(active["entity_id.alias"]).all()
+    assert (~pd.Series(destination_objects).isin(active["entity_id.alias"])).all()
 
     # Check that the player starts in the right place
-    n_player_at_origin = (
-        (p := r.view("position"))
-        .filter(p.entity_alias.contains("player"))
-        .mutate(distance=(p.x**2 + p.y**2)**0.5)
-        .filter(p.distance < 1)
-        .count()
+    pv = r.view("position")
+    origin_distances = pv.filter(pv["entity_id.alias"].contains("player")).mutate(
+        distance=(pv["position.x"] ** 2 + pv["position.y"] ** 2) ** 0.5
     )
+    n_player_at_origin = origin_distances.filter(origin_distances.distance < 1).count()
     assert n_player_at_origin.execute() == 1
 
     ###################################
@@ -112,13 +110,11 @@ def test_move(tmp_path):
     )
 
     # Check that the player arrives at the right location
-    n_player_at_destination = (
-        (p := r.view("position"))
-        .filter(p.entity_alias.contains("player"))
-        .mutate(distance=(p.x**2 + (p.y - 500)**2)**0.5)
-        .filter(p.distance < 1)
-        .count()
+    pv = r.view("position")
+    destination_distances = pv.filter(pv["entity_id.alias"].contains("player")).mutate(
+        distance=(pv["position.x"] ** 2 + (pv["position.y"] - 500) ** 2) ** 0.5
     )
+    n_player_at_destination = destination_distances.filter(destination_distances.distance < 1).count()
     assert n_player_at_destination.execute() == 1
 
     # The player should see the journaling desk, etc.
@@ -128,8 +124,8 @@ def test_move(tmp_path):
     # Check the inverse of the above
     # and the journal, pen, and desk are not
     active = r.view("active").execute()
-    assert pd.Series(destination_objects).isin(active["entity_alias"]).all()
-    assert (~pd.Series(starting_objects).isin(active["entity_alias"])).all()
+    assert pd.Series(destination_objects).isin(active["entity_id.alias"]).all()
+    assert (~pd.Series(starting_objects).isin(active["entity_id.alias"])).all()
 
     ###################################
     # TURN 2: Move back to origin
@@ -146,5 +142,5 @@ def test_move(tmp_path):
 
     # Check the starting objects are active again
     active = r.view("active").execute()
-    assert pd.Series(starting_objects).isin(active["entity_alias"]).all()
-    assert (~pd.Series(destination_objects).isin(active["entity_alias"])).all()
+    assert pd.Series(starting_objects).isin(active["entity_id.alias"]).all()
+    assert (~pd.Series(destination_objects).isin(active["entity_id.alias"])).all()

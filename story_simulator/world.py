@@ -9,7 +9,7 @@ import yaml
 from iacs.etl_system import ETLSystem
 from iacs.registry import Registry
 
-from story_simulator.config import DEFAULT_SETTING_PATH, ENVIRONMENT_ID, PROD_AGENT_ID, resolve_anthropic_api_key
+from story_simulator.config import ENVIRONMENT_ID, LIVING_WORLD_DIR, PROD_AGENT_ID, resolve_anthropic_api_key
 from story_simulator.systems import (
     ArchivistAgentSystem,
     DEFAULT_RENDER_PATH,
@@ -149,7 +149,7 @@ class EnsembleWorld(World):
     def _load_registry(self) -> Registry:
         if self.save_dir is not None:
             self.save_dir.mkdir(parents=True, exist_ok=True)
-            _seed_default_setting(self.save_dir)
+            _seed_from_living_world(self.save_dir)
             return Registry.from_database(self.save_dir / REGISTRY_DB_FILENAME)
         return Registry(ibis.duckdb.connect(), {})
 
@@ -191,20 +191,23 @@ class EnsembleWorld(World):
         return resolver.last_response if resolver else ""
 
 
-def _seed_default_setting(save_dir: Path) -> None:
-    """Copy the default starting premise into a brand-new, still-empty save_dir.
+def _seed_from_living_world(save_dir: Path) -> None:
+    """Copy the living world's current save data into a brand-new, still-empty save_dir.
 
     `ETLLoaderSystem` only loads EC files already sitting in `save_dir`, so a
-    fresh save directory elsewhere than `data/default` (e.g. a test's
-    tmp_path) never picks up the door/expanse/player premise on its own,
-    leaving the Resolver to narrate a setting it has to invent from nothing.
-    Skipped once `save_dir` already has any EC file — a prior save, or a
-    hand-authored scenario the caller deliberately supplied instead — and
-    when `save_dir` already *is* `data/default`, where the source file
-    already lives (a no-op self-copy).
+    fresh sandbox save directory (the CLI's default) never picks up the
+    living world's state on its own, leaving the Resolver to narrate a
+    setting it has to invent from nothing. Copies everything under
+    `LIVING_WORLD_DIR` rather than just the starting premise, so a new
+    sandbox picks up wherever the living world currently stands, not just
+    where it started. Skipped once `save_dir` already has any file in it —
+    a prior save, or a hand-authored scenario the caller deliberately
+    supplied instead — and when `save_dir` already *is* `LIVING_WORLD_DIR`
+    (the `--living` flag), where the source data already lives (a no-op
+    self-copy).
     """
-    if save_dir.resolve() == DEFAULT_SETTING_PATH.parent.resolve():
+    if save_dir.resolve() == LIVING_WORLD_DIR.resolve():
         return
-    if any(save_dir.glob("*.yaml")) or any(save_dir.glob("*.yml")):
+    if any(save_dir.iterdir()):
         return
-    shutil.copy(DEFAULT_SETTING_PATH, save_dir / DEFAULT_SETTING_PATH.name)
+    shutil.copytree(LIVING_WORLD_DIR, save_dir, dirs_exist_ok=True)

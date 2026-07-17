@@ -27,6 +27,15 @@ expanse:
         value: An empty, quiet space, without walls or horizon.
 
 journaling_desk:
+    data:
+        - note: >
+            The journaling desk is chosen to be firmly at a distance where the player
+            can no longer see the door, i.e. the door takes up <=1% of their field of
+            view.  The standard field of view is 60 degrees, so we're looking at an
+            angular size of 0.6 degrees. The relationship between angular size,
+            distance, and height is roughly tan(ang_size) = height / distance, so for an
+            average door of height 2 meters (standard) the distance comes out to
+            2 m / tan(0.6 degrees) = 2 m / 0.01 = 200 m. 500 m is plenty safe.
     journal:
         - object:
             type: journal

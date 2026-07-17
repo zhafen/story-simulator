@@ -1,5 +1,7 @@
 import pytest
 
+import pandas as pd
+
 from story_simulator.interpreter import Interpreter
 from story_simulator.world import EnsembleWorld, MirrorWorld
 
@@ -12,6 +14,7 @@ def test_startup_and_exit():
     assert not p.stopped
     p.input("/quit")
     assert p.stopped
+
 
 @pytest.mark.live
 def test_startup_one_loop_save(tmp_path):
@@ -45,9 +48,103 @@ def test_startup_one_loop_save(tmp_path):
     assert r.get("origin").count().execute() == 1
     # One character, of interaction type player
     assert (characters := r.get("character")).count().execute() == 1
-    assert characters.filter(characters.interaction_type == "player").count().execute() == 1
+    assert (
+        characters.filter(characters.interaction_type == "player").count().execute()
+        == 1
+    )
     # At least one object, which is a door
     assert (objects := r.get("object")).count().execute() >= 1
     assert objects.filter(objects.type.contains("door")).count().execute() == 1
     # At least two appearance components
     assert r.get("appearance").count().execute() >= 2
+
+
+@pytest.mark.live
+def test_move(tmp_path):
+    """This test checks that the player can use the interpreter to move, and which
+    entities are active will be updated as they do so.
+
+    Starting out there should be the player, a door, and a vast empty expanse,
+    and that should be the only things the player can interact with.
+    The player should be able to go to the door, walk out, and walk half a kilometer
+    in the positive y-direction to find a desk with a journal on it.
+    They should be able to see the desk, but no longer see the door.
+    Then they should be able to turn around and walk back and see the door and expanse
+    again, but not the desk anymore.
+    """
+    ###################################
+    # TURN 0: Startup
+
+    # Setup
+    save_dir = tmp_path / "test_save"
+    w = EnsembleWorld(save_dir=save_dir)
+    p = Interpreter(w)
+    r = w.registry
+
+    # Check that the door and the vast expanse are active
+    # and the journal, pen, and desk are not
+    starting_objects = ["door", "expanse"]
+    destination_objects = [
+        "journaling_desk.journal",
+        "journaling_desk.pen",
+        "journaling_desk.desk",
+    ]
+    active = r.view("active").execute()
+    assert pd.Series(starting_objects).isin(active["entity_alias"]).all()
+    assert (~pd.Series(destination_objects).isin(active["entity_alias"])).all()
+
+    # Check that the player starts in the right place
+    n_player_at_origin = (
+        (p := r.view("position"))
+        .filter(p.entity_alias.contains("player"))
+        .mutate(distance=(p.x**2 + p.y**2)**0.5)
+        .filter(p.distance < 1)
+        .count()
+    )
+    assert n_player_at_origin.execute() == 1
+
+    ###################################
+    # TURN 1: Move to destination
+
+    # Instruct to move
+    stdout = p.input(
+        "I go out the door and walk 500 meters straight forward. What do I see?"
+    )
+
+    # Check that the player arrives at the right location
+    n_player_at_destination = (
+        (p := r.view("position"))
+        .filter(p.entity_alias.contains("player"))
+        .mutate(distance=(p.x**2 + (p.y - 500)**2)**0.5)
+        .filter(p.distance < 1)
+        .count()
+    )
+    assert n_player_at_destination.execute() == 1
+
+    # The player should see the journaling desk, etc.
+    for obj in destination_objects:
+        assert obj.rsplit(".", maxsplit=1)[-1] in stdout.lower()
+
+    # Check the inverse of the above
+    # and the journal, pen, and desk are not
+    active = r.view("active").execute()
+    assert pd.Series(destination_objects).isin(active["entity_alias"]).all()
+    assert (~pd.Series(starting_objects).isin(active["entity_alias"])).all()
+
+    ###################################
+    # TURN 2: Move back to origin
+
+    # Go back to the door.
+    stdout = p.input("I walk back to the door and go through it.")
+
+    # Check that the player is back where expected
+    assert n_player_at_origin.execute() == 1
+
+    # The player should see the starting objects
+    for obj in starting_objects:
+        assert obj.rsplit(".", maxsplit=1)[-1] in stdout.lower()
+
+    # Check the starting objects are active again
+    active = r.view("active").execute()
+    assert pd.Series(starting_objects).isin(active["entity_alias"]).all()
+    assert (~pd.Series(destination_objects).isin(active["entity_alias"])).all()

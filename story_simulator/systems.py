@@ -606,8 +606,56 @@ def _merge_yaml_string(
         # tries to combine them.
         stamped = new_registry.get("position").mutate(turn=ibis.literal(turn).cast("int64"))
         new_registry.update({"position": stamped})
+    _reconcile_entity_ids(registry, new_registry)
     registry.merge(new_registry)
     new_registry.close()
+
+
+def _reconcile_entity_ids(registry: Registry, new_registry: Registry) -> None:
+    """Remap `new_registry`'s entity_ids onto `registry`'s existing ones, by alias.
+
+    `entity_id` is derived as a hash of `(file_id, entity_path)` (see
+    `iacs.dataflows.etl.load_manifest.entity_id_table`), so writing the same
+    alias (e.g. "player") from a different source than it was first recorded
+    under — the Archivist's synthetic "world" YAML vs. a hand-authored
+    `setting.yaml` — mints a *different* id for what's meant to be the same
+    entity, rather than updating it. Left unreconciled, `registry.merge`
+    unions both in as separate entities that happen to share an alias:
+    `entity_id.alias`-joined reads that don't also constrain by entity_id
+    (e.g. `Registry.view_current`, which groups by entity_id alone) then see
+    two independent "current" rows for what should be one entity.
+
+    Since `alias` is the stable, author-facing identity that's meant to carry
+    across sources (unlike the source-derived hash), any incoming entity
+    whose alias matches an entity already in `registry` is remapped onto that
+    existing id in place, before `new_registry` is merged in.
+    """
+    if "entity_id" not in registry.component_types or "entity_id" not in new_registry.component_types:
+        return
+    existing = registry.get("entity_id").execute()
+    incoming = new_registry.get("entity_id").execute()
+    mapping = {}
+    for _, row in incoming.iterrows():
+        match = existing.loc[existing["alias"] == row["alias"], "value"]
+        if not match.empty and match.iloc[0] != row["value"]:
+            mapping[row["value"]] = match.iloc[0]
+    if not mapping:
+        return
+    for comp_type in new_registry.component_types:
+        table = new_registry.get(comp_type).execute()
+        if comp_type == "entity_id":
+            # Drop the now-superseded rows outright rather than remapping
+            # their own "value" column: the canonical row for this alias is
+            # already present in `registry` and merging in a second row under
+            # the same alias (even pointed at the same id) would leave two
+            # `entity_id` rows per alias, breaking any lookup that expects
+            # exactly one (e.g. `_entity_id_for_alias`'s `.iloc[0]`).
+            table = table[~table["value"].isin(mapping)]
+        elif "entity_id" in table.columns:
+            table["entity_id"] = table["entity_id"].replace(mapping)
+        else:
+            continue
+        new_registry.update({comp_type: table})
 
 
 def _export_world_yaml(registry: Registry, etl: ETLSystem, save_dir: Path) -> None:

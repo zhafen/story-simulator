@@ -94,7 +94,7 @@ def test_move(tmp_path):
     assert (~pd.Series(destination_objects).isin(active["entity_id.alias"])).all()
 
     # Check that the player starts in the right place
-    pv = r.view("position")
+    pv = r.view_current("position")
     origin_distances = pv.filter(pv["entity_id.alias"].contains("player")).mutate(
         distance=(pv["position.x"] ** 2 + pv["position.y"] ** 2) ** 0.5
     )
@@ -110,7 +110,7 @@ def test_move(tmp_path):
     )
 
     # Check that the player arrives at the right location
-    pv = r.view("position")
+    pv = r.view_current("position")
     destination_distances = pv.filter(pv["entity_id.alias"].contains("player")).mutate(
         distance=(pv["position.x"] ** 2 + (pv["position.y"] - 500) ** 2) ** 0.5
     )

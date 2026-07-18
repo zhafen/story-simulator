@@ -112,10 +112,14 @@ class EnsembleWorld(World):
     `story_simulator.systems._export_world_yaml`). By default:
     `ETLLoaderSystem` first loads any not-yet-loaded EC files from
     `save_dir`, `MapSystem` tags entities near the player as active (based
-    on where the player ended up last turn), `InputSystem` registers the
-    player's new input, `ResolverAgentSystem` narrates what happens,
-    `ArchivistAgentSystem` transcribes the exchange, and `VisualizerSystem`
-    re-renders the position plot.
+    on where the player ended up last turn — this first pass is what
+    `ResolverAgentSystem` sees as "nearby" while narrating the action),
+    `InputSystem` registers the player's new input, `ResolverAgentSystem`
+    narrates what happens, `ArchivistAgentSystem` transcribes the exchange
+    (including any new player position), `MapSystem` runs a second time so
+    `active` reflects where the move just landed rather than staying one
+    turn stale for external readers, and `VisualizerSystem` re-renders the
+    position plot.
 
     The registry itself — the actual save data — lives in
     `save_dir/registry.duckdb`: when `save_dir` is given, `Registry.from_database`
@@ -163,12 +167,18 @@ class EnsembleWorld(World):
 
     @staticmethod
     def _default_systems(render_path: str | Path | None) -> "OrderedDict[str, object]":
+        map_system = MapSystem()
         return OrderedDict(
             etl_loader=ETLLoaderSystem(),
-            map=MapSystem(),
+            map=map_system,
             input=InputSystem(),
             resolver=ResolverAgentSystem(),
             archivist=ArchivistAgentSystem(),
+            # Re-tag active entities against the position the Archivist just
+            # recorded (see class docstring) — same MapSystem instance, run
+            # again rather than a second one, since it's stateless besides
+            # `radius`.
+            map_refresh=map_system,
             visualizer=VisualizerSystem(Path(render_path) if render_path else DEFAULT_RENDER_PATH),
         )
 

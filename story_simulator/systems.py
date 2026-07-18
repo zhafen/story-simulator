@@ -398,16 +398,31 @@ class ArchivistAgentSystem(AgentSystem):
 
     async def _dispatch_tool(self, mcp, save_dir: Path, name: str, arguments: dict) -> str:
         if name == "write_world_file":
-            self._last_content = arguments["content"]
             return self._write_world_file(save_dir, arguments["content"])
         if name == "read_world_file":
             return self._read_world_file(save_dir)
         return await mcp.call_tool(name, arguments)
 
-    @staticmethod
-    def _write_world_file(save_dir: Path, content: str) -> str:
+    def _write_world_file(self, save_dir: Path, content: str) -> str:
+        """Write `content` to world.yaml, but only once it's parseable.
+
+        `validate_yaml` is only ever *recommended* to the model, not
+        required, and `step()` later feeds `self._last_content` straight
+        into `etl.execute` (see `_merge_yaml_string`) with no validation of
+        its own — so a single malformed write here would both corrupt the
+        on-disk save (every subsequent turn's `ETLLoaderSystem` reloads it)
+        and crash the very `step()` call that produced it. Checked with a
+        bare `yaml.safe_load` rather than the fuller `validate_yaml` MCP
+        tool: catching a syntax error is enough to avoid corrupting the
+        file, and this doesn't require a round trip through the MCP session.
+        """
+        try:
+            yaml.safe_load(content)
+        except yaml.YAMLError as e:
+            return f"Error: content is not valid YAML, nothing written. {e}"
         path = save_dir / WORLD_YAML_FILENAME
         path.write_text(content)
+        self._last_content = content
         return f"Wrote {len(content)} characters to {path}."
 
     @staticmethod

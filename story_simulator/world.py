@@ -4,9 +4,8 @@ from collections import OrderedDict
 from pathlib import Path
 
 import anthropic
-import ibis
 import yaml
-from iacs.etl_system import ETLSystem
+from iacs.registrar import Registrar
 from iacs.registry import Registry
 
 from story_simulator.config import ENVIRONMENT_ID, LIVING_WORLD_DIR, PROD_AGENT_ID, resolve_anthropic_api_key
@@ -106,9 +105,11 @@ class EnsembleWorld(World):
     """A world simulated by an ordered pipeline of Systems.
 
     Each turn, `respond()` runs every System in `systems` order against the
-    same iacs `Registry` — the sole channel Systems use to communicate.
-    `world.yaml`, when present, is only ever a derived, human/AI-readable
-    export of that registry; it's never read back in as authoritative (see
+    same iacs `Registrar` — the sole channel Systems use to communicate, per
+    `Registrar`'s own role as the user-facing interface for viewing,
+    updating, and exporting a registry. `world.yaml`, when present, is only
+    ever a derived, human/AI-readable export of that registrar's registry;
+    it's never read back in as authoritative (see
     `story_simulator.systems._export_world_yaml`). By default:
     `ETLLoaderSystem` first loads any not-yet-loaded EC files from
     `save_dir`, `MapSystem` tags entities near the player as active (based
@@ -122,15 +123,15 @@ class EnsembleWorld(World):
     position plot.
 
     The registry itself — the actual save data — lives in
-    `save_dir/registry.duckdb`: when `save_dir` is given, `Registry.from_database`
+    `save_dir/registry.duckdb`: when `save_dir` is given, `Registrar.load`
     opens that file directly (creating it if it doesn't exist yet) rather
-    than an in-memory connection, so every `registry.merge`/`registry.update`
-    write lands straight in the file. DuckDB persists writes on a live
-    connection automatically (confirmed: a second, independent connection to
-    the same file sees a change immediately, with no explicit save step in
-    between), so there's no separate `to_database` call after each turn —
-    that would just be reopening a second connection to a file the first
-    connection is already keeping current.
+    than an in-memory connection, so every update lands straight in the
+    file. DuckDB persists writes on a live connection automatically
+    (confirmed: a second, independent connection to the same file sees a
+    change immediately, with no explicit save step in between), so there's
+    no separate `Registrar.save` call after each turn — that would just be
+    reopening a second connection to a file the first connection is already
+    keeping current.
 
     Defined here, alongside the other Worlds, rather than in
     story_simulator.systems — the System classes have no dependency on this
@@ -145,8 +146,7 @@ class EnsembleWorld(World):
         render_path: str | Path | None = None,
     ):
         self.save_dir = Path(save_dir) if save_dir is not None else None
-        self.etl = ETLSystem()
-        self.registry = self._load_registry()
+        self.registrar = self._load_registrar()
         self.turn = 0
         self.systems = systems if systems is not None else self._default_systems(render_path)
         # Run the pipeline once at turn 0, with no player input pending, so the
@@ -156,14 +156,19 @@ class EnsembleWorld(World):
         # are no-ops here (they bail out when there's no player input recorded
         # for the turn), so this doesn't call out to any agent.
         for system in self.systems.values():
-            system.step(self.registry, self.etl, self.save_dir, self.turn)
+            system.step(self.registrar, self.save_dir, self.turn)
 
-    def _load_registry(self) -> Registry:
+    @property
+    def registry(self) -> Registry:
+        """The registrar's underlying registry, for callers that need direct read access."""
+        return self.registrar.registry
+
+    def _load_registrar(self) -> Registrar:
         if self.save_dir is not None:
             self.save_dir.mkdir(parents=True, exist_ok=True)
             _seed_from_living_world(self.save_dir)
-            return Registry.from_database(self.save_dir / REGISTRY_DB_FILENAME)
-        return Registry(ibis.duckdb.connect(), {})
+            return Registrar.load(self.save_dir / REGISTRY_DB_FILENAME)
+        return Registrar()
 
     @staticmethod
     def _default_systems(render_path: str | Path | None) -> "OrderedDict[str, object]":
@@ -201,7 +206,7 @@ class EnsembleWorld(World):
             input_system.receive(text)
 
         for system in self.systems.values():
-            system.step(self.registry, self.etl, self.save_dir, self.turn)
+            system.step(self.registrar, self.save_dir, self.turn)
 
         resolver = next(
             (s for s in self.systems.values() if isinstance(s, ResolverAgentSystem)), None

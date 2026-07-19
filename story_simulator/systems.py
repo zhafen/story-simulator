@@ -2,17 +2,19 @@
 
 Every turn, `EnsembleWorld` calls `step()` on each `System` in a fixed order.
 Systems never call each other directly or pass return values between one
-another; instead they communicate exclusively through the iacs `Registry`
-(a shared, long-lived object every System reads and mutates directly), so
-every value lives on the entity that produced it: the player entity owns
-`input` components (its own commands and the Resolver's narrated replies,
+another; instead they communicate exclusively through the iacs `Registrar`
+(a shared, long-lived object every System reads and mutates directly, per
+`Registrar`'s own "user-facing interface to a registry" role), so every
+value lives on the entity that produced it: the player entity owns `input`
+components (its own commands and the Resolver's narrated replies,
 distinguished by `type`), and each nearby character/object owns a bare
 `active` tag for the turn. `ETLLoaderSystem` runs first each turn to pick up
-any EC files in `save_dir` that nothing has fed into the registry yet.
-`world.yaml` is only ever a derived, human/AI-readable export of the
-registry (written by `ArchivistAgentSystem`) — nothing reads it back in as
-authoritative; the actual save data is the registry itself, persisted via
-`Registry.to_database`/`Registry.from_database`.
+any EC files in `save_dir` that nothing has fed into the registrar yet.
+`world.yaml`, if present in `save_dir`, is only ever a derived,
+human/AI-readable export of the registrar (see `_export_world_yaml`) —
+nothing writes it as part of the per-turn pipeline, and nothing reads it
+back in as authoritative; the actual save data is the registrar's registry,
+persisted via `Registrar.save`/`Registrar.load`.
 """
 
 import asyncio
@@ -22,14 +24,11 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 
 import anthropic
-import ibis
 import matplotlib
 import numpy as np
 import pandas as pd
 import yaml
-from iacs.dataflows import base_etl
-from iacs.dataflows.etl import export_manifest
-from iacs.etl_system import ETLSystem
+from iacs.registrar import Registrar
 from iacs.registry import Registry
 
 matplotlib.use("Agg")
@@ -55,20 +54,20 @@ class System(ABC):
     """One stage of an EnsembleWorld turn."""
 
     @abstractmethod
-    def step(self, registry: Registry, etl: ETLSystem, save_dir: Path | None, turn: int) -> None:
+    def step(self, registrar: Registrar, save_dir: Path | None, turn: int) -> None:
         raise NotImplementedError
 
 
 class ETLLoaderSystem(System):
-    """Loads any not-yet-loaded EC files from `save_dir` into the registry.
+    """Loads any not-yet-loaded EC files from `save_dir` into the registrar.
 
     Runs first each turn so every other System sees the latest on-disk
     state. Tracks every file path already merged in `loaded_files`, so a
     file is loaded exactly once. `world.yaml` is always skipped: it's a
-    derived export of the registry (see `_export_world_yaml`), not an
+    derived export of the registrar (see `_export_world_yaml`), not an
     independent source, and reloading it would mint duplicate entities under
     a different file identifier than the `WORLD_FILE_ID` every direct
-    registry merge already uses. This System exists to pick up files
+    registrar update already uses. This System exists to pick up files
     nothing else has fed in yet, such as a save directory's pre-existing,
     hand-authored EC manifests on startup, or a new one dropped into
     `save_dir` mid-game.
@@ -84,7 +83,7 @@ class ETLLoaderSystem(System):
     def __init__(self):
         self.loaded_files: set[Path] = set()
 
-    def step(self, registry: Registry, etl: ETLSystem, save_dir: Path | None, turn: int) -> None:
+    def step(self, registrar: Registrar, save_dir: Path | None, turn: int) -> None:
         if save_dir is None:
             return
         save_dir = Path(save_dir)
@@ -99,9 +98,7 @@ class ETLLoaderSystem(System):
         new_files = sorted(found - self.loaded_files)
         if not new_files:
             return
-        new_registry = etl.execute(base_etl, input_dirs=[str(MANIFEST_DIR), *(str(f) for f in new_files)])
-        registry.merge(new_registry)
-        new_registry.close()
+        registrar.update(input_dirs=[str(MANIFEST_DIR), *(str(f) for f in new_files)])
         self.loaded_files.update(new_files)
 
 
@@ -115,11 +112,11 @@ class InputSystem(System):
         """Queue the player's raw text for the next step() call."""
         self._pending_text = text
 
-    def step(self, registry: Registry, etl: ETLSystem, save_dir: Path | None, turn: int) -> None:
+    def step(self, registrar: Registrar, save_dir: Path | None, turn: int) -> None:
         if save_dir is None or self._pending_text is None:
             return
-        alias = _ensure_player_alias(registry, etl)
-        _add_input(registry, etl, alias, self._pending_text, "player", turn)
+        alias = _ensure_player_alias(registrar)
+        _add_input(registrar, alias, self._pending_text, "player", turn)
         self._pending_text = None
 
 
@@ -148,24 +145,24 @@ class MapSystem(System):
     def __init__(self, radius: float = DEFAULT_ACTIVE_ENTITY_RADIUS):
         self.radius = radius
 
-    def step(self, registry: Registry, etl: ETLSystem, save_dir: Path | None, turn: int) -> None:
+    def step(self, registrar: Registrar, save_dir: Path | None, turn: int) -> None:
         if save_dir is None:
             return
-        player = _player_position(registry)
+        player = _player_position(registrar)
         if player is None:
             return
         player_alias, player_pos = player
         # entity_id.alias is left out here: label_df (below) already carries its
-        # own copy via registry.view(), and merging on entity_id would otherwise
+        # own copy via registrar.view(), and merging on entity_id would otherwise
         # produce two colliding entity_id.alias columns.
-        positions = _latest_positions(registry)[["entity_id", "position.x", "position.y"]]
+        positions = _latest_positions(registrar)[["entity_id", "position.x", "position.y"]]
 
         active_aliases = set()
         for component, label_field in (("character", "interaction_type"), ("object", "type")):
-            if component not in registry.component_types:
+            if component not in registrar.registry.component_types:
                 continue
             try:
-                label_df = registry.view([f"{component}.{label_field}"]).execute()
+                label_df = registrar.view([f"{component}.{label_field}"]).execute()
             except KeyError:
                 continue
             for _, row in label_df.merge(positions, on="entity_id").iterrows():
@@ -176,7 +173,7 @@ class MapSystem(System):
                 if math.dist(pos, player_pos) <= self.radius:
                     active_aliases.add(alias)
 
-        _sync_active_tags(registry, etl, active_aliases)
+        _sync_active_tags(registrar, active_aliases)
 
 
 class ResolverAgentSystem(AgentSystem):
@@ -213,7 +210,7 @@ class ResolverAgentSystem(AgentSystem):
         self.session_id = None
         self.last_response: str = ""
 
-    def step(self, registry: Registry, etl: ETLSystem, save_dir: Path | None, turn: int) -> None:
+    def step(self, registrar: Registrar, save_dir: Path | None, turn: int) -> None:
         """
         Components
         ----------
@@ -221,18 +218,18 @@ class ResolverAgentSystem(AgentSystem):
         """
         if save_dir is None:
             return
-        command_text = _latest_input(registry, "player", turn)
+        command_text = _latest_input(registrar, "player", turn)
         if command_text is None:
             return
 
-        active_aliases = _active_aliases(registry)
-        entity_details = asyncio.run(self._gather_entity_details(Path(save_dir), _all_aliases(registry)))
+        active_aliases = _active_aliases(registrar)
+        entity_details = asyncio.run(self._gather_entity_details(Path(save_dir), _all_aliases(registrar)))
         prompt = _build_prompt(command_text, active_aliases, entity_details=entity_details)
         response = self._respond(prompt)
         self.last_response = response
 
-        alias = _ensure_player_alias(registry, etl)
-        _add_input(registry, etl, alias, response, "agent", turn)
+        alias = _ensure_player_alias(registrar)
+        _add_input(registrar, alias, response, "agent", turn)
 
     async def _gather_entity_details(self, save_dir: Path, aliases: set[str]) -> str:
         """Ask the local iacs MCP server what's known about every entity in the world.
@@ -319,24 +316,20 @@ class ArchivistAgentSystem(AgentSystem):
     Sessions platform `AgentWorld` uses, because that hosted API only accepts
     MCP servers reachable by URL and can't attach the local stdio `iacs-mcp`
     subprocess. The tool loop is async because the `mcp` SDK's stdio
-    transport (`open_iacs_mcp_session`) is itself async-only. The model is
-    given the iacs MCP server's tools (describe_format, validate_yaml, ...)
-    plus two local, non-MCP tools for reading/writing the world's save file,
-    since no MCP tool writes new EC files. The content of the last
-    `write_world_file` call is fed straight to `ETLSystem` as a YAML string
-    and merged into the registry, rather than reloading `save_dir` from
-    disk. The registry itself (persisted via `Registry.from_database`) is
-    the durable save, so `read_world_file`/`write_world_file` just
-    read/write whatever the Archivist itself last wrote to disk; see
-    `_export_world_yaml` for regenerating `world.yaml` from the registry
-    on demand.
+    transport (`open_iacs_mcp_session`) is itself async-only. Alongside the
+    iacs MCP server's tools (describe_format, validate_yaml, ...), the model
+    is given two local tools backed directly by this turn's own `registrar`:
+    `view_registry` (a thin wrapper over `Registrar.view`) to see what's
+    already recorded, and `update_registry` (a thin wrapper over
+    `_merge_yaml_string`, itself built on `Registrar.update`) to merge in new
+    or changed entities. Both read/write the exact same registrar every
+    other System uses — there's no separate on-disk save file for the
+    Archivist to keep in sync with it, so nothing to reconcile afterward.
 
     Components
     ----------
     - todo: The docstrings are too verbose, explaining a lot of old context-specific
         reasoning. That's true for this entity and others.
-    - todo: The tools should be handled fully as part of iacs. We shouldn't need custom
-        tools for iacs I/O.
     """
 
     def __init__(self, config_path: Path = PROD_ARCHIVIST_CONFIG_PATH):
@@ -346,25 +339,28 @@ class ArchivistAgentSystem(AgentSystem):
             config["system"] = yaml.safe_load(PROD_ARCHIVIST_CONFIG_PATH.read_text())["system"]
         self.model = config["model"]
         self.system = config["system"]
-        self._last_content: str | None = None
 
-    def step(self, registry: Registry, etl: ETLSystem, save_dir: Path | None, turn: int) -> None:
+    def step(self, registrar: Registrar, save_dir: Path | None, turn: int) -> None:
         if save_dir is None:
             return
-        command_text = _latest_input(registry, "player", turn)
-        narration_text = _latest_input(registry, "agent", turn)
+        command_text = _latest_input(registrar, "player", turn)
+        narration_text = _latest_input(registrar, "agent", turn)
         if command_text is None or narration_text is None:
             return
         save_dir = Path(save_dir)
         save_dir.mkdir(parents=True, exist_ok=True)
-        self._last_content = None
-        asyncio.run(self._record_async(save_dir, command_text, narration_text))
-        if self._last_content is not None:
-            _merge_yaml_string(registry, etl, WORLD_FILE_ID, self._last_content, turn)
+        asyncio.run(self._record_async(registrar, save_dir, command_text, narration_text, turn))
 
-    async def _record_async(self, save_dir: Path, player_input: str, world_response: str) -> None:
+    async def _record_async(
+        self,
+        registrar: Registrar,
+        save_dir: Path,
+        player_input: str,
+        world_response: str,
+        turn: int,
+    ) -> None:
         async with open_iacs_mcp_session(save_dir) as mcp:
-            tools = mcp.tools + [_WRITE_WORLD_FILE_TOOL, _READ_WORLD_FILE_TOOL]
+            tools = mcp.tools + [_VIEW_REGISTRY_TOOL, _UPDATE_REGISTRY_TOOL]
             messages = [{"role": "user", "content": self._build_prompt(player_input, world_response)}]
             for _ in range(MAX_ARCHIVIST_TOOL_TURNS):
                 response = self.client.messages.create(
@@ -381,7 +377,7 @@ class ArchivistAgentSystem(AgentSystem):
                 for block in response.content:
                     if block.type != "tool_use":
                         continue
-                    result_text = await self._dispatch_tool(mcp, save_dir, block.name, block.input)
+                    result_text = await self._dispatch_tool(mcp, registrar, turn, block.name, block.input)
                     tool_results.append(
                         {"type": "tool_result", "tool_use_id": block.id, "content": result_text}
                     )
@@ -393,44 +389,43 @@ class ArchivistAgentSystem(AgentSystem):
             f"Player input: {player_input}\n"
             f"World response: {world_response}\n\n"
             "Transcribe any entities/components this exchange reveals or changes "
-            "into the world's save file."
+            "into the world registry."
         )
 
-    async def _dispatch_tool(self, mcp, save_dir: Path, name: str, arguments: dict) -> str:
-        if name == "write_world_file":
-            return self._write_world_file(save_dir, arguments["content"])
-        if name == "read_world_file":
-            return self._read_world_file(save_dir)
+    async def _dispatch_tool(
+        self, mcp, registrar: Registrar, turn: int, name: str, arguments: dict
+    ) -> str:
+        if name == "view_registry":
+            return self._view_registry(registrar, arguments["component_type"])
+        if name == "update_registry":
+            return self._update_registry(registrar, arguments["yaml_string"], turn)
         return await mcp.call_tool(name, arguments)
 
-    def _write_world_file(self, save_dir: Path, content: str) -> str:
-        """Write `content` to world.yaml, but only once it's parseable.
-
-        `validate_yaml` is only ever *recommended* to the model, not
-        required, and `step()` later feeds `self._last_content` straight
-        into `etl.execute` (see `_merge_yaml_string`) with no validation of
-        its own — so a single malformed write here would both corrupt the
-        on-disk save (every subsequent turn's `ETLLoaderSystem` reloads it)
-        and crash the very `step()` call that produced it. Checked with a
-        bare `yaml.safe_load` rather than the fuller `validate_yaml` MCP
-        tool: catching a syntax error is enough to avoid corrupting the
-        file, and this doesn't require a round trip through the MCP session.
-        """
+    @staticmethod
+    def _view_registry(registrar: Registrar, component_type: str) -> str:
         try:
-            yaml.safe_load(content)
-        except yaml.YAMLError as e:
-            return f"Error: content is not valid YAML, nothing written. {e}"
-        path = save_dir / WORLD_YAML_FILENAME
-        path.write_text(content)
-        self._last_content = content
-        return f"Wrote {len(content)} characters to {path}."
+            df = registrar.view(component_type).execute()
+        except KeyError:
+            return f"Error: unknown component type {component_type!r}."
+        return df.to_csv(index=False)
 
     @staticmethod
-    def _read_world_file(save_dir: Path) -> str:
-        path = save_dir / WORLD_YAML_FILENAME
-        if not path.exists():
-            return "(world.yaml does not exist yet)"
-        return path.read_text()
+    def _update_registry(registrar: Registrar, yaml_string: str, turn: int) -> str:
+        """Merge `yaml_string` into `registrar`, but only once it parses.
+
+        `_merge_yaml_string` feeds the string straight into `Registrar.update`
+        with no validation of its own, so a malformed write would crash this
+        very call (and every System after it this turn). Checked with a bare
+        `yaml.safe_load` rather than the fuller `validate_yaml` MCP tool:
+        catching a syntax error is enough to avoid the crash, and this
+        doesn't require a round trip through the MCP session.
+        """
+        try:
+            yaml.safe_load(yaml_string)
+        except yaml.YAMLError as e:
+            return f"Error: content is not valid YAML, nothing merged. {e}"
+        _merge_yaml_string(registrar, WORLD_FILE_ID, yaml_string, turn)
+        return "Merged into the registry."
 
 
 class VisualizerSystem(System):
@@ -439,12 +434,12 @@ class VisualizerSystem(System):
     def __init__(self, render_path: Path = DEFAULT_RENDER_PATH):
         self.render_path = Path(render_path)
 
-    def step(self, registry: Registry, etl: ETLSystem, save_dir: Path | None, turn: int) -> None:
+    def step(self, registrar: Registrar, save_dir: Path | None, turn: int) -> None:
         if save_dir is None:
             return
-        has_positions = "position" in registry.component_types
+        has_positions = "position" in registrar.registry.component_types
         if has_positions:
-            df = _latest_positions(registry)
+            df = _latest_positions(registrar)
 
         fig, ax = plt.subplots()
         if has_positions and not df.empty:
@@ -571,59 +566,67 @@ def _expand_limits_to_fit_labels(fig, ax, annotations: list) -> None:
     ax.autoscale_view()
 
 
-_WRITE_WORLD_FILE_TOOL = {
-    "name": "write_world_file",
+_VIEW_REGISTRY_TOOL = {
+    "name": "view_registry",
     "description": (
-        "Overwrite the world's save file (world.yaml) with new entity-first "
-        "YAML content."
+        "View all recorded data for one component type (e.g. \"position\", "
+        "\"object\", \"character\") directly from the world registry — "
+        "covers both the starting scenario and anything recorded in prior "
+        "turns, so entities already known can be added to rather than "
+        "duplicated."
     ),
     "input_schema": {
         "type": "object",
         "properties": {
-            "content": {
+            "component_type": {
                 "type": "string",
-                "description": "Full entity-first YAML content for world.yaml.",
+                "description": "The component type to view, e.g. \"position\".",
             },
         },
-        "required": ["content"],
+        "required": ["component_type"],
     },
 }
 
-_READ_WORLD_FILE_TOOL = {
-    "name": "read_world_file",
+_UPDATE_REGISTRY_TOOL = {
+    "name": "update_registry",
     "description": (
-        "Read the world's current save file (world.yaml), if any, so it can "
-        "be edited without clobbering entities recorded in prior turns."
+        "Merge entity-first YAML into the world registry, run through the "
+        "same ETL pipeline used to load save files."
     ),
-    "input_schema": {"type": "object", "properties": {}},
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "yaml_string": {
+                "type": "string",
+                "description": "Entity-first YAML content to merge in.",
+            },
+        },
+        "required": ["yaml_string"],
+    },
 }
 
 
 def _merge_yaml_string(
-    registry: Registry, etl: ETLSystem, key: str, yaml_text: str, turn: int | None = None
+    registrar: Registrar, key: str, yaml_text: str, turn: int | None = None
 ) -> None:
-    """Run the ETL pipeline on a raw YAML string and merge the result into `registry`.
+    """Run the ETL pipeline on a raw YAML string and merge the result into `registrar`.
 
-    If `turn` is given, stamps it onto every `position` row before merging.
-    Unlike `input` (whose `turn` is set explicitly by `_add_input`), `position`
-    is written from the Archivist's freeform YAML, which has no reason to know
-    about the turn counter — so it's filled in here instead. `position` rows
-    accumulate across turns rather than being overwritten (`registry.merge`
-    only unions rows in), so this `turn` column is what lets readers resolve
-    which row is current; see `_latest_positions`.
+    If `turn` is given, it's forwarded as `Registrar.update`'s `time`, which
+    backfills any still-null field flagged `time_dimension: true` — here,
+    `position.turn` (see `manifest/builtins.yaml`) — rather than this
+    function stamping it in by hand. Unlike `input` (whose `turn` is set
+    explicitly by `_add_input`), `position` is written from the Archivist's
+    freeform YAML, which has no reason to know about the turn counter, so
+    it's filled in here instead. `position` rows accumulate across turns
+    rather than being overwritten (merging only unions rows in), so this
+    `turn` column is what lets readers resolve which row is current; see
+    `_latest_positions`.
     """
-    new_registry = etl.execute(base_etl, input_dirs=[str(MANIFEST_DIR)], yaml_strings={key: yaml_text})
-    if turn is not None and "position" in new_registry.component_types:
-        # Cast explicitly: a bare ibis.literal(turn) infers the smallest
-        # integer type that fits the value (int8 for small turn numbers),
-        # which conflicts with the schema-validated int64 "turn" column on
-        # any row already in the registry once `registry.merge`'s union
-        # tries to combine them.
-        stamped = new_registry.get("position").mutate(turn=ibis.literal(turn).cast("int64"))
-        new_registry.update({"position": stamped})
-    _reconcile_entity_ids(registry, new_registry)
-    registry.merge(new_registry)
-    new_registry.close()
+    new_registrar = Registrar()
+    new_registrar.update(input_dirs=[str(MANIFEST_DIR)], yaml_strings={key: yaml_text}, time=turn)
+    _reconcile_entity_ids(registrar.registry, new_registrar.registry)
+    registrar.registry.merge(new_registrar.registry)
+    new_registrar.registry.close()
 
 
 def _reconcile_entity_ids(registry: Registry, new_registry: Registry) -> None:
@@ -673,16 +676,15 @@ def _reconcile_entity_ids(registry: Registry, new_registry: Registry) -> None:
         new_registry.update({comp_type: table})
 
 
-def _export_world_yaml(registry: Registry, etl: ETLSystem, save_dir: Path) -> None:
-    """Regenerate `world.yaml` as a human/AI-readable export of the registry's state.
+def _export_world_yaml(registrar: Registrar, save_dir: Path) -> None:
+    """Regenerate `world.yaml` as a human/AI-readable export of the registrar's registry.
 
-    Purely a derived artifact — the registry (persisted via
-    `Registry.to_database`/`Registry.from_database`) is the actual save
-    data, and nothing reads this file back in. Written via iacs's own
-    `export_manifest` dataflow, which writes one output file per original
-    source identifier; every direct registry merge in this module uses
-    `WORLD_FILE_ID` ("world"), which `export_manifest` suffixes into
-    `world.yaml`.
+    Purely a derived artifact — the registrar's registry (persisted via
+    `Registrar.save`/`Registrar.load`) is the actual save data, and nothing
+    reads this file back in. Written via `Registrar.export_manifest`, which
+    writes one output file per original source identifier; every direct
+    registrar update in this module uses `WORLD_FILE_ID` ("world"), which
+    `export_manifest` suffixes into `world.yaml`.
 
     A standalone utility, not part of the per-turn System pipeline:
     `export_manifest` has no notion of this project's own `manifest/`
@@ -690,14 +692,14 @@ def _export_world_yaml(registry: Registry, etl: ETLSystem, save_dir: Path) -> No
     calling this every turn would also dump a stray copy of `manifest/`
     into `save_dir`. Intended for an explicit/user-triggered export.
     """
-    etl.execute(export_manifest, registry=registry, output_dir=str(save_dir))
+    registrar.export_manifest(output_dir=str(save_dir))
 
 
-def _input_history(registry: Registry, alias: str) -> list[dict]:
+def _input_history(registrar: Registrar, alias: str) -> list[dict]:
     """Return every existing `input` component instance on `alias`'s entity."""
-    if "input" not in registry.component_types:
+    if "input" not in registrar.registry.component_types:
         return []
-    view = registry.view(["input.text", "input.type", "input.turn"])
+    view = registrar.view(["input.text", "input.type", "input.turn"])
     df = view.filter(view["entity_id.alias"] == alias).execute()
     return [
         {"text": row["input.text"], "type": row["input.type"], "turn": row["input.turn"]}
@@ -705,7 +707,7 @@ def _input_history(registry: Registry, alias: str) -> list[dict]:
     ]
 
 
-def _entity_id_for_alias(registry: Registry, alias: str) -> str | None:
+def _entity_id_for_alias(registrar: Registrar, alias: str) -> str | None:
     """Look up `alias`'s existing entity_id hash, or None if it's not known yet.
 
     Used to pin a synthetic `WORLD_FILE_ID` YAML write onto an entity's
@@ -713,21 +715,21 @@ def _entity_id_for_alias(registry: Registry, alias: str) -> str | None:
     minting a fresh one, which `iacs.dataflows.etl.load_manifest.entity_id_overrides`
     supports via a bare `{entity_id: <hash>}` component.
     """
-    if "entity_id" not in registry.component_types:
+    if "entity_id" not in registrar.registry.component_types:
         return None
-    eids = registry.get("entity_id").execute()
+    eids = registrar.get("entity_id").execute()
     match = eids.loc[eids["alias"] == alias, "value"]
     return match.iloc[0] if not match.empty else None
 
 
-def _add_input(registry: Registry, etl: ETLSystem, alias: str, text: str, type_: str, turn: int) -> None:
+def _add_input(registrar: Registrar, alias: str, text: str, type_: str, turn: int) -> None:
     """Merge a new `input` component instance onto `alias`'s entity.
 
     Rebuilds and overwrites the whole `input` component table from
     `alias`'s full history plus the new instance, rather than unioning in
-    just the new row — `registry.merge` would otherwise collide every call
-    on the same `component_index` (each call's YAML fragment is its own
-    single-item list, always indexed 0). Safe to overwrite wholesale: only
+    just the new row — a merge would otherwise collide every call on the
+    same `component_index` (each call's YAML fragment is its own single-item
+    list, always indexed 0). Safe to overwrite wholesale: only
     `InputSystem`/`ResolverAgentSystem` ever write `input`, and always onto
     the one player entity.
 
@@ -737,27 +739,30 @@ def _add_input(registry: Registry, etl: ETLSystem, alias: str, text: str, type_:
     identity a plain `{alias: [...]}` YAML fragment would otherwise mint
     under this call's own synthetic "world" source. Without that override,
     `_input_history`'s `entity_id.alias`-joined read would never find this
-    row (its entity_id has no matching `entity_id` table entry, since
-    `registry.update` below only overwrites `input`, not `entity_id`),
+    row (its entity_id has no matching `entity_id` table entry, since the
+    raw `Registry.update` below only overwrites `input`, not `entity_id`),
     silently losing the just-written instance the next time history is
     rebuilt.
     """
-    history = _input_history(registry, alias) + [{"text": text, "type": type_, "turn": turn}]
+    history = _input_history(registrar, alias) + [{"text": text, "type": type_, "turn": turn}]
     entries = [{"input": h} for h in history]
-    entity_id = _entity_id_for_alias(registry, alias)
+    entity_id = _entity_id_for_alias(registrar, alias)
     if entity_id is not None:
         entries = [{"entity_id": entity_id}] + entries
     data = {alias: entries}
-    new_registry = etl.execute(
-        base_etl, input_dirs=[str(MANIFEST_DIR)], yaml_strings={WORLD_FILE_ID: yaml.safe_dump(data, sort_keys=False)}
+    new_registrar = Registrar()
+    new_registrar.update(
+        input_dirs=[str(MANIFEST_DIR)], yaml_strings={WORLD_FILE_ID: yaml.safe_dump(data, sort_keys=False)}
     )
-    # .to_pyarrow() materializes the data so it can cross from new_registry's
-    # connection into registry's (mirrors Registry.merge's own approach).
-    registry.update({"input": new_registry.get("input").to_pyarrow()})
-    new_registry.close()
+    # .to_pyarrow() materializes the data so it can cross from new_registrar's
+    # connection into registrar's (mirrors Registry.merge's own approach).
+    # A raw Registry.update (not Registrar.update, an unrelated ETL-merge
+    # method) since this is a wholesale overwrite, not a union-in merge.
+    registrar.registry.update({"input": new_registrar.get("input").to_pyarrow()})
+    new_registrar.registry.close()
 
 
-def _sync_active_tags(registry: Registry, etl: ETLSystem, active_aliases: set[str]) -> None:
+def _sync_active_tags(registrar: Registrar, active_aliases: set[str]) -> None:
     """Overwrite the `active` component table so it exactly matches `active_aliases`.
 
     Each alias's `active` tag is declared alongside an explicit `entity_id`
@@ -766,58 +771,58 @@ def _sync_active_tags(registry: Registry, etl: ETLSystem, active_aliases: set[st
     `_add_input`'s docstring for why that matters for `entity_id.alias`-joined
     reads (here, `_active_aliases`'s `view("active")`).
 
-    Rebuilt from scratch and overwritten (not merged) every call, since
-    `registry.merge` only unions rows in and can't drop the tag from
-    entities that left the radius. Safe to overwrite wholesale: `MapSystem`
-    is the only writer of `active`.
+    Rebuilt from scratch and overwritten (not merged) every call, since a
+    merge only unions rows in and can't drop the tag from entities that left
+    the radius. Safe to overwrite wholesale: `MapSystem` is the only writer
+    of `active`.
     """
     data = {
-        alias: [{"entity_id": _entity_id_for_alias(registry, alias)}, "active"]
+        alias: [{"entity_id": _entity_id_for_alias(registrar, alias)}, "active"]
         for alias in sorted(active_aliases)
     }
-    new_registry = etl.execute(
-        base_etl, input_dirs=[str(MANIFEST_DIR)], yaml_strings={WORLD_FILE_ID: yaml.safe_dump(data, sort_keys=False)}
+    new_registrar = Registrar()
+    new_registrar.update(
+        input_dirs=[str(MANIFEST_DIR)], yaml_strings={WORLD_FILE_ID: yaml.safe_dump(data, sort_keys=False)}
     )
-    registry.update({"active": new_registry.get("active").to_pyarrow()})
-    new_registry.close()
+    registrar.registry.update({"active": new_registrar.get("active").to_pyarrow()})
+    new_registrar.registry.close()
 
 
-def _player_alias(registry: Registry) -> str | None:
+def _player_alias(registrar: Registrar) -> str | None:
     """Return the current player entity's alias, or None if it doesn't exist yet."""
-    if "character" not in registry.component_types:
+    if "character" not in registrar.registry.component_types:
         return None
-    view = registry.view(["character.interaction_type"])
+    view = registrar.view(["character.interaction_type"])
     df = view.filter(view["character.interaction_type"] == "player").execute()
     if df.empty:
         return None
     return df.iloc[0]["entity_id.alias"]
 
 
-def _latest_positions(registry: Registry) -> pd.DataFrame:
+def _latest_positions(registrar: Registrar) -> pd.DataFrame:
     """Return one row per entity: its highest-turn `position`.
 
     `position` rows accumulate across turns rather than being overwritten
-    (`registry.merge` only unions rows in; see `_merge_yaml_string`), so
-    "current position" has to be resolved at read time instead of read
-    directly off the table. Delegated to `Registry.view_current`, which
-    resolves this the same way for any component with a field flagged
-    `time_dimension: true` — see `turn`'s definition in
-    `manifest/builtins.yaml` — rather than reimplementing that resolution
-    by hand here.
+    (merging only unions rows in; see `_merge_yaml_string`), so "current
+    position" has to be resolved at read time instead of read directly off
+    the table. Delegated to `Registrar.view_current`, which resolves this
+    the same way for any component with a field flagged `time_dimension:
+    true` — see `turn`'s definition in `manifest/builtins.yaml` — rather
+    than reimplementing that resolution by hand here.
     """
     columns = ["entity_id", "entity_id.alias", "position.x", "position.y", "position.z", "position.turn"]
-    if "position" not in registry.component_types:
+    if "position" not in registrar.registry.component_types:
         return pd.DataFrame(columns=columns)
-    return registry.view_current(["position.x", "position.y", "position.z", "position.turn"]).execute()[columns]
+    return registrar.view_current(["position.x", "position.y", "position.z", "position.turn"]).execute()[columns]
 
 
-def _player_position(registry: Registry) -> tuple[str, tuple[float, float]] | None:
+def _player_position(registrar: Registrar) -> tuple[str, tuple[float, float]] | None:
     """Return (alias, (x, y)) for the player entity, or None if not known yet."""
-    if "character" not in registry.component_types:
+    if "character" not in registrar.registry.component_types:
         return None
-    if "position" not in registry.component_types:
+    if "position" not in registrar.registry.component_types:
         return None
-    char_view = registry.view(["character.interaction_type"])
+    char_view = registrar.view(["character.interaction_type"])
     try:
         char_df = char_view.filter(char_view["character.interaction_type"] == "player").execute()
     except KeyError:
@@ -825,7 +830,7 @@ def _player_position(registry: Registry) -> tuple[str, tuple[float, float]] | No
     if char_df.empty:
         return None
     alias, entity_id = char_df.iloc[0]["entity_id.alias"], char_df.iloc[0]["entity_id"]
-    positions = _latest_positions(registry)
+    positions = _latest_positions(registrar)
     match = positions[positions["entity_id"] == entity_id]
     if match.empty:
         return None
@@ -833,7 +838,7 @@ def _player_position(registry: Registry) -> tuple[str, tuple[float, float]] | No
     return alias, (float(row["position.x"]), float(row["position.y"]))
 
 
-def _ensure_player_alias(registry: Registry, etl: ETLSystem) -> str:
+def _ensure_player_alias(registrar: Registrar) -> str:
     """Return the player entity's alias, seeding a minimal one if none exists yet.
 
     On the very first turn there's no player entity for InputSystem/
@@ -842,24 +847,24 @@ def _ensure_player_alias(registry: Registry, etl: ETLSystem) -> str:
     a bare `player` entity (matching the alias archivist.yaml already
     instructs the Archivist to use) so `input` always has somewhere to live.
     """
-    alias = _player_alias(registry)
+    alias = _player_alias(registrar)
     if alias is not None:
         return alias
     data = {"player": [{"character": {"interaction_type": "player"}}]}
-    _merge_yaml_string(registry, etl, WORLD_FILE_ID, yaml.safe_dump(data, sort_keys=False))
+    _merge_yaml_string(registrar, WORLD_FILE_ID, yaml.safe_dump(data, sort_keys=False))
     return "player"
 
 
-def _latest_input(registry: Registry, type_: str, turn: int) -> str | None:
+def _latest_input(registrar: Registrar, type_: str, turn: int) -> str | None:
     """Return the `type_`-authored input's text for `turn`, or None if not written yet.
 
     `input.turn` is schema-validated (type: int) by every ETL call that
     produces it, so `turn` is compared directly rather than coercing to
     string.
     """
-    if "input" not in registry.component_types:
+    if "input" not in registrar.registry.component_types:
         return None
-    i = registry.get("input")
+    i = registrar.get("input")
     df = i.filter(i.type == type_).execute()
     matches = df[df["turn"] == turn]
     if matches.empty:
@@ -867,20 +872,29 @@ def _latest_input(registry: Registry, type_: str, turn: int) -> str | None:
     return matches.iloc[-1]["text"]
 
 
-def _active_aliases(registry: Registry) -> set[str]:
+def _active_aliases(registrar: Registrar) -> set[str]:
     """Return the aliases of every entity currently tagged `active`."""
-    if "active" not in registry.component_types:
+    if "active" not in registrar.registry.component_types:
         return set()
-    view = registry.view("active")
+    view = registrar.view("active")
     df = view.execute()
     return set(df["entity_id.alias"])
 
 
-def _all_aliases(registry: Registry) -> set[str]:
-    """Return the aliases of every entity known to the registry."""
-    if "entity_id" not in registry.component_types:
+def _all_aliases(registrar: Registrar) -> set[str]:
+    """Return the aliases of every positioned entity in the world.
+
+    Deliberately narrower than every row in the `entity_id` table: `base_etl`
+    always loads `MANIFEST_DIR` too, so the registry also carries builtin
+    schema entities (component type definitions, audit templates, etc.) that
+    have no place in the physical world and nothing useful to tell the
+    Resolver. Restricting to entities with a `position` reuses the same
+    "has a place in the world" criterion `_latest_positions` resolves for,
+    and excludes exactly the schema noise.
+    """
+    if "position" not in registrar.registry.component_types:
         return set()
-    return set(registry.get("entity_id").execute()["alias"])
+    return set(_latest_positions(registrar)["entity_id.alias"])
 
 
 def _build_prompt(text: str, active_aliases: set[str], entity_details: str = "") -> str:

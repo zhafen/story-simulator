@@ -29,7 +29,6 @@ import numpy as np
 import pandas as pd
 import yaml
 from iacs.registrar import Registrar
-from iacs.registry import Registry
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -600,69 +599,41 @@ def _merge_yaml_string(
 ) -> None:
     """Run the ETL pipeline on a raw YAML string and merge the result into `registrar`.
 
-    If `turn` is given, it's forwarded as `Registrar.update`'s `time`, which
-    backfills any still-null field flagged `time_dimension: true` — here,
-    `position.turn` (see `manifest/builtins.yaml`) — rather than this
-    function stamping it in by hand. Unlike `input` (whose `turn` is set
-    explicitly by `_add_input`), `position` is written from the Archivist's
-    freeform YAML, which has no reason to know about the turn counter, so
-    it's filled in here instead. `position` rows accumulate across turns
-    rather than being overwritten (merging only unions rows in), so this
-    `turn` column is what lets readers resolve which row is current; see
-    `_latest_positions`.
+    If `turn` is given, it's stamped directly into every `position` entry in
+    `yaml_text` that doesn't already set its own `turn` (see
+    `manifest/builtins.yaml`), rather than relying on `Registrar.update`'s
+    `time` backfill. Unlike `input` (whose `turn` is set explicitly by
+    `_add_input`), `position` is written from the Archivist's freeform YAML,
+    which has no reason to know about the turn counter, so it's filled in
+    here instead. `position` rows accumulate across turns rather than being
+    overwritten (merging only unions rows in), so this `turn` column is what
+    lets readers resolve which row is current; see `_latest_positions`.
+    Stamped in before the merge (rather than backfilled after) because
+    `same_as` resolution runs before backfill does — a `position` entry
+    left null for backfill would still be null while `same_as` rebases it,
+    and iacs can't create a component table whose only rows are null in a
+    given column.
+
+    Called directly on `registrar` (not a throwaway one merged in
+    afterward): `yaml_text` attaching to an entity that already exists —
+    e.g. the player, or "journaling_desk.desk" — rather than minting a
+    fresh, disconnected one under this call's own synthetic "world" source
+    is handled by a `same_as` component in `yaml_text` itself (iacs's own
+    mechanism for this; see `iacs.dataflows.derive.resolve_same_as`), which
+    only resolves against entities `registrar` already has because
+    `Registrar.update` passes its own registry through as
+    `existing_registry`. A separately-built registrar has no such
+    visibility, so there's nothing left for this function to reconcile by
+    hand afterward the way it used to.
     """
-    new_registrar = Registrar()
-    new_registrar.update(input_dirs=[str(MANIFEST_DIR)], yaml_strings={key: yaml_text}, time=turn)
-    _reconcile_entity_ids(registrar.registry, new_registrar.registry)
-    registrar.registry.merge(new_registrar.registry)
-    new_registrar.registry.close()
-
-
-def _reconcile_entity_ids(registry: Registry, new_registry: Registry) -> None:
-    """Remap `new_registry`'s entity_ids onto `registry`'s existing ones, by alias.
-
-    `entity_id` is derived as a hash of `(file_id, entity_path)` (see
-    `iacs.dataflows.etl.load_manifest.entity_id_table`), so writing the same
-    alias (e.g. "player") from a different source than it was first recorded
-    under — the Archivist's synthetic "world" YAML vs. a hand-authored
-    `setting.yaml` — mints a *different* id for what's meant to be the same
-    entity, rather than updating it. Left unreconciled, `registry.merge`
-    unions both in as separate entities that happen to share an alias:
-    `entity_id.alias`-joined reads that don't also constrain by entity_id
-    (e.g. `Registry.view_current`, which groups by entity_id alone) then see
-    two independent "current" rows for what should be one entity.
-
-    Since `alias` is the stable, author-facing identity that's meant to carry
-    across sources (unlike the source-derived hash), any incoming entity
-    whose alias matches an entity already in `registry` is remapped onto that
-    existing id in place, before `new_registry` is merged in.
-    """
-    if "entity_id" not in registry.component_types or "entity_id" not in new_registry.component_types:
-        return
-    existing = registry.get("entity_id").execute()
-    incoming = new_registry.get("entity_id").execute()
-    mapping = {}
-    for _, row in incoming.iterrows():
-        match = existing.loc[existing["alias"] == row["alias"], "value"]
-        if not match.empty and match.iloc[0] != row["value"]:
-            mapping[row["value"]] = match.iloc[0]
-    if not mapping:
-        return
-    for comp_type in new_registry.component_types:
-        table = new_registry.get(comp_type).execute()
-        if comp_type == "entity_id":
-            # Drop the now-superseded rows outright rather than remapping
-            # their own "value" column: the canonical row for this alias is
-            # already present in `registry` and merging in a second row under
-            # the same alias (even pointed at the same id) would leave two
-            # `entity_id` rows per alias, breaking any lookup that expects
-            # exactly one (e.g. `_entity_id_for_alias`'s `.iloc[0]`).
-            table = table[~table["value"].isin(mapping)]
-        elif "entity_id" in table.columns:
-            table["entity_id"] = table["entity_id"].replace(mapping)
-        else:
-            continue
-        new_registry.update({comp_type: table})
+    if turn is not None:
+        data = yaml.safe_load(yaml_text) or {}
+        for components in data.values():
+            for item in components:
+                if isinstance(item, dict) and isinstance(item.get("position"), dict):
+                    item["position"].setdefault("turn", turn)
+        yaml_text = yaml.safe_dump(data, sort_keys=False)
+    registrar.update(input_dirs=[str(MANIFEST_DIR)], yaml_strings={key: yaml_text})
 
 
 def _export_world_yaml(registrar: Registrar, save_dir: Path) -> None:
@@ -719,103 +690,62 @@ def _safe_get(registrar: Registrar, component_type: str) -> pd.DataFrame | None:
     return registrar.get(component_type).execute()
 
 
-def _overwrite_component(registrar: Registrar, component_type: str, data: dict) -> None:
-    """Rebuild `component_type`'s entire table from `data` and overwrite it wholesale.
-
-    Used where the writer always knows the full current state and needs to
-    replace it outright, not union new rows in the way `Registrar.update`'s
-    ETL-merge does — e.g. dropping the `active` tag from an entity that left
-    radius, which a merge could never do. `data` still goes through the same
-    `base_etl` schema validation/typing as any other write, via a throwaway
-    `Registrar` instead of `registrar` itself, since the result lands as a
-    raw `Registry.update` rather than a merge.
-    """
-    new_registrar = Registrar()
-    new_registrar.update(
-        input_dirs=[str(MANIFEST_DIR)], yaml_strings={WORLD_FILE_ID: yaml.safe_dump(data, sort_keys=False)}
-    )
-    # .to_pyarrow() materializes the data so it can cross from new_registrar's
-    # connection into registrar's (mirrors Registry.merge's own approach).
-    registrar.registry.update({component_type: new_registrar.get(component_type).to_pyarrow()})
-    new_registrar.registry.close()
-
-
-def _input_history(registrar: Registrar, alias: str) -> list[dict]:
-    """Return every existing `input` component instance on `alias`'s entity."""
-    df = _safe_view(registrar, ["input.text", "input.type", "input.turn"])
-    if df is None:
-        return []
-    df = df[df["entity_id.alias"] == alias]
-    return [
-        {"text": row["input.text"], "type": row["input.type"], "turn": row["input.turn"]}
-        for _, row in df.iterrows()
-    ]
-
-
-def _entity_id_for_alias(registrar: Registrar, alias: str) -> str | None:
-    """Look up `alias`'s existing entity_id hash, or None if it's not known yet.
-
-    Used to pin a synthetic `WORLD_FILE_ID` YAML write onto an entity's
-    *existing* identity (see `_add_input`/`_sync_active_tags`) instead of
-    minting a fresh one, which `iacs.dataflows.etl.load_manifest.entity_id_overrides`
-    supports via a bare `{entity_id: <hash>}` component.
-    """
-    eids = _safe_get(registrar, "entity_id")
-    if eids is None:
-        return None
-    match = eids.loc[eids["alias"] == alias, "value"]
-    return match.iloc[0] if not match.empty else None
-
-
 def _add_input(registrar: Registrar, alias: str, text: str, type_: str, turn: int) -> None:
-    """Merge a new `input` component instance onto `alias`'s entity.
+    """Merge a new `input` component instance onto `alias`'s existing entity.
 
-    Rebuilds and overwrites the whole `input` component table from
-    `alias`'s full history plus the new instance, rather than unioning in
-    just the new row — a merge would otherwise collide every call on the
-    same `component_index` (each call's YAML fragment is its own single-item
-    list, always indexed 0). Safe to overwrite wholesale: only
-    `InputSystem`/`ResolverAgentSystem` ever write `input`, and always onto
-    the one player entity.
+    A `same_as` component (see `_merge_yaml_string`) attaches the new
+    instance onto `alias`'s existing entity — e.g. the player entity from a
+    hand-authored `setting.yaml` — rather than minting a fresh, disconnected
+    one under this call's own synthetic "world" source. Declared under a
+    throwaway `{alias}_update` entity key, not `alias` itself: `same_as`
+    resolution excludes the owner from its own candidate search, so if the
+    owner's key hashed to the exact same identity as its target (which
+    happens whenever `alias` already exists only because an earlier call
+    here created it, since every such write shares this same synthetic
+    "world" source and entity_path == alias), zero *other* candidates would
+    be left to resolve to and iacs would reject it as unresolvable — giving
+    the owner a distinct key sidesteps that regardless of where the target
+    came from.
 
-    Pins the write onto `alias`'s existing entity_id (see
-    `_entity_id_for_alias`) whenever one is already known — e.g. the player
-    entity from a hand-authored `setting.yaml` — rather than the fresh
-    identity a plain `{alias: [...]}` YAML fragment would otherwise mint
-    under this call's own synthetic "world" source. Without that override,
-    `_input_history`'s `entity_id.alias`-joined read would never find this
-    row (its entity_id has no matching `entity_id` table entry, since
-    `_overwrite_component` only overwrites `input`, not `entity_id`),
-    silently losing the just-written instance the next time history is
-    rebuilt.
+    Merged in directly rather than rebuilt from scratch (unlike `active`;
+    see `_sync_active_tags`), since `input` is meant to accumulate every
+    turn's exchange, not be replaced. Separate calls' rows sharing a
+    component_index (each call's YAML fragment is its own single-item list,
+    always indexed 0 relative to itself) is fine — the same way
+    `Registry.view_current` already tolerates that for accumulated
+    `position` rows — since nothing reads `input` by component_index.
     """
-    history = _input_history(registrar, alias) + [{"text": text, "type": type_, "turn": turn}]
-    entries = [{"input": h} for h in history]
-    entity_id = _entity_id_for_alias(registrar, alias)
-    if entity_id is not None:
-        entries = [{"entity_id": entity_id}] + entries
-    _overwrite_component(registrar, "input", {alias: entries})
+    data = {
+        f"{alias}_update": [
+            {"same_as": {"value": alias}},
+            {"input": {"text": text, "type": type_, "turn": turn}},
+        ]
+    }
+    _merge_yaml_string(registrar, WORLD_FILE_ID, yaml.safe_dump(data, sort_keys=False))
 
 
 def _sync_active_tags(registrar: Registrar, active_aliases: set[str]) -> None:
     """Overwrite the `active` component table so it exactly matches `active_aliases`.
 
-    Each alias's `active` tag is declared alongside an explicit `entity_id`
-    override (see `_entity_id_for_alias`) so it lands on that alias's
-    existing entity rather than a fresh identity disconnected from it — see
-    `_add_input`'s docstring for why that matters for `entity_id.alias`-joined
-    reads (here, `_active_aliases`'s `view("active")`).
-
-    Rebuilt from scratch and overwritten (not merged) every call, since a
-    merge only unions rows in and can't drop the tag from entities that left
-    the radius. Safe to overwrite wholesale: `MapSystem` is the only writer
-    of `active`.
+    A merge can only union rows in, never drop the tag from an entity that
+    left the radius, so the existing `active` table (if any) is cleared
+    first — a direct, raw overwrite to an empty table of its own schema,
+    safe since `MapSystem` is the only writer of `active` — and the current
+    set is merged back in via `same_as` (see `_merge_yaml_string`),
+    attaching each tag onto its alias's existing entity rather than a fresh,
+    disconnected one. Declared under a throwaway `{alias}_update` entity key
+    for each alias, not the alias itself — see `_add_input`'s docstring for
+    why that's needed for `same_as` resolution to succeed regardless of
+    where the target entity originally came from.
     """
+    if "active" in registrar.registry.component_types:
+        registrar.registry.update({"active": registrar.get("active").limit(0).to_pyarrow()})
+    if not active_aliases:
+        return
     data = {
-        alias: [{"entity_id": _entity_id_for_alias(registrar, alias)}, "active"]
-        for alias in sorted(active_aliases)
+        f"{alias}_update": [{"same_as": {"value": alias}}, "active"] for alias in sorted(active_aliases)
     }
-    _overwrite_component(registrar, "active", data)
+    _merge_yaml_string(registrar, WORLD_FILE_ID, yaml.safe_dump(data, sort_keys=False))
 
 
 def _player_alias(registrar: Registrar) -> str | None:

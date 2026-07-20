@@ -1,0 +1,36 @@
+file_info:
+    - description: >
+        This file is for testing npc behavior. The expected pattern is for the npc to
+        go to the door and open it, and maybe explore further.
+
+npc:
+    data:
+        - character:
+            interaction_type: npc
+        - position:
+            x: 0
+            y: 0
+        - description:
+            value: A traveler, pausing at the edge of a quiet space.
+    agenda:
+        - note: If I see anywhere I haven't explored yet, I want to go there.
+        - memory
+
+door:
+    - object:
+        type: door
+    - origin
+    - position:
+        x: 0
+        y: 2
+    - description:
+        value: A plain door; what's on its far side isn't visible yet.
+
+expanse:
+    - object:
+        type: expanse
+    - position:
+        x: 0
+        y: 0
+    - description:
+        value: An empty, quiet space, without walls or horizon.

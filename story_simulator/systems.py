@@ -319,12 +319,12 @@ class ArchivistAgentSystem(AgentSystem):
     transport (`open_iacs_mcp_session`) is itself async-only. Alongside the
     iacs MCP server's tools (describe_format, validate_yaml, ...), the model
     is given two local tools backed directly by this turn's own `registrar`:
-    `view_registry` (a thin wrapper over `Registrar.view`) to see what's
-    already recorded, and `update_registry` (a thin wrapper over
-    `_merge_yaml_string`, itself built on `Registrar.update`) to merge in new
-    or changed entities. Both read/write the exact same registrar every
-    other System uses — there's no separate on-disk save file for the
-    Archivist to keep in sync with it, so nothing to reconcile afterward.
+    `view_registry` (`Registrar.view_df(...).to_csv()`) to see what's already
+    recorded, and `update_registry` (a thin wrapper over `_merge_yaml_string`,
+    itself built on `Registrar.update`) to merge in new or changed entities.
+    Both read/write the exact same registrar every other System uses —
+    there's no separate on-disk save file for the Archivist to keep in sync
+    with it, so nothing to reconcile afterward.
 
     Components
     ----------
@@ -395,19 +395,24 @@ class ArchivistAgentSystem(AgentSystem):
     async def _dispatch_tool(
         self, mcp, registrar: Registrar, turn: int, name: str, arguments: dict
     ) -> str:
-        if name == "view_registry":
-            return self._view_registry(registrar, arguments["component_type"])
-        if name == "update_registry":
-            return self._update_registry(registrar, arguments["yaml_string"], turn)
-        return await mcp.call_tool(name, arguments)
+        """Dispatch one tool call, converting any exception into an error string.
 
-    @staticmethod
-    def _view_registry(registrar: Registrar, component_type: str) -> str:
+        Mirrors what an MCP server already does for its own tools (e.g. the
+        `mcp.call_tool` fallback below): FastMCP catches an exception raised
+        inside a `@server.tool()` function and returns it as that tool's
+        result rather than letting it propagate. This local loop has no such
+        safety net of its own, so a bad argument (an unknown component_type,
+        say) would otherwise crash the whole turn instead of giving the model
+        something it can read and retry from.
+        """
         try:
-            df = registrar.view(component_type).execute()
-        except KeyError:
-            return f"Error: unknown component type {component_type!r}."
-        return df.to_csv(index=False)
+            if name == "view_registry":
+                return registrar.view_df(arguments["component_type"]).to_csv()
+            if name == "update_registry":
+                return self._update_registry(registrar, arguments["yaml_string"], turn)
+            return await mcp.call_tool(name, arguments)
+        except Exception as e:
+            return f"Error: {e}"
 
     @staticmethod
     def _update_registry(registrar: Registrar, yaml_string: str, turn: int) -> str:

@@ -1,3 +1,4 @@
+import asyncio
 import itertools
 from contextlib import asynccontextmanager
 from unittest.mock import MagicMock
@@ -405,19 +406,31 @@ def test_archivist_agent_system_dispatches_mcp_and_local_tools(tmp_path, monkeyp
     assert not (save_dir / WORLD_YAML_FILENAME).exists()
 
 
-def test_view_registry_reads_a_component_type():
+def test_dispatch_tool_view_registry_reads_a_component_type():
     registrar = _registrar_from_yaml(_SAMPLE_WORLD_YAML)
+    archivist = ArchivistAgentSystem()
 
-    result = ArchivistAgentSystem._view_registry(registrar, "position")
+    result = asyncio.run(
+        archivist._dispatch_tool(None, registrar, 1, "view_registry", {"component_type": "position"})
+    )
 
     assert "distant_rock" in result
     assert "nearby_npc" in result
 
 
-def test_view_registry_reports_unknown_component_type():
-    registrar = _empty_registrar()
+def test_dispatch_tool_reports_errors_without_crashing_the_turn():
+    """An unknown component_type (a plausible model typo/hallucination) shouldn't crash the turn.
 
-    result = ArchivistAgentSystem._view_registry(registrar, "nonexistent")
+    `_dispatch_tool` has no MCP server underneath it translating exceptions
+    into tool results the way FastMCP does for its own tools, so it has to
+    do that translation itself.
+    """
+    registrar = _empty_registrar()
+    archivist = ArchivistAgentSystem()
+
+    result = asyncio.run(
+        archivist._dispatch_tool(None, registrar, 1, "view_registry", {"component_type": "nonexistent"})
+    )
 
     assert "Error" in result
 

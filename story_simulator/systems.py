@@ -159,11 +159,8 @@ class MapSystem(System):
 
         active_aliases = set()
         for component, label_field in (("character", "interaction_type"), ("object", "type")):
-            if component not in registrar.registry.component_types:
-                continue
-            try:
-                label_df = registrar.view([f"{component}.{label_field}"]).execute()
-            except KeyError:
+            label_df = _safe_view(registrar, f"{component}.{label_field}")
+            if label_df is None:
                 continue
             for _, row in label_df.merge(positions, on="entity_id").iterrows():
                 alias = row["entity_id.alias"]
@@ -442,12 +439,10 @@ class VisualizerSystem(System):
     def step(self, registrar: Registrar, save_dir: Path | None, turn: int) -> None:
         if save_dir is None:
             return
-        has_positions = "position" in registrar.registry.component_types
-        if has_positions:
-            df = _latest_positions(registrar)
+        df = _latest_positions(registrar)
 
         fig, ax = plt.subplots()
-        if has_positions and not df.empty:
+        if not df.empty:
             ax.scatter(df["position.x"], df["position.y"])
             annotations = [
                 ax.annotate(
@@ -700,12 +695,68 @@ def _export_world_yaml(registrar: Registrar, save_dir: Path) -> None:
     registrar.export_manifest(output_dir=str(save_dir))
 
 
+def _safe_view(registrar: Registrar, fields: str | list[str]) -> pd.DataFrame | None:
+    """Execute `registrar.view(fields)`, or None if that data isn't there yet.
+
+    Every reader below queries state that routinely doesn't exist yet this
+    early in the game (no `active` tags before the first turn, no `position`
+    before the Archivist's first write, ...), so a missing component type
+    isn't an error here — each used to check `component_type in
+    registrar.registry.component_types` by hand before calling
+    `Registrar.view` to avoid it raising, and some also caught the `KeyError`
+    `Registrar.view` raises for a dotted field that isn't a column on an
+    otherwise-loaded table (e.g. an entity of a given type that doesn't
+    happen to have that field set). Consolidated here so both checks are
+    written once.
+    """
+    names = [fields] if isinstance(fields, str) else fields
+    tables = {name.split(".", 1)[0] for name in names}
+    if not tables <= set(registrar.registry.component_types):
+        return None
+    try:
+        return registrar.view(fields).execute()
+    except KeyError:
+        return None
+
+
+def _safe_get(registrar: Registrar, component_type: str) -> pd.DataFrame | None:
+    """Execute `registrar.get(component_type)`, or None if it's not loaded yet.
+
+    The `.get()` counterpart to `_safe_view`, for the few readers that want
+    the raw component table (no `entity_id.alias` join) rather than a view.
+    """
+    if component_type not in registrar.registry.component_types:
+        return None
+    return registrar.get(component_type).execute()
+
+
+def _overwrite_component(registrar: Registrar, component_type: str, data: dict) -> None:
+    """Rebuild `component_type`'s entire table from `data` and overwrite it wholesale.
+
+    Used where the writer always knows the full current state and needs to
+    replace it outright, not union new rows in the way `Registrar.update`'s
+    ETL-merge does — e.g. dropping the `active` tag from an entity that left
+    radius, which a merge could never do. `data` still goes through the same
+    `base_etl` schema validation/typing as any other write, via a throwaway
+    `Registrar` instead of `registrar` itself, since the result lands as a
+    raw `Registry.update` rather than a merge.
+    """
+    new_registrar = Registrar()
+    new_registrar.update(
+        input_dirs=[str(MANIFEST_DIR)], yaml_strings={WORLD_FILE_ID: yaml.safe_dump(data, sort_keys=False)}
+    )
+    # .to_pyarrow() materializes the data so it can cross from new_registrar's
+    # connection into registrar's (mirrors Registry.merge's own approach).
+    registrar.registry.update({component_type: new_registrar.get(component_type).to_pyarrow()})
+    new_registrar.registry.close()
+
+
 def _input_history(registrar: Registrar, alias: str) -> list[dict]:
     """Return every existing `input` component instance on `alias`'s entity."""
-    if "input" not in registrar.registry.component_types:
+    df = _safe_view(registrar, ["input.text", "input.type", "input.turn"])
+    if df is None:
         return []
-    view = registrar.view(["input.text", "input.type", "input.turn"])
-    df = view.filter(view["entity_id.alias"] == alias).execute()
+    df = df[df["entity_id.alias"] == alias]
     return [
         {"text": row["input.text"], "type": row["input.type"], "turn": row["input.turn"]}
         for _, row in df.iterrows()
@@ -720,9 +771,9 @@ def _entity_id_for_alias(registrar: Registrar, alias: str) -> str | None:
     minting a fresh one, which `iacs.dataflows.etl.load_manifest.entity_id_overrides`
     supports via a bare `{entity_id: <hash>}` component.
     """
-    if "entity_id" not in registrar.registry.component_types:
+    eids = _safe_get(registrar, "entity_id")
+    if eids is None:
         return None
-    eids = registrar.get("entity_id").execute()
     match = eids.loc[eids["alias"] == alias, "value"]
     return match.iloc[0] if not match.empty else None
 
@@ -744,8 +795,8 @@ def _add_input(registrar: Registrar, alias: str, text: str, type_: str, turn: in
     identity a plain `{alias: [...]}` YAML fragment would otherwise mint
     under this call's own synthetic "world" source. Without that override,
     `_input_history`'s `entity_id.alias`-joined read would never find this
-    row (its entity_id has no matching `entity_id` table entry, since the
-    raw `Registry.update` below only overwrites `input`, not `entity_id`),
+    row (its entity_id has no matching `entity_id` table entry, since
+    `_overwrite_component` only overwrites `input`, not `entity_id`),
     silently losing the just-written instance the next time history is
     rebuilt.
     """
@@ -754,17 +805,7 @@ def _add_input(registrar: Registrar, alias: str, text: str, type_: str, turn: in
     entity_id = _entity_id_for_alias(registrar, alias)
     if entity_id is not None:
         entries = [{"entity_id": entity_id}] + entries
-    data = {alias: entries}
-    new_registrar = Registrar()
-    new_registrar.update(
-        input_dirs=[str(MANIFEST_DIR)], yaml_strings={WORLD_FILE_ID: yaml.safe_dump(data, sort_keys=False)}
-    )
-    # .to_pyarrow() materializes the data so it can cross from new_registrar's
-    # connection into registrar's (mirrors Registry.merge's own approach).
-    # A raw Registry.update (not Registrar.update, an unrelated ETL-merge
-    # method) since this is a wholesale overwrite, not a union-in merge.
-    registrar.registry.update({"input": new_registrar.get("input").to_pyarrow()})
-    new_registrar.registry.close()
+    _overwrite_component(registrar, "input", {alias: entries})
 
 
 def _sync_active_tags(registrar: Registrar, active_aliases: set[str]) -> None:
@@ -785,20 +826,15 @@ def _sync_active_tags(registrar: Registrar, active_aliases: set[str]) -> None:
         alias: [{"entity_id": _entity_id_for_alias(registrar, alias)}, "active"]
         for alias in sorted(active_aliases)
     }
-    new_registrar = Registrar()
-    new_registrar.update(
-        input_dirs=[str(MANIFEST_DIR)], yaml_strings={WORLD_FILE_ID: yaml.safe_dump(data, sort_keys=False)}
-    )
-    registrar.registry.update({"active": new_registrar.get("active").to_pyarrow()})
-    new_registrar.registry.close()
+    _overwrite_component(registrar, "active", data)
 
 
 def _player_alias(registrar: Registrar) -> str | None:
     """Return the current player entity's alias, or None if it doesn't exist yet."""
-    if "character" not in registrar.registry.component_types:
+    df = _safe_view(registrar, "character.interaction_type")
+    if df is None:
         return None
-    view = registrar.view(["character.interaction_type"])
-    df = view.filter(view["character.interaction_type"] == "player").execute()
+    df = df[df["character.interaction_type"] == "player"]
     if df.empty:
         return None
     return df.iloc[0]["entity_id.alias"]
@@ -823,15 +859,10 @@ def _latest_positions(registrar: Registrar) -> pd.DataFrame:
 
 def _player_position(registrar: Registrar) -> tuple[str, tuple[float, float]] | None:
     """Return (alias, (x, y)) for the player entity, or None if not known yet."""
-    if "character" not in registrar.registry.component_types:
+    char_df = _safe_view(registrar, "character.interaction_type")
+    if char_df is None:
         return None
-    if "position" not in registrar.registry.component_types:
-        return None
-    char_view = registrar.view(["character.interaction_type"])
-    try:
-        char_df = char_view.filter(char_view["character.interaction_type"] == "player").execute()
-    except KeyError:
-        return None
+    char_df = char_df[char_df["character.interaction_type"] == "player"]
     if char_df.empty:
         return None
     alias, entity_id = char_df.iloc[0]["entity_id.alias"], char_df.iloc[0]["entity_id"]
@@ -867,11 +898,10 @@ def _latest_input(registrar: Registrar, type_: str, turn: int) -> str | None:
     produces it, so `turn` is compared directly rather than coercing to
     string.
     """
-    if "input" not in registrar.registry.component_types:
+    df = _safe_get(registrar, "input")
+    if df is None:
         return None
-    i = registrar.get("input")
-    df = i.filter(i.type == type_).execute()
-    matches = df[df["turn"] == turn]
+    matches = df[(df["type"] == type_) & (df["turn"] == turn)]
     if matches.empty:
         return None
     return matches.iloc[-1]["text"]
@@ -879,10 +909,9 @@ def _latest_input(registrar: Registrar, type_: str, turn: int) -> str | None:
 
 def _active_aliases(registrar: Registrar) -> set[str]:
     """Return the aliases of every entity currently tagged `active`."""
-    if "active" not in registrar.registry.component_types:
+    df = _safe_view(registrar, "active")
+    if df is None:
         return set()
-    view = registrar.view("active")
-    df = view.execute()
     return set(df["entity_id.alias"])
 
 
@@ -894,11 +923,10 @@ def _all_aliases(registrar: Registrar) -> set[str]:
     schema entities (component type definitions, audit templates, etc.) that
     have no place in the physical world and nothing useful to tell the
     Resolver. Restricting to entities with a `position` reuses the same
-    "has a place in the world" criterion `_latest_positions` resolves for,
-    and excludes exactly the schema noise.
+    "has a place in the world" criterion `_latest_positions` resolves for
+    (including its own handling of `position` not being loaded yet), and
+    excludes exactly the schema noise.
     """
-    if "position" not in registrar.registry.component_types:
-        return set()
     return set(_latest_positions(registrar)["entity_id.alias"])
 
 

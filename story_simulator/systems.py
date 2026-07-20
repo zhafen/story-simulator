@@ -399,35 +399,24 @@ class ArchivistAgentSystem(AgentSystem):
         inside a `@server.tool()` function and returns it as that tool's
         result rather than letting it propagate. This local loop has no such
         safety net of its own, so a bad argument (an unknown component_type,
-        say) would otherwise crash the whole turn instead of giving the model
-        something it can read and retry from.
+        malformed `update_registry` YAML, ...) would otherwise crash the
+        whole turn instead of giving the model something it can read and
+        retry from. Deliberately just one broad `except`, not a bespoke
+        pre-check per tool: `_merge_yaml_string`'s own YAML parsing (via
+        `Registrar.update`) already raises a perfectly readable
+        `yaml.YAMLError` on malformed content, so there's nothing a separate
+        `yaml.safe_load` pre-check here would add beyond what running the
+        real thing and catching its failure already gives for free.
         """
         try:
             if name == "view_registry":
                 return registrar.view_df(arguments["component_type"]).to_csv()
             if name == "update_registry":
-                return self._update_registry(registrar, arguments["yaml_string"], turn)
+                _merge_yaml_string(registrar, WORLD_FILE_ID, arguments["yaml_string"], turn)
+                return "Merged into the registry."
             return await mcp.call_tool(name, arguments)
         except Exception as e:
             return f"Error: {e}"
-
-    @staticmethod
-    def _update_registry(registrar: Registrar, yaml_string: str, turn: int) -> str:
-        """Merge `yaml_string` into `registrar`, but only once it parses.
-
-        `_merge_yaml_string` feeds the string straight into `Registrar.update`
-        with no validation of its own, so a malformed write would crash this
-        very call (and every System after it this turn). Checked with a bare
-        `yaml.safe_load` rather than the fuller `validate_yaml` MCP tool:
-        catching a syntax error is enough to avoid the crash, and this
-        doesn't require a round trip through the MCP session.
-        """
-        try:
-            yaml.safe_load(yaml_string)
-        except yaml.YAMLError as e:
-            return f"Error: content is not valid YAML, nothing merged. {e}"
-        _merge_yaml_string(registrar, WORLD_FILE_ID, yaml_string, turn)
-        return "Merged into the registry."
 
 
 class VisualizerSystem(System):

@@ -435,23 +435,31 @@ def test_dispatch_tool_reports_errors_without_crashing_the_turn():
     assert "Error" in result
 
 
-def test_update_registry_merges_valid_yaml_into_the_real_registry():
+def test_dispatch_tool_update_registry_merges_valid_yaml():
     registrar = _empty_registrar()
+    archivist = ArchivistAgentSystem()
 
-    result = ArchivistAgentSystem._update_registry(registrar, "player:\n    - origin\n", turn=1)
+    result = asyncio.run(
+        archivist._dispatch_tool(
+            None, registrar, 1, "update_registry", {"yaml_string": "player:\n    - origin\n"}
+        )
+    )
 
     assert "Merged" in result
     assert registrar.get("origin").count().execute() == 1
 
 
-def test_update_registry_rejects_malformed_yaml():
+def test_dispatch_tool_update_registry_reports_malformed_yaml_without_crashing_the_turn():
     registrar = _empty_registrar()
+    archivist = ArchivistAgentSystem()
 
-    result = ArchivistAgentSystem._update_registry(
-        registrar, "player:\n  - foo: [unterminated", turn=1
+    result = asyncio.run(
+        archivist._dispatch_tool(
+            None, registrar, 1, "update_registry", {"yaml_string": "player:\n  - foo: [unterminated"}
+        )
     )
 
-    assert "not valid YAML" in result
+    assert "Error" in result
     assert "origin" not in registrar.registry.component_types
 
 

@@ -599,20 +599,16 @@ def _merge_yaml_string(
 ) -> None:
     """Run the ETL pipeline on a raw YAML string and merge the result into `registrar`.
 
-    If `turn` is given, it's stamped directly into every `position` entry in
-    `yaml_text` that doesn't already set its own `turn` (see
-    `manifest/builtins.yaml`), rather than relying on `Registrar.update`'s
-    `time` backfill. Unlike `input` (whose `turn` is set explicitly by
-    `_add_input`), `position` is written from the Archivist's freeform YAML,
-    which has no reason to know about the turn counter, so it's filled in
-    here instead. `position` rows accumulate across turns rather than being
-    overwritten (merging only unions rows in), so this `turn` column is what
-    lets readers resolve which row is current; see `_latest_positions`.
-    Stamped in before the merge (rather than backfilled after) because
-    `same_as` resolution runs before backfill does — a `position` entry
-    left null for backfill would still be null while `same_as` rebases it,
-    and iacs can't create a component table whose only rows are null in a
-    given column.
+    If `turn` is given, it's forwarded as `Registrar.update`'s `time`, which
+    backfills any still-null field flagged `time_dimension: true` — here,
+    `position.turn` (see `manifest/builtins.yaml`) — rather than this
+    function stamping it in by hand. Unlike `input` (whose `turn` is set
+    explicitly by `_add_input`), `position` is written from the Archivist's
+    freeform YAML, which has no reason to know about the turn counter, so
+    it's filled in here instead. `position` rows accumulate across turns
+    rather than being overwritten (merging only unions rows in), so this
+    `turn` column is what lets readers resolve which row is current; see
+    `_latest_positions`.
 
     Called directly on `registrar` (not a throwaway one merged in
     afterward): `yaml_text` attaching to an entity that already exists —
@@ -626,14 +622,7 @@ def _merge_yaml_string(
     visibility, so there's nothing left for this function to reconcile by
     hand afterward the way it used to.
     """
-    if turn is not None:
-        data = yaml.safe_load(yaml_text) or {}
-        for components in data.values():
-            for item in components:
-                if isinstance(item, dict) and isinstance(item.get("position"), dict):
-                    item["position"].setdefault("turn", turn)
-        yaml_text = yaml.safe_dump(data, sort_keys=False)
-    registrar.update(input_dirs=[str(MANIFEST_DIR)], yaml_strings={key: yaml_text})
+    registrar.update(input_dirs=[str(MANIFEST_DIR)], yaml_strings={key: yaml_text}, time=turn)
 
 
 def _export_world_yaml(registrar: Registrar, save_dir: Path) -> None:

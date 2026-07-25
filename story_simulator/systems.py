@@ -718,7 +718,7 @@ def _sync_active_tags(registrar: Registrar, active_aliases: set[str]) -> None:
 
     A merge can only union rows in, never drop the tag from an entity that
     left the radius, so the existing `active` table (if any) is cleared
-    first — a direct, raw overwrite to an empty table of its own schema,
+    first — via `Registrar.overwrite`, to an empty table of its own schema,
     safe since `MapSystem` is the only writer of `active` — and the current
     set is merged back in via `same_as` (see `_merge_yaml_string`),
     attaching each tag onto its alias's existing entity rather than a fresh,
@@ -728,7 +728,7 @@ def _sync_active_tags(registrar: Registrar, active_aliases: set[str]) -> None:
     where the target entity originally came from.
     """
     if "active" in registrar.registry.component_types:
-        registrar.registry.update({"active": registrar.get("active").limit(0).to_pyarrow()})
+        registrar.overwrite("active", registrar.get("active").limit(0).to_pyarrow())
     if not active_aliases:
         return
     data = {

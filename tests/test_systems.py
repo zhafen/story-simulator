@@ -1,13 +1,11 @@
+import asyncio
 import itertools
 from contextlib import asynccontextmanager
 from unittest.mock import MagicMock
 
-import ibis
 import matplotlib.pyplot as plt
 import pytest
-from iacs.dataflows import base_etl
-from iacs.etl_system import ETLSystem
-from iacs.registry import Registry
+from iacs.registrar import Registrar
 
 from story_simulator.config import MANIFEST_DIR
 from story_simulator.systems import (
@@ -32,19 +30,21 @@ from story_simulator.systems import (
 )
 
 
-def _empty_registry() -> Registry:
-    return Registry(ibis.duckdb.connect(), {})
+def _empty_registrar() -> Registrar:
+    return Registrar()
 
 
-def _registry_from_yaml(yaml_text: str) -> Registry:
-    """Build a registry the same way the real Systems do: a WORLD_FILE_ID-keyed merge.
+def _registrar_from_yaml(yaml_text: str) -> Registrar:
+    """Build a registrar the same way the real Systems do: a WORLD_FILE_ID-keyed merge.
 
     Entity IDs hash `{file_id}:{entity_path}`, so fixtures must use the same
     `WORLD_FILE_ID` key InputSystem/MapSystem/ArchivistAgentSystem merge
     under, or entities created here won't line up with tags/inputs those
     Systems attach later.
     """
-    return ETLSystem().execute(base_etl, input_dirs=[str(MANIFEST_DIR)], yaml_strings={WORLD_FILE_ID: yaml_text})
+    registrar = Registrar()
+    registrar.update(input_dirs=[str(MANIFEST_DIR)], yaml_strings={WORLD_FILE_ID: yaml_text})
+    return registrar
 
 
 def _make_mock_client(session_id, events):
@@ -101,19 +101,17 @@ def test_etl_loader_system_loads_pre_existing_save_files(tmp_path):
     save_dir = tmp_path / "save"
     save_dir.mkdir(parents=True)
     (save_dir / "extra.yaml").write_text("player:\n    - origin\n")
-    registry = _empty_registry()
-    etl = ETLSystem()
+    registrar = _empty_registrar()
 
-    ETLLoaderSystem().step(registry, etl, save_dir, turn=1)
+    ETLLoaderSystem().step(registrar, save_dir, turn=1)
 
-    assert registry.get("origin").count().execute() == 1
+    assert registrar.get("origin").count().execute() == 1
 
 
 def test_etl_loader_system_does_nothing_without_save_dir():
-    registry = _empty_registry()
-    etl = ETLSystem()
+    registrar = _empty_registrar()
 
-    ETLLoaderSystem().step(registry, etl, None, turn=1)
+    ETLLoaderSystem().step(registrar, None, turn=1)
     # No exception, and nothing to assert against since there's no save_dir.
 
 
@@ -122,45 +120,42 @@ def test_etl_loader_system_does_not_reload_an_already_loaded_file(tmp_path):
     save_dir.mkdir(parents=True)
     extra_path = save_dir / "extra.yaml"
     extra_path.write_text("player:\n    - origin\n")
-    registry = _empty_registry()
-    etl = ETLSystem()
+    registrar = _empty_registrar()
     loader = ETLLoaderSystem()
 
-    loader.step(registry, etl, save_dir, turn=1)
+    loader.step(registrar, save_dir, turn=1)
     extra_path.write_text("player:\n    - origin\n    - origin\n")
-    loader.step(registry, etl, save_dir, turn=2)
+    loader.step(registrar, save_dir, turn=2)
 
     # Only the first load counted; the on-disk change on turn 2 isn't rescanned.
-    assert registry.get("origin").count().execute() == 1
+    assert registrar.get("origin").count().execute() == 1
 
 
 def test_etl_loader_system_loads_a_new_file_discovered_later(tmp_path):
     save_dir = tmp_path / "save"
     save_dir.mkdir(parents=True)
     (save_dir / "extra.yaml").write_text("player:\n    - origin\n")
-    registry = _empty_registry()
-    etl = ETLSystem()
+    registrar = _empty_registrar()
     loader = ETLLoaderSystem()
 
-    loader.step(registry, etl, save_dir, turn=1)
+    loader.step(registrar, save_dir, turn=1)
     (save_dir / "more.yaml").write_text("visitor:\n    - origin\n")
-    loader.step(registry, etl, save_dir, turn=2)
+    loader.step(registrar, save_dir, turn=2)
 
-    assert registry.get("origin").count().execute() == 2
+    assert registrar.get("origin").count().execute() == 2
 
 
 def test_etl_loader_system_skips_world_yaml(tmp_path):
     save_dir = tmp_path / "save"
     save_dir.mkdir(parents=True)
     (save_dir / WORLD_YAML_FILENAME).write_text("player:\n    - origin\n")
-    registry = _empty_registry()
-    etl = ETLSystem()
+    registrar = _empty_registrar()
 
-    ETLLoaderSystem().step(registry, etl, save_dir, turn=1)
+    ETLLoaderSystem().step(registrar, save_dir, turn=1)
 
     # world.yaml is a derived export, never an independent source, so it's
     # never picked up here even on a fresh loader.
-    assert "origin" not in registry.component_types
+    assert "origin" not in registrar.registry.component_types
 
 
 # ---------------------------------------------------------------------------
@@ -170,32 +165,29 @@ def test_etl_loader_system_skips_world_yaml(tmp_path):
 
 def test_input_system_writes_input_component_on_player_entity(tmp_path):
     save_dir = tmp_path / "save"
-    registry = _empty_registry()
-    etl = ETLSystem()
+    registrar = _empty_registrar()
 
     input_system = InputSystem()
     input_system.receive("open the door")
-    input_system.step(registry, etl, save_dir, turn=1)
+    input_system.step(registrar, save_dir, turn=1)
 
-    assert _latest_input(registry, "player", turn=1) == "open the door"
+    assert _latest_input(registrar, "player", turn=1) == "open the door"
 
 
 def test_input_system_does_nothing_without_pending_text(tmp_path):
     save_dir = tmp_path / "save"
-    registry = _empty_registry()
-    etl = ETLSystem()
+    registrar = _empty_registrar()
 
-    InputSystem().step(registry, etl, save_dir, turn=1)
+    InputSystem().step(registrar, save_dir, turn=1)
 
-    assert _latest_input(registry, "player", turn=1) is None
+    assert _latest_input(registrar, "player", turn=1) is None
 
 
 def test_input_system_does_nothing_without_save_dir():
-    registry = _empty_registry()
-    etl = ETLSystem()
+    registrar = _empty_registrar()
     input_system = InputSystem()
     input_system.receive("open the door")
-    input_system.step(registry, etl, None, turn=1)
+    input_system.step(registrar, None, turn=1)
     # No exception, and nothing to assert against since there's no save_dir.
 
 
@@ -229,42 +221,40 @@ distant_rock:
 
 def test_map_system_does_nothing_without_player_data(tmp_path):
     save_dir = tmp_path / "save"
-    registry = _empty_registry()
-    etl = ETLSystem()
+    registrar = _empty_registrar()
 
-    MapSystem().step(registry, etl, save_dir, turn=1)
+    MapSystem().step(registrar, save_dir, turn=1)
 
-    assert _active_aliases(registry) == set()
+    assert _active_aliases(registrar) == set()
 
 
 def test_map_system_tags_entities_within_radius(tmp_path):
     save_dir = tmp_path / "save"
-    registry = _registry_from_yaml(_SAMPLE_WORLD_YAML)
+    registrar = _registrar_from_yaml(_SAMPLE_WORLD_YAML)
 
-    MapSystem(radius=10.0).step(registry, ETLSystem(), save_dir, turn=1)
+    MapSystem(radius=10.0).step(registrar, save_dir, turn=1)
 
-    assert _active_aliases(registry) == {"nearby_npc"}
+    assert _active_aliases(registrar) == {"nearby_npc"}
 
 
 def test_map_system_excludes_entities_outside_radius(tmp_path):
     save_dir = tmp_path / "save"
-    registry = _registry_from_yaml(_SAMPLE_WORLD_YAML)
+    registrar = _registrar_from_yaml(_SAMPLE_WORLD_YAML)
 
-    MapSystem(radius=1.0).step(registry, ETLSystem(), save_dir, turn=1)
+    MapSystem(radius=1.0).step(registrar, save_dir, turn=1)
 
-    assert _active_aliases(registry) == set()
+    assert _active_aliases(registrar) == set()
 
 
 def test_map_system_untags_entities_that_leave_radius(tmp_path):
     save_dir = tmp_path / "save"
-    registry = _registry_from_yaml(_SAMPLE_WORLD_YAML)
-    etl = ETLSystem()
-    MapSystem(radius=10.0).step(registry, etl, save_dir, turn=1)
-    assert _active_aliases(registry) == {"nearby_npc"}
+    registrar = _registrar_from_yaml(_SAMPLE_WORLD_YAML)
+    MapSystem(radius=10.0).step(registrar, save_dir, turn=1)
+    assert _active_aliases(registrar) == {"nearby_npc"}
 
-    MapSystem(radius=1.0).step(registry, etl, save_dir, turn=2)
+    MapSystem(radius=1.0).step(registrar, save_dir, turn=2)
 
-    assert _active_aliases(registry) == set()
+    assert _active_aliases(registrar) == set()
 
 
 # ---------------------------------------------------------------------------
@@ -278,39 +268,43 @@ def test_resolver_agent_system_calls_agent_and_records_reply(tmp_path, monkeypat
     monkeypatch.setattr("story_simulator.systems.anthropic.Anthropic", lambda **kwargs: mock_client)
 
     resolver = ResolverAgentSystem()
-    registry = _empty_registry()
-    etl = ETLSystem()
+    registrar = _empty_registrar()
     input_system = InputSystem()
     input_system.receive("open the door")
-    input_system.step(registry, etl, save_dir, turn=1)
+    input_system.step(registrar, save_dir, turn=1)
 
-    resolver.step(registry, etl, save_dir, turn=1)
+    resolver.step(registrar, save_dir, turn=1)
 
-    # No active entities, so the prompt reduces to the bare player input, and
-    # no iacs MCP session is opened at all.
+    # No active entities and no positioned entities at all yet (the seeded
+    # "player" entity has no position component), so the prompt reduces to
+    # the bare player input, and no iacs MCP session is opened at all.
     assert _sent_text(mock_client) == "open the door"
     assert resolver.last_response == "hello back"
-    assert _latest_input(registry, "agent", turn=1) == "hello back"
+    assert _latest_input(registrar, "agent", turn=1) == "hello back"
 
 
 def test_resolver_agent_system_includes_active_entities_in_prompt(tmp_path, monkeypatch):
     save_dir = tmp_path / "save"
-    registry = _registry_from_yaml(_SAMPLE_WORLD_YAML)
-    etl = ETLSystem()
+    registrar = _registrar_from_yaml(_SAMPLE_WORLD_YAML)
     mock_client = _make_mock_client("sesn_test123", events=None)
     monkeypatch.setattr("story_simulator.systems.anthropic.Anthropic", lambda **kwargs: mock_client)
     monkeypatch.setattr("story_simulator.systems.open_iacs_mcp_session", _fake_open_iacs_mcp_session)
 
-    MapSystem(radius=10.0).step(registry, etl, save_dir, turn=1)
+    MapSystem(radius=10.0).step(registrar, save_dir, turn=1)
     input_system = InputSystem()
     input_system.receive("look around")
-    input_system.step(registry, etl, save_dir, turn=1)
-    ResolverAgentSystem().step(registry, etl, save_dir, turn=1)
+    input_system.step(registrar, save_dir, turn=1)
+    ResolverAgentSystem().step(registrar, save_dir, turn=1)
 
+    # Entity details cover every known entity (distant_rock, nearby_npc,
+    # player), not just the one tagged active — only the "Active entities
+    # nearby" bookkeeping line is radius-limited.
     assert _sent_text(mock_client) == (
         "Active entities nearby: nearby_npc\n"
         "Entity details:\n"
+        "distant_rock description\n"
         "nearby_npc description\n"
+        "player description\n"
         "Player input: look around"
     )
 
@@ -320,7 +314,7 @@ def test_resolver_agent_system_does_nothing_without_command(tmp_path, monkeypatc
     mock_client = _make_mock_client("sesn_test123", events=None)
     monkeypatch.setattr("story_simulator.systems.anthropic.Anthropic", lambda **kwargs: mock_client)
 
-    ResolverAgentSystem().step(_empty_registry(), ETLSystem(), save_dir, turn=1)
+    ResolverAgentSystem().step(_empty_registrar(), save_dir, turn=1)
 
     mock_client.beta.sessions.create.assert_not_called()
 
@@ -330,7 +324,7 @@ def test_resolver_agent_system_does_nothing_without_save_dir(monkeypatch):
     monkeypatch.setattr("story_simulator.systems.anthropic.Anthropic", lambda **kwargs: mock_client)
     resolver = ResolverAgentSystem()
 
-    resolver.step(_empty_registry(), ETLSystem(), None, turn=1)
+    resolver.step(_empty_registrar(), None, turn=1)
 
     mock_client.beta.sessions.create.assert_not_called()
 
@@ -346,41 +340,39 @@ def _make_tool_use_block(tool_name, tool_input, block_id):
     return block
 
 
-def test_archivist_agent_system_does_nothing_without_narration(tmp_path):
+def test_archivist_agent_system_does_nothing_without_narration(tmp_path, monkeypatch):
     save_dir = tmp_path / "save"
-    registry = _empty_registry()
-    etl = ETLSystem()
+    registrar = _empty_registrar()
     input_system = InputSystem()
     input_system.receive("open the door")
-    input_system.step(registry, etl, save_dir, turn=1)
+    input_system.step(registrar, save_dir, turn=1)
+    mock_client = MagicMock()
+    monkeypatch.setattr("story_simulator.systems.anthropic.Anthropic", lambda **kwargs: mock_client)
 
-    ArchivistAgentSystem().step(registry, etl, save_dir, turn=1)
+    ArchivistAgentSystem().step(registrar, save_dir, turn=1)
 
-    # InputSystem no longer touches save_dir at all (it writes straight to
-    # the registry), and the Archivist's own LLM tool loop (and the
-    # world.yaml export it would trigger) should never have run without a
+    # The Archivist's own LLM tool loop should never have run without a
     # narration to transcribe.
-    assert not (save_dir / WORLD_YAML_FILENAME).exists()
+    mock_client.messages.create.assert_not_called()
 
 
 def test_archivist_agent_system_dispatches_mcp_and_local_tools(tmp_path, monkeypatch):
     save_dir = tmp_path / "save"
-    registry = _empty_registry()
-    etl = ETLSystem()
+    registrar = _empty_registrar()
     input_system = InputSystem()
     input_system.receive("I look around")
-    input_system.step(registry, etl, save_dir, turn=1)
-    _add_input(registry, etl, "player", "you see a door", "agent", 1)
+    input_system.step(registrar, save_dir, turn=1)
+    _add_input(registrar, "player", "you see a door", "agent", 1)
 
     mcp_tool_use = _make_tool_use_block("describe_format", {}, "tool_1")
-    write_tool_use = _make_tool_use_block(
-        "write_world_file", {"content": "player:\n    - origin\n"}, "tool_2"
+    update_tool_use = _make_tool_use_block(
+        "update_registry", {"yaml_string": "player:\n    - origin\n"}, "tool_2"
     )
     final_text = MagicMock(type="text", text="done")
 
     responses = [
         MagicMock(content=[mcp_tool_use], stop_reason="tool_use"),
-        MagicMock(content=[write_tool_use], stop_reason="tool_use"),
+        MagicMock(content=[update_tool_use], stop_reason="tool_use"),
         MagicMock(content=[final_text], stop_reason="end_turn"),
     ]
     mock_client = MagicMock()
@@ -404,16 +396,71 @@ def test_archivist_agent_system_dispatches_mcp_and_local_tools(tmp_path, monkeyp
         "story_simulator.systems.open_iacs_mcp_session", fake_open_iacs_mcp_session
     )
 
-    ArchivistAgentSystem().step(registry, etl, save_dir, turn=1)
+    ArchivistAgentSystem().step(registrar, save_dir, turn=1)
 
     assert mcp_calls == [("describe_format", {})]
     assert mock_client.messages.create.call_count == 3
-    # The written content was fed straight to ETLSystem and merged in,
-    # without rereading save_dir from disk.
-    assert registry.get("origin").count().execute() == 1
-    # `write_world_file` writes the model's raw content straight to disk,
-    # verbatim (world.yaml isn't regenerated from the registry).
-    assert (save_dir / WORLD_YAML_FILENAME).read_text() == "player:\n    - origin\n"
+    # `update_registry` fed the YAML straight to Registrar.update and merged
+    # it into the registry directly, with no on-disk save file involved.
+    assert registrar.get("origin").count().execute() == 1
+    assert not (save_dir / WORLD_YAML_FILENAME).exists()
+
+
+def test_dispatch_tool_view_registry_reads_a_component_type():
+    registrar = _registrar_from_yaml(_SAMPLE_WORLD_YAML)
+    archivist = ArchivistAgentSystem()
+
+    result = asyncio.run(
+        archivist._dispatch_tool(None, registrar, 1, "view_registry", {"component_type": "position"})
+    )
+
+    assert "distant_rock" in result
+    assert "nearby_npc" in result
+
+
+def test_dispatch_tool_reports_errors_without_crashing_the_turn():
+    """An unknown component_type (a plausible model typo/hallucination) shouldn't crash the turn.
+
+    `_dispatch_tool` has no MCP server underneath it translating exceptions
+    into tool results the way FastMCP does for its own tools, so it has to
+    do that translation itself.
+    """
+    registrar = _empty_registrar()
+    archivist = ArchivistAgentSystem()
+
+    result = asyncio.run(
+        archivist._dispatch_tool(None, registrar, 1, "view_registry", {"component_type": "nonexistent"})
+    )
+
+    assert "Error" in result
+
+
+def test_dispatch_tool_update_registry_merges_valid_yaml():
+    registrar = _empty_registrar()
+    archivist = ArchivistAgentSystem()
+
+    result = asyncio.run(
+        archivist._dispatch_tool(
+            None, registrar, 1, "update_registry", {"yaml_string": "player:\n    - origin\n"}
+        )
+    )
+
+    assert "Merged" in result
+    assert registrar.get("origin").count().execute() == 1
+
+
+def test_dispatch_tool_update_registry_reports_malformed_yaml_without_crashing_the_turn():
+    registrar = _empty_registrar()
+    archivist = ArchivistAgentSystem()
+
+    result = asyncio.run(
+        archivist._dispatch_tool(
+            None, registrar, 1, "update_registry", {"yaml_string": "player:\n  - foo: [unterminated"}
+        )
+    )
+
+    assert "Error" in result
+    assert "origin" not in registrar.registry.component_types
 
 
 # ---------------------------------------------------------------------------
@@ -422,38 +469,35 @@ def test_archivist_agent_system_dispatches_mcp_and_local_tools(tmp_path, monkeyp
 
 
 def test_latest_positions_resolves_conflicting_writes_by_turn():
-    registry = _empty_registry()
-    etl = ETLSystem()
+    registrar = _empty_registrar()
     _merge_yaml_string(
-        registry, etl, WORLD_FILE_ID, "player:\n    - position:\n        x: 0.0\n        y: 0.0\n", turn=1
+        registrar, WORLD_FILE_ID, "player:\n    - position:\n        x: 0.0\n        y: 0.0\n", turn=1
     )
     _merge_yaml_string(
-        registry, etl, WORLD_FILE_ID, "player:\n    - position:\n        x: 5.0\n        y: 5.0\n", turn=2
+        registrar, WORLD_FILE_ID, "player:\n    - position:\n        x: 5.0\n        y: 5.0\n", turn=2
     )
 
     # Both writes are retained as history, not overwritten...
-    assert registry.get("position").count().execute() == 2
+    assert registrar.get("position").count().execute() == 2
     # ...but the higher turn wins when resolving the current position.
-    latest = _latest_positions(registry)
+    latest = _latest_positions(registrar)
     row = latest[latest["entity_id.alias"] == "player"].iloc[0]
     assert (float(row["position.x"]), float(row["position.y"])) == (5.0, 5.0)
 
 
 def test_player_position_resolves_to_latest_turn():
-    registry = _empty_registry()
-    etl = ETLSystem()
+    registrar = _empty_registrar()
     _merge_yaml_string(
-        registry,
-        etl,
+        registrar,
         WORLD_FILE_ID,
         "player:\n    - character:\n        interaction_type: player\n    - position:\n        x: 0.0\n        y: 0.0\n",
         turn=1,
     )
     _merge_yaml_string(
-        registry, etl, WORLD_FILE_ID, "player:\n    - position:\n        x: 5.0\n        y: 5.0\n", turn=2
+        registrar, WORLD_FILE_ID, "player:\n    - position:\n        x: 5.0\n        y: 5.0\n", turn=2
     )
 
-    assert _player_position(registry) == ("player", (5.0, 5.0))
+    assert _player_position(registrar) == ("player", (5.0, 5.0))
 
 
 def test_archivist_agent_system_stamps_turn_on_position_writes(tmp_path, monkeypatch):
@@ -465,13 +509,15 @@ def test_archivist_agent_system_stamps_turn_on_position_writes(tmp_path, monkeyp
     to resolve conflicting writes by.
     """
     save_dir = tmp_path / "save"
-    registry = _empty_registry()
-    etl = ETLSystem()
+    registrar = _empty_registrar()
     final_text = MagicMock(type="text", text="done")
 
     def _turn_responses(content):
         return [
-            MagicMock(content=[_make_tool_use_block("write_world_file", {"content": content}, "tool_write")], stop_reason="tool_use"),
+            MagicMock(
+                content=[_make_tool_use_block("update_registry", {"yaml_string": content}, "tool_update")],
+                stop_reason="tool_use",
+            ),
             MagicMock(content=[final_text], stop_reason="end_turn"),
         ]
 
@@ -498,19 +544,19 @@ def test_archivist_agent_system_stamps_turn_on_position_writes(tmp_path, monkeyp
     input_system = InputSystem()
 
     input_system.receive("I look around")
-    input_system.step(registry, etl, save_dir, turn=1)
-    _add_input(registry, etl, "player", "you see a clearing", "agent", 1)
-    archivist.step(registry, etl, save_dir, turn=1)
+    input_system.step(registrar, save_dir, turn=1)
+    _add_input(registrar, "player", "you see a clearing", "agent", 1)
+    archivist.step(registrar, save_dir, turn=1)
 
     input_system.receive("I walk east")
-    input_system.step(registry, etl, save_dir, turn=2)
-    _add_input(registry, etl, "player", "you arrive at a river", "agent", 2)
-    archivist.step(registry, etl, save_dir, turn=2)
+    input_system.step(registrar, save_dir, turn=2)
+    _add_input(registrar, "player", "you arrive at a river", "agent", 2)
+    archivist.step(registrar, save_dir, turn=2)
 
     # Both turns' writes persist as history...
-    assert registry.get("position").count().execute() == 2
+    assert registrar.get("position").count().execute() == 2
     # ...but the turn stamped in automatically resolves them to turn 2's value.
-    assert _player_position(registry) == ("player", (5.0, 5.0))
+    assert _player_position(registrar) == ("player", (5.0, 5.0))
 
 
 # ---------------------------------------------------------------------------
@@ -520,10 +566,10 @@ def test_archivist_agent_system_stamps_turn_on_position_writes(tmp_path, monkeyp
 
 def test_visualizer_system_renders_positions(tmp_path):
     save_dir = tmp_path / "save"
-    registry = _registry_from_yaml(_SAMPLE_WORLD_YAML)
+    registrar = _registrar_from_yaml(_SAMPLE_WORLD_YAML)
     render_path = tmp_path / "render.svg"
 
-    VisualizerSystem(render_path=render_path).step(registry, ETLSystem(), save_dir, turn=1)
+    VisualizerSystem(render_path=render_path).step(registrar, save_dir, turn=1)
 
     assert render_path.exists()
     assert "nearby_npc" in render_path.read_text()
@@ -533,7 +579,7 @@ def test_visualizer_system_renders_without_crashing_when_no_positions_exist(tmp_
     save_dir = tmp_path / "save"
     render_path = tmp_path / "render.svg"
 
-    VisualizerSystem(render_path=render_path).step(_empty_registry(), ETLSystem(), save_dir, turn=1)
+    VisualizerSystem(render_path=render_path).step(_empty_registrar(), save_dir, turn=1)
 
     assert render_path.exists()
 
@@ -541,7 +587,7 @@ def test_visualizer_system_renders_without_crashing_when_no_positions_exist(tmp_
 def test_visualizer_system_does_nothing_without_save_dir(tmp_path):
     render_path = tmp_path / "render.svg"
 
-    VisualizerSystem(render_path=render_path).step(_empty_registry(), ETLSystem(), None, turn=1)
+    VisualizerSystem(render_path=render_path).step(_empty_registrar(), None, turn=1)
 
     assert not render_path.exists()
 

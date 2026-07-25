@@ -9,8 +9,9 @@ character:
                 - player
                 - npc
 
-inanimate_object:
-    - description: Base component for inanimate_objects.
+object:
+    - description: Base component for inanimate objects.
+    - component_type
     - field:
         type:
             description: The type of object, e.g. "door".

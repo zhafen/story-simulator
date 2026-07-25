@@ -647,16 +647,15 @@ def _export_world_yaml(registrar: Registrar, save_dir: Path) -> None:
 def _safe_view(registrar: Registrar, fields: str | list[str]) -> pd.DataFrame | None:
     """Execute `registrar.view(fields)`, or None if that data isn't there yet.
 
-    Every reader below queries state that routinely doesn't exist yet this
-    early in the game (no `active` tags before the first turn, no `position`
-    before the Archivist's first write, ...), so a missing component type
-    isn't an error here — each used to check `component_type in
-    registrar.registry.component_types` by hand before calling
-    `Registrar.view` to avoid it raising, and some also caught the `KeyError`
-    `Registrar.view` raises for a dotted field that isn't a column on an
-    otherwise-loaded table (e.g. an entity of a given type that doesn't
-    happen to have that field set). Consolidated here so both checks are
-    written once.
+    iacs declares a component type's schema (see `Registry.declare_schema`)
+    as soon as any update loads the manifest that defines it, letting
+    `Registrar.view`/`.get` return an empty, correctly-typed result for a
+    declared-but-dataless type instead of raising — but a registrar that
+    hasn't run any update yet (e.g. a bare `Registrar()`, before even
+    `MANIFEST_DIR` has been merged in) has no declared schemas at all, not
+    even for `entity_id` itself. Every reader below can be called at exactly
+    that point (before the first turn's Archivist write, before `MapSystem`
+    has ever run), so a missing component type still isn't an error here.
     """
     names = [fields] if isinstance(fields, str) else fields
     tables = {name.split(".", 1)[0] for name in names}

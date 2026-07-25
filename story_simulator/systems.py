@@ -47,6 +47,7 @@ EC_FILE_GLOBS = ("*.yaml", "*.yml", "*.py", "*.csv")
 PROD_RESOLVER_CONFIG_PATH = Path(__file__).parent / "resolver.yaml"
 PROD_ARCHIVIST_CONFIG_PATH = Path(__file__).parent / "archivist.yaml"
 TEST_ARCHIVIST_CONFIG_PATH = Path(__file__).parent / "archivist.test.yaml"
+PROD_NPC_CONFIG_PATH = Path(__file__).parent / "npc.yaml"
 
 
 class System(ABC):
@@ -129,12 +130,20 @@ class AgentSystem(System, ABC):
 
 
 class MapSystem(System):
-    """Tags characters/objects within `radius` of the player as `active` for the turn.
+    """Tags characters/objects within `radius` of the reference character as `active` for the turn.
 
-    Reads the player's position as of the *previous* turn's recorded data
-    (this System runs before `InputSystem`/`ResolverAgentSystem` each turn),
-    and adds/removes a bare `active` tag directly on each entity as it enters
-    or leaves range.
+    The reference character is normally the player, but falls back to the
+    sole character present when there's no player (see `_player_position`),
+    so an NPC-only world still gets an `active` set to narrate/decide from.
+
+    Reads the reference character's position as of the *previous* turn's
+    recorded data (this System runs before `InputSystem`/`NPCAgentSystem`/
+    `ResolverAgentSystem` each turn), and adds/removes a bare `active` tag
+    directly on each entity as it enters or leaves range. Also merges every
+    active entity into the reference character's permanent `memory` relation
+    (see `_record_memory`) — unlike `active`, `memory` is never cleared, so
+    it's what scopes an NPC's decision-making agent to what it has actually
+    encountered rather than the whole registry.
 
     Components
     ----------
@@ -147,10 +156,10 @@ class MapSystem(System):
     def step(self, registrar: Registrar, save_dir: Path | None, turn: int) -> None:
         if save_dir is None:
             return
-        player = _player_position(registrar)
-        if player is None:
+        reference = _player_position(registrar)
+        if reference is None:
             return
-        player_alias, player_pos = player
+        reference_alias, reference_pos = reference
         # entity_id.alias is left out here: label_df (below) already carries its
         # own copy via registrar.view(), and merging on entity_id would otherwise
         # produce two colliding entity_id.alias columns.
@@ -163,13 +172,72 @@ class MapSystem(System):
                 continue
             for _, row in label_df.merge(positions, on="entity_id").iterrows():
                 alias = row["entity_id.alias"]
-                if alias == player_alias:
+                if alias == reference_alias:
                     continue
                 pos = (float(row["position.x"]), float(row["position.y"]))
-                if math.dist(pos, player_pos) <= self.radius:
+                if math.dist(pos, reference_pos) <= self.radius:
                     active_aliases.add(alias)
 
         _sync_active_tags(registrar, active_aliases)
+        _record_memory(registrar, reference_alias, active_aliases)
+
+
+class NPCAgentSystem(AgentSystem):
+    """Generates an NPC character's command for the turn via a lightweight decision agent.
+
+    Mirrors InputSystem's role for the player — attaching a fresh
+    "player"-type `input` component onto the acting entity for
+    ResolverAgentSystem to consume — but the text comes from an agent's
+    decision instead of a human's typed command. This is the concrete form
+    of "NPCs use the same interface as players, just agent-sourced text":
+    both InputSystem and NPCAgentSystem feed the identical `_add_input(...,
+    "player", turn)` call, and ResolverAgentSystem/ArchivistAgentSystem don't
+    know or care which one produced a given turn's command.
+
+    Scoped to what the NPC has actually perceived — `active` union `memory`
+    (see MapSystem) — plus its own `agenda`, rather than the whole registry.
+    Runs a single non-streaming `messages.create` call directly against this
+    System's own registrar, unlike ResolverAgentSystem, which narrates
+    through the hosted Agents/Sessions platform and so has no local registrar
+    access of its own.
+
+    Only one character is expected to act per turn — the same assumption
+    ResolverAgentSystem/ArchivistAgentSystem already make by resolving a
+    single command per turn (see their docstrings) — so this sits the turn
+    out once a command already exists (from a human player, most commonly),
+    and otherwise always picks the alphabetically-first NPC when there's more
+    than one; a mixed multi-NPC world resolving every NPC's command in the
+    same turn would need Resolver/Archivist to loop too, which is out of
+    scope for the single-NPC worlds this currently supports.
+    """
+
+    def __init__(self, config_path: Path = PROD_NPC_CONFIG_PATH):
+        self.client = anthropic.Anthropic(api_key=resolve_anthropic_api_key())
+        config = yaml.safe_load(config_path.read_text())
+        self.model = config["model"]
+        self.system = config["system"]
+
+    def step(self, registrar: Registrar, save_dir: Path | None, turn: int) -> None:
+        if save_dir is None:
+            return
+        if _latest_input(registrar, "player", turn) is not None:
+            return
+        npc_aliases = _npc_aliases(registrar)
+        if not npc_aliases:
+            return
+        alias = npc_aliases[0]
+        command = self._decide(registrar, alias)
+        _add_input(registrar, alias, command, "player", turn)
+
+    def _decide(self, registrar: Registrar, alias: str) -> str:
+        prompt = _build_npc_prompt(registrar, alias)
+        response = self.client.messages.create(
+            model=self.model,
+            max_tokens=256,
+            system=self.system,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        return "".join(block.text for block in response.content if block.type == "text")
 
 
 class ResolverAgentSystem(AgentSystem):
@@ -207,24 +275,25 @@ class ResolverAgentSystem(AgentSystem):
         self.last_response: str = ""
 
     def step(self, registrar: Registrar, save_dir: Path | None, turn: int) -> None:
-        """
-        Components
-        ----------
-        - todo: What does _ensure_player_alias do?
-        """
         if save_dir is None:
             return
         command_text = _latest_input(registrar, "player", turn)
         if command_text is None:
             return
 
+        # Whichever character actually acted this turn (the human player, or
+        # an NPC via NPCAgentSystem) — falling back to "player" only for the
+        # degenerate case of a command recorded with no character entity
+        # behind it at all, which shouldn't happen via
+        # InputSystem/NPCAgentSystem.
+        actor_alias = _acting_character_alias(registrar, turn) or "player"
         active_aliases = _active_aliases(registrar)
         entity_details = asyncio.run(self._gather_entity_details(Path(save_dir), _all_aliases(registrar)))
-        prompt = _build_prompt(command_text, active_aliases, entity_details=entity_details)
+        prompt = _build_prompt(actor_alias, command_text, active_aliases, entity_details=entity_details)
         response = self._respond(prompt)
         self.last_response = response
 
-        alias = _ensure_player_alias(registrar)
+        alias = _acting_character_alias(registrar, turn) or _ensure_player_alias(registrar)
         _add_input(registrar, alias, response, "agent", turn)
 
     async def _gather_entity_details(self, save_dir: Path, aliases: set[str]) -> str:
@@ -343,21 +412,29 @@ class ArchivistAgentSystem(AgentSystem):
         narration_text = _latest_input(registrar, "agent", turn)
         if command_text is None or narration_text is None:
             return
+        # Whichever character actually acted this turn — the human player, or
+        # an NPC via NPCAgentSystem — falling back to "player" only for the
+        # degenerate case _acting_character_alias itself falls back for (see
+        # ResolverAgentSystem.step).
+        actor_alias = _acting_character_alias(registrar, turn) or "player"
         save_dir = Path(save_dir)
         save_dir.mkdir(parents=True, exist_ok=True)
-        asyncio.run(self._record_async(registrar, save_dir, command_text, narration_text, turn))
+        asyncio.run(self._record_async(registrar, save_dir, actor_alias, command_text, narration_text, turn))
 
     async def _record_async(
         self,
         registrar: Registrar,
         save_dir: Path,
+        actor_alias: str,
         player_input: str,
         world_response: str,
         turn: int,
     ) -> None:
         async with open_iacs_mcp_session(save_dir) as mcp:
             tools = mcp.tools + [_VIEW_REGISTRY_TOOL, _UPDATE_REGISTRY_TOOL]
-            messages = [{"role": "user", "content": self._build_prompt(player_input, world_response)}]
+            messages = [
+                {"role": "user", "content": self._build_prompt(actor_alias, player_input, world_response)}
+            ]
             for _ in range(MAX_ARCHIVIST_TOOL_TURNS):
                 response = self.client.messages.create(
                     model=self.model,
@@ -380,9 +457,18 @@ class ArchivistAgentSystem(AgentSystem):
                 messages.append({"role": "user", "content": tool_results})
 
     @staticmethod
-    def _build_prompt(player_input: str, world_response: str) -> str:
+    def _build_prompt(actor_alias: str, player_input: str, world_response: str) -> str:
+        """Build the transcription prompt, naming the acting character by their own alias.
+
+        Deliberately says "{actor_alias}'s command", not "Player input" — the
+        acting character isn't always the player (see NPCAgentSystem), and a
+        literal "Player input" line was observed to make the Archivist invent
+        a brand-new "player" entity from scratch in an NPC-only world instead
+        of recognizing the actor already in the registry, since it had no
+        entity to resolve that wording against.
+        """
         return (
-            f"Player input: {player_input}\n"
+            f"{actor_alias}'s command: {player_input}\n"
             f"World response: {world_response}\n\n"
             "Transcribe any entities/components this exchange reveals or changes "
             "into the world registry."
@@ -765,20 +851,82 @@ def _latest_positions(registrar: Registrar) -> pd.DataFrame:
 
 
 def _player_position(registrar: Registrar) -> tuple[str, tuple[float, float]] | None:
-    """Return (alias, (x, y)) for the player entity, or None if not known yet."""
+    """Return (alias, (x, y)) for MapSystem's reference character, or None if not known yet.
+
+    Prefers the character with `interaction_type == "player"`, the common
+    case every existing player-driven world hits. Falls back to the sole
+    character present when there's no player at all — an NPC-only world
+    (e.g. tests/data/settings/npc) still needs a reference point to compute
+    `active`/`memory` from. With more than one character and no player,
+    there's no unambiguous reference character, so this returns None (same
+    as "not known yet") rather than guessing.
+    """
     char_df = _safe_view(registrar, "character.interaction_type")
     if char_df is None:
         return None
-    char_df = char_df[char_df["character.interaction_type"] == "player"]
-    if char_df.empty:
+    player_df = char_df[char_df["character.interaction_type"] == "player"]
+    if not player_df.empty:
+        row = player_df.iloc[0]
+    elif len(char_df) == 1:
+        row = char_df.iloc[0]
+    else:
         return None
-    alias, entity_id = char_df.iloc[0]["entity_id.alias"], char_df.iloc[0]["entity_id"]
+    alias, entity_id = row["entity_id.alias"], row["entity_id"]
     positions = _latest_positions(registrar)
     match = positions[positions["entity_id"] == entity_id]
     if match.empty:
         return None
     row = match.iloc[0]
     return alias, (float(row["position.x"]), float(row["position.y"]))
+
+
+def _npc_aliases(registrar: Registrar) -> list[str]:
+    """Return the aliases of every `interaction_type == "npc"` character, sorted."""
+    df = _safe_view(registrar, "character.interaction_type")
+    if df is None:
+        return []
+    df = df[df["character.interaction_type"] == "npc"]
+    return sorted(df["entity_id.alias"])
+
+
+def _memory_aliases(registrar: Registrar, owner_alias: str) -> set[str]:
+    """Return every alias `owner_alias` has ever perceived (see MapSystem's `memory` writes)."""
+    df = _safe_view(registrar, "memory.value")
+    if df is None:
+        return set()
+    return set(df[df["entity_id.alias"] == owner_alias]["memory.value"])
+
+
+def _record_memory(registrar: Registrar, owner_alias: str, perceived_aliases: set[str]) -> None:
+    """Merge `perceived_aliases` into `owner_alias`'s permanent `memory` relation.
+
+    Called every turn with just that turn's `active_aliases` (not the
+    accumulated set) — merging only ever unions rows in (see
+    `_merge_yaml_string`), and iacs's merge already dedupes an exact repeat
+    of an existing (owner, value) pair, so re-merging an already-known alias
+    turn after turn is a harmless no-op rather than a growing pile of
+    duplicate rows.
+    """
+    if not perceived_aliases:
+        return
+    data = {
+        f"{owner_alias}_memory_update": [
+            {"same_as": {"value": owner_alias}},
+            {"memory": [{"value": alias} for alias in sorted(perceived_aliases)]},
+        ]
+    }
+    _merge_yaml_string(registrar, WORLD_FILE_ID, yaml.safe_dump(data, sort_keys=False))
+
+
+def _entity_descriptions(registrar: Registrar, aliases: set[str]) -> str:
+    """Return one `alias: description` line per alias in `aliases` that has a `description`."""
+    if not aliases:
+        return ""
+    df = _safe_view(registrar, "description.value")
+    if df is None:
+        return ""
+    df = df[df["entity_id.alias"].isin(aliases)]
+    return "\n".join(f"{row['entity_id.alias']}: {row['description.value']}" for _, row in df.iterrows())
 
 
 def _ensure_player_alias(registrar: Registrar) -> str:
@@ -796,6 +944,25 @@ def _ensure_player_alias(registrar: Registrar) -> str:
     data = {"player": [{"character": {"interaction_type": "player"}}]}
     _merge_yaml_string(registrar, WORLD_FILE_ID, yaml.safe_dump(data, sort_keys=False))
     return "player"
+
+
+def _acting_character_alias(registrar: Registrar, turn: int) -> str | None:
+    """Return the alias of whichever character produced a command ("player"-type input) this turn.
+
+    Generalizes the old assumption that a turn's command always belongs to
+    "the" player: it can now come from InputSystem (a human, always attached
+    to the player entity) or NPCAgentSystem (an NPC, attached to that NPC's
+    own entity). Used by ResolverAgentSystem to attach its reply onto the
+    entity that actually acted this turn, instead of force-creating a player
+    entity in an NPC-only world.
+    """
+    df = _safe_view(registrar, ["input.text", "input.type", "input.turn"])
+    if df is None:
+        return None
+    matches = df[(df["input.type"] == "player") & (df["input.turn"] == turn)]
+    if matches.empty:
+        return None
+    return matches.iloc[-1]["entity_id.alias"]
 
 
 def _latest_input(registrar: Registrar, type_: str, turn: int) -> str | None:
@@ -837,13 +1004,17 @@ def _all_aliases(registrar: Registrar) -> set[str]:
     return set(_latest_positions(registrar)["entity_id.alias"])
 
 
-def _build_prompt(text: str, active_aliases: set[str], entity_details: str = "") -> str:
-    """Assemble a turn's prompt from the active entities, their details, and the player's input.
+def _build_prompt(actor_alias: str, text: str, active_aliases: set[str], entity_details: str = "") -> str:
+    """Assemble a turn's prompt from the active entities, their details, and the actor's input.
 
     `entity_details` is folded in as its own out-of-character block, but only
     when non-empty, so a call without it (the common case in tests) still
-    reduces to the same "Active entities nearby: .../Player input: ..." shape
-    this always had.
+    reduces to the same "Active entities nearby: .../{actor_alias}'s input:
+    ..." shape this always had. Names the line by the acting character's own
+    alias rather than a literal "Player input" — the actor isn't always the
+    player (see NPCAgentSystem), and that literal wording was observed to
+    make the Resolver narrate as if a separate "player" character were
+    standing alongside whichever NPC was actually acting.
     """
     parts = []
     if active_aliases:
@@ -852,5 +1023,42 @@ def _build_prompt(text: str, active_aliases: set[str], entity_details: str = "")
         parts.append(f"Entity details:\n{entity_details}")
     if not parts:
         return text
-    parts.append(f"Player input: {text}")
+    parts.append(f"{actor_alias}'s input: {text}")
+    return "\n".join(parts)
+
+
+def _build_npc_prompt(registrar: Registrar, alias: str) -> str:
+    """Assemble an NPC's decision prompt from its agenda and what it has perceived.
+
+    Deliberately narrower than `_build_prompt`'s `entity_details` (every
+    known entity in the registry): an NPC only gets entities it has actually
+    perceived — `active` (nearby right now) union `memory` (ever perceived;
+    see MapSystem) — plus a description for each, so its decision is scoped
+    to what it could plausibly know about.
+    """
+    agenda_df = _safe_view(registrar, "agenda.value")
+    agenda_text = ""
+    if agenda_df is not None:
+        match = agenda_df[agenda_df["entity_id.alias"] == alias]
+        if not match.empty:
+            agenda_text = match.iloc[-1]["agenda.value"]
+
+    active = _active_aliases(registrar) - {alias}
+    memory = _memory_aliases(registrar, alias) - {alias}
+    remembered_only = sorted(memory - active)
+    details = _entity_descriptions(registrar, active | memory)
+
+    parts = []
+    if agenda_text:
+        parts.append(f"Your agenda: {agenda_text}")
+    if active:
+        parts.append(f"Entities nearby right now: {', '.join(sorted(active))}")
+    if remembered_only:
+        parts.append(f"Entities you remember but can't currently perceive: {', '.join(remembered_only)}")
+    if details:
+        parts.append(f"What you know about them:\n{details}")
+    parts.append(
+        "What do you do this turn? Respond in first person, one or two "
+        "sentences, exactly as if you were typing your action as a command."
+    )
     return "\n".join(parts)

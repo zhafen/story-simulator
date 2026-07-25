@@ -11,6 +11,7 @@ from story_simulator.systems import (
     ETLLoaderSystem,
     InputSystem,
     MapSystem,
+    NPCAgentSystem,
     REGISTRY_DB_FILENAME,
     ResolverAgentSystem,
     System,
@@ -186,11 +187,12 @@ def test_ensemble_world_loads_save_dir_on_first_turn_via_etl_loader(tmp_path):
 def test_ensemble_world_default_systems_run_in_order(tmp_path):
     world = EnsembleWorld(save_dir=tmp_path / "save")
     assert list(world.systems) == [
-        "etl_loader", "map", "input", "resolver", "archivist", "map_refresh", "visualizer"
+        "etl_loader", "map", "input", "npc_agent", "resolver", "archivist", "map_refresh", "visualizer"
     ]
     assert isinstance(world.systems["etl_loader"], ETLLoaderSystem)
     assert isinstance(world.systems["map"], MapSystem)
     assert isinstance(world.systems["input"], InputSystem)
+    assert isinstance(world.systems["npc_agent"], NPCAgentSystem)
     assert isinstance(world.systems["resolver"], ResolverAgentSystem)
     assert isinstance(world.systems["archivist"], ArchivistAgentSystem)
     # Same MapSystem instance run again after the Archivist, not a second one.
@@ -294,7 +296,7 @@ def test_ensemble_world_full_turn_updates_active_entities_next_turn(tmp_path, mo
 
     prompt = _sent_text()
     assert "nearby_npc" in prompt
-    assert prompt.endswith("Player input: say hello")
+    assert prompt.endswith("player's input: say hello")
 
 
 def test_ensemble_world_connects_registry_straight_to_its_database_file(tmp_path):

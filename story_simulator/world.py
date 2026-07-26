@@ -8,7 +8,12 @@ import yaml
 from iacs.registrar import Registrar
 from iacs.registry import Registry
 
-from story_simulator.config import ENVIRONMENT_ID, LIVING_WORLD_DIR, PROD_AGENT_ID, resolve_anthropic_api_key
+from story_simulator.config import (
+    DEFAULT_WORLD_DIR,
+    ENVIRONMENT_ID,
+    PROD_AGENT_ID,
+    resolve_anthropic_api_key,
+)
 from story_simulator.systems import (
     AgentSystem,
     ArchivistAgentSystem,
@@ -244,15 +249,16 @@ def _seed_save_dir(save_dir: Path, settings_fp: Path | None) -> None:
     fresh save directory never picks up any starting state on its own,
     leaving the Resolver to narrate a setting it has to invent from nothing.
     Copies from `settings_fp` when given — a hand-authored scenario the
-    caller wants instead of the default living world (e.g.
-    tests/data/settings/npc) — otherwise from `LIVING_WORLD_DIR`, so a new
-    sandbox picks up wherever the living world currently stands, not just
-    where it started. Skipped once `save_dir` already has any file in it —
-    a prior save — and when `save_dir` already *is* the source dir itself
-    (the CLI's `--living` flag, where the source data already lives — a
-    no-op self-copy).
+    caller wants instead (e.g. tests/data/settings/npc, or the CLI's
+    `--living` flag pointing this at `LIVING_WORLD_DIR`) — otherwise from
+    `DEFAULT_WORLD_DIR`, so an ordinary sandbox always starts from the same
+    plain premise rather than wherever the tracked living world currently
+    stands. Skipped once `save_dir` already has any file in it — a prior
+    save — and when `save_dir` already *is* the source dir itself (e.g.
+    `EnsembleWorld(save_dir=DEFAULT_WORLD_DIR)`, where the source data
+    already lives there — a no-op self-copy).
     """
-    source_dir = settings_fp if settings_fp is not None else LIVING_WORLD_DIR
+    source_dir = settings_fp if settings_fp is not None else DEFAULT_WORLD_DIR
     if save_dir.resolve() == source_dir.resolve():
         return
     if any(save_dir.iterdir()):

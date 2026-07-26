@@ -4,6 +4,7 @@ import pytest
 
 import pandas as pd
 
+from story_simulator.config import LIVING_WORLD_DIR
 from story_simulator.interpreter import Interpreter
 from story_simulator.world import EnsembleWorld, MirrorWorld
 
@@ -73,13 +74,16 @@ def test_move(tmp_path):
     They should be able to see the desk, but no longer see the door.
     Then they should be able to turn around and walk back and see the door and expanse
     again, but not the desk anymore.
+
+    The journaling desk is only part of the living world's setting (not the
+    plain default world), so this exercises the living world explicitly.
     """
     ###################################
     # TURN 0: Startup
 
     # Setup
     save_dir = tmp_path / "test_save"
-    w = EnsembleWorld(save_dir=save_dir)
+    w = EnsembleWorld(save_dir=save_dir, settings_fp=LIVING_WORLD_DIR)
     p = Interpreter(w)
     r = w.registry
 

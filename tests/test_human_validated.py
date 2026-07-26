@@ -5,6 +5,7 @@ import pytest
 import pandas as pd
 
 from story_simulator.interpreter import Interpreter
+from story_simulator.systems import MapSystem
 from story_simulator.world import EnsembleWorld, MirrorWorld
 
 
@@ -96,12 +97,7 @@ def test_move(tmp_path):
     assert (~pd.Series(destination_objects).isin(active["entity_id.alias"])).all()
 
     # Check that the player starts in the right place
-    pv = r.view_current("position")
-    origin_distances = pv.filter(pv["entity_id.alias"].contains("player")).mutate(
-        distance=(pv["position.x"] ** 2 + pv["position.y"] ** 2) ** 0.5
-    )
-    n_player_at_origin = origin_distances.filter(origin_distances.distance < 1).count()
-    assert n_player_at_origin.execute() == 1
+    assert MapSystem.distance(w.registrar, "player", (0.0, 0.0)) < 1
 
     ###################################
     # TURN 1: Move to destination
@@ -112,12 +108,7 @@ def test_move(tmp_path):
     )
 
     # Check that the player arrives at the right location
-    pv = r.view_current("position")
-    destination_distances = pv.filter(pv["entity_id.alias"].contains("player")).mutate(
-        distance=(pv["position.x"] ** 2 + (pv["position.y"] - 500) ** 2) ** 0.5
-    )
-    n_player_at_destination = destination_distances.filter(destination_distances.distance < 1).count()
-    assert n_player_at_destination.execute() == 1
+    assert MapSystem.distance(w.registrar, "player", (0.0, 500.0)) < 1
 
     # The player should see the journaling desk, etc.
     for obj in destination_objects:
@@ -136,7 +127,7 @@ def test_move(tmp_path):
     stdout = p.input("I walk back to the door and go through it.")
 
     # Check that the player is back where expected
-    assert n_player_at_origin.execute() == 1
+    assert MapSystem.distance(w.registrar, "player", (0.0, 0.0)) < 1
 
     # The player should see the starting objects
     for obj in starting_objects:
@@ -161,24 +152,13 @@ def test_npc(tmp_path):
     # Setup
     save_dir = tmp_path / "test_save"
     w = EnsembleWorld(save_dir=save_dir, settings_fp=settings_dir)
-    r = w.registry
 
     # Check that the NPC starts at the origin
-    pv = r.view_current("position")
-    npc_distances = pv.filter(pv["entity_id.alias"].contains("traveler")).mutate(
-        distance=(pv["position.x"] ** 2 + pv["position.y"] ** 2) ** 0.5
-    )
-    n_char_at_origin = npc_distances.filter(npc_distances.distance < 1).count()
-    assert n_char_at_origin.execute() == 1
+    assert MapSystem.distance(w.registrar, "traveler", (0.0, 0.0)) < 1
 
     # Advance the world two turns
     w.advance()
     w.advance()
 
     # Check that the NPC is no longer within 1 meter of the origin
-    pv = r.view_current("position")
-    npc_distances = pv.filter(pv["entity_id.alias"].contains("traveler")).mutate(
-        distance=(pv["position.x"] ** 2 + pv["position.y"] ** 2) ** 0.5
-    )
-    n_char_away_from_origin = npc_distances.filter(npc_distances.distance > 1).count()
-    assert n_char_away_from_origin.execute() == 1
+    assert MapSystem.distance(w.registrar, "traveler", (0.0, 0.0)) > 1

@@ -175,11 +175,77 @@ class MapSystem(System):
                 if alias == reference_alias:
                     continue
                 pos = (float(row["position.x"]), float(row["position.y"]))
-                if math.dist(pos, reference_pos) <= self.radius:
+                if self.distance(registrar, pos, reference_pos) <= self.radius:
                     active_aliases.add(alias)
 
         _sync_active_tags(registrar, active_aliases)
         _record_memory(registrar, reference_alias, active_aliases)
+
+    @staticmethod
+    def entity_position(registrar: Registrar, alias: str) -> tuple[float, float] | None:
+        """Return the (x, y) position of the entity aliased `alias`, or None if it has none yet.
+
+        Shares `_latest_positions`'s per-turn resolution with `step()` itself
+        (see that helper's docstring), so a distance query never disagrees
+        with what `step()` just tagged active from the same registrar.
+        """
+        positions = _latest_positions(registrar)
+        match = positions[positions["entity_id.alias"] == alias]
+        if match.empty:
+            return None
+        row = match.iloc[0]
+        return (float(row["position.x"]), float(row["position.y"]))
+
+    @classmethod
+    def distance(
+        cls,
+        registrar: Registrar,
+        a: str | tuple[float, float],
+        b: str | tuple[float, float],
+    ) -> float:
+        """Euclidean distance between `a` and `b`, each an entity alias or a bare (x, y) point.
+
+        The recurring question the Resolver agent and the testing framework
+        both need answered repeatedly: how far apart are these two things,
+        where either one may be an entity or just a point on the map.
+        """
+        return math.dist(cls._resolve_point(registrar, a), cls._resolve_point(registrar, b))
+
+    @classmethod
+    def entities_within(
+        cls,
+        registrar: Registrar,
+        center: str | tuple[float, float],
+        radius: float,
+    ) -> set[str]:
+        """Return the aliases of every positioned entity within `radius` of `center`.
+
+        `center` is an entity alias or a bare (x, y) point; when it's an
+        alias, that entity itself is excluded from the result.
+        """
+        center_pos = cls._resolve_point(registrar, center)
+        positions = _latest_positions(registrar)
+        result = set()
+        for _, row in positions.iterrows():
+            alias = row["entity_id.alias"]
+            if isinstance(center, str) and alias == center:
+                continue
+            pos = (float(row["position.x"]), float(row["position.y"]))
+            if math.dist(pos, center_pos) <= radius:
+                result.add(alias)
+        return result
+
+    @classmethod
+    def _resolve_point(
+        cls, registrar: Registrar, value: "str | tuple[float, float]"
+    ) -> tuple[float, float]:
+        """Resolve `value` to an (x, y) point, looking it up as an entity alias if it's a string."""
+        if not isinstance(value, str):
+            return value
+        pos = cls.entity_position(registrar, value)
+        if pos is None:
+            raise ValueError(f"No known position for entity alias {value!r}")
+        return pos
 
 
 class NPCAgentSystem(AgentSystem):

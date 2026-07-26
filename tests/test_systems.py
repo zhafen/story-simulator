@@ -305,7 +305,7 @@ def test_resolver_agent_system_includes_active_entities_in_prompt(tmp_path, monk
         "distant_rock description\n"
         "nearby_npc description\n"
         "player description\n"
-        "Player input: look around"
+        "player's input: look around"
     )
 
 

@@ -189,7 +189,7 @@ class MapSystem(System):
         (see that helper's docstring), so a distance query never disagrees
         with what `step()` just tagged active from the same registrar.
         """
-        entity_id = _try_get_entity_id(registrar, alias)
+        entity_id = registrar.get_entity_id(alias)
         if entity_id is None:
             return None
         positions = _latest_positions(registrar)
@@ -226,7 +226,7 @@ class MapSystem(System):
         `center` is an entity alias or a bare (x, y) point; when it's an
         alias, that entity itself is excluded from the result.
         """
-        center_id = _try_get_entity_id(registrar, center) if isinstance(center, str) else None
+        center_id = registrar.get_entity_id(center) if isinstance(center, str) else None
         center_pos = cls._resolve_point(registrar, center)
         positions = _latest_positions(registrar)
         result = set()
@@ -833,20 +833,6 @@ def _safe_get(registrar: Registrar, component_type: str) -> pd.DataFrame | None:
     return registrar.get(component_type).execute()
 
 
-def _try_get_entity_id(registrar: Registrar, entity_ref: str) -> str | None:
-    """Resolve `entity_ref` via `Registrar.get_entity_id`, or None if it doesn't resolve.
-
-    Callers that used to match `entity_id.alias` by hand tolerated an
-    unresolvable ref by getting back an empty result; `get_entity_id` raises
-    on 0-or-2+ matches instead, so this restores that tolerance for the
-    read-only lookups below.
-    """
-    try:
-        return registrar.get_entity_id(entity_ref)
-    except ValueError:
-        return None
-
-
 def _add_input(registrar: Registrar, alias: str, text: str, type_: str, turn: int) -> None:
     """Merge a new `input` component instance onto `alias`'s existing entity.
 
@@ -977,7 +963,7 @@ def _memory_aliases(registrar: Registrar, owner_alias: str) -> set[str]:
     df = _safe_view(registrar, "memory.value")
     if df is None:
         return set()
-    owner_id = _try_get_entity_id(registrar, owner_alias)
+    owner_id = registrar.get_entity_id(owner_alias)
     if owner_id is None:
         return set()
     return set(df[df["entity_id"] == owner_id]["memory.value"])
@@ -1014,7 +1000,7 @@ def _entity_descriptions(registrar: Registrar, aliases: set[str]) -> str:
     entity_ids = {
         entity_id
         for alias in aliases
-        if (entity_id := _try_get_entity_id(registrar, alias)) is not None
+        if (entity_id := registrar.get_entity_id(alias)) is not None
     }
     df = df[df["entity_id"].isin(entity_ids)]
     return "\n".join(f"{row['entity_id.alias']}: {row['description.value']}" for _, row in df.iterrows())
@@ -1129,7 +1115,7 @@ def _build_npc_prompt(registrar: Registrar, alias: str) -> str:
     """
     agenda_df = _safe_view(registrar, "agenda.value")
     agenda_text = ""
-    alias_id = _try_get_entity_id(registrar, alias)
+    alias_id = registrar.get_entity_id(alias)
     if agenda_df is not None and alias_id is not None:
         match = agenda_df[agenda_df["entity_id"] == alias_id]
         if not match.empty:

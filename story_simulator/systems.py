@@ -23,7 +23,6 @@ import math
 from abc import ABC, abstractmethod
 from pathlib import Path
 
-import anthropic
 import matplotlib
 import numpy as np
 import pandas as pd
@@ -33,12 +32,14 @@ from iacs.registrar import Registrar
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-from story_simulator.config import ENVIRONMENT_ID, MANIFEST_DIR, PROD_AGENT_ID, resolve_anthropic_api_key
+from story_simulator import tools
+from story_simulator.agents import AgentSpec, complete, run_tool_loop
+from story_simulator.config import MANIFEST_DIR, WORLD_FILE_ID, resolve_anthropic_api_key
 from story_simulator.mcp_client import open_iacs_mcp_session
+from story_simulator.specialists import PhysicsAgent, TerrainAgent
 
 WORLD_YAML_FILENAME = "world.yaml"
 REGISTRY_DB_FILENAME = "registry.duckdb"
-WORLD_FILE_ID = "world"
 MAX_ARCHIVIST_TOOL_TURNS = 8
 DEFAULT_ACTIVE_ENTITY_RADIUS = 20.0
 DEFAULT_RENDER_PATH = Path("render.svg")
@@ -121,7 +122,7 @@ class InputSystem(System):
 
 
 class AgentSystem(System, ABC):
-    """Base class for Systems whose step() calls out to an Anthropic agent.
+    """Base class for Systems whose step() calls out to an LLM agent, via story_simulator.agents.
 
     Components
     ----------
@@ -262,10 +263,10 @@ class NPCAgentSystem(AgentSystem):
 
     Scoped to what the NPC has actually perceived — `active` union `memory`
     (see MapSystem) — plus its own `agenda`, rather than the whole registry.
-    Runs a single non-streaming `messages.create` call directly against this
-    System's own registrar, unlike ResolverAgentSystem, which narrates
-    through the hosted Agents/Sessions platform and so has no local registrar
-    access of its own.
+    Runs a single non-streaming `story_simulator.agents.complete` call
+    directly against this System's own registrar, unlike ResolverAgentSystem
+    and ArchivistAgentSystem, which each need a multi-turn tool-calling loop
+    (`story_simulator.agents.run_tool_loop`) instead of one call.
 
     Only one character is expected to act per turn — the same assumption
     ResolverAgentSystem/ArchivistAgentSystem already make by resolving a
@@ -278,10 +279,7 @@ class NPCAgentSystem(AgentSystem):
     """
 
     def __init__(self, config_path: Path = PROD_NPC_CONFIG_PATH):
-        self.client = anthropic.Anthropic(api_key=resolve_anthropic_api_key())
-        config = yaml.safe_load(config_path.read_text())
-        self.model = config["model"]
-        self.system = config["system"]
+        self.spec = AgentSpec.from_yaml(config_path)
 
     def step(self, registrar: Registrar, save_dir: Path | None, turn: int) -> None:
         if save_dir is None:
@@ -297,47 +295,55 @@ class NPCAgentSystem(AgentSystem):
 
     def _decide(self, registrar: Registrar, alias: str) -> str:
         prompt = _build_npc_prompt(registrar, alias)
-        response = self.client.messages.create(
-            model=self.model,
-            max_tokens=256,
-            system=self.system,
-            messages=[{"role": "user", "content": prompt}],
+        response = complete(
+            self.spec,
+            [{"role": "user", "content": prompt}],
+            api_key=resolve_anthropic_api_key(),
         )
-        return "".join(block.text for block in response.content if block.type == "text")
+        return response.choices[0].message.content or ""
 
 
 class ResolverAgentSystem(AgentSystem):
     """Resolves what the player sees and what happens, via the Resolver agent.
 
     Reads the turn's player input and active entities from the registry,
-    prompts the hosted Anthropic Agents/Sessions platform directly (its own
-    client and session, independent of the `World` hierarchy), and writes
-    the result back as an agent-type `input` component on the player entity.
-    This duplicates `AgentWorld`'s session-management logic rather than
-    delegating to it, so this System has no dependency on story_simulator.world.
+    runs a local LiteLLM tool-calling loop (`story_simulator.agents.run_tool_loop`)
+    rather than the hosted Anthropic Agents/Sessions platform this System
+    previously narrated through — that platform only runs Claude models,
+    which rules out letting a world's agents run on a model of the player's
+    choosing, and it only accepts MCP servers reachable by URL, so it
+    couldn't attach the local stdio `iacs-mcp` subprocess directly either
+    (see `ArchivistAgentSystem`, which predates this System's migration and
+    already worked around that the same way). Writes the result back as an
+    agent-type `input` component on the acting character's entity.
 
     The world's starting premise (the door, the empty expanse, the player)
     lives in `data/default/setting.yaml`, a hand-authored EC save file that
     `ETLLoaderSystem` loads into the registry, so it reaches the Resolver as
-    an active entity. The hosted Agents/Sessions platform this System
-    narrates through only accepts MCP servers reachable by URL, so it can't
-    attach the local stdio `iacs-mcp` subprocess directly (see
-    `ArchivistAgentSystem`); instead, this System talks to `iacs-mcp` itself
-    as a plain MCP client (`_gather_entity_details`) to look up what's known
-    about each active entity, and folds that into the prompt text.
+    an active entity. This System still talks to `iacs-mcp` as a plain MCP
+    client (`_gather_entity_details`) to look up what's known about each
+    active entity and folds that into the prompt text eagerly, rather than
+    exposing `view_entity` as a tool the Resolver calls on demand — kept as
+    it was under the hosted platform, since the Resolver has to reason about
+    the destination of a described move before knowing what's there (see
+    `_gather_entity_details`'s docstring). The two tools it *does* call on
+    demand, `generate_terrain`/`resolve_physics`, delegate to `TerrainAgent`/
+    `PhysicsAgent` (`story_simulator.specialists`) — specialists reachable
+    only through this System's own dispatch, never scheduled directly by
+    `EnsembleWorld`, so they run when the Resolver's own judgment calls for
+    them rather than every turn.
     """
 
     def __init__(
         self,
-        agent_id: str = PROD_AGENT_ID,
-        environment_id: str = ENVIRONMENT_ID,
         config_path: Path = PROD_RESOLVER_CONFIG_PATH,
+        terrain_agent: TerrainAgent | None = None,
+        physics_agent: PhysicsAgent | None = None,
     ):
-        self.client = anthropic.Anthropic(api_key=resolve_anthropic_api_key())
-        self.agent_id = agent_id
-        self.environment_id = environment_id
-        self.config_path = config_path
-        self.session_id = None
+        self.spec = AgentSpec.from_yaml(config_path)
+        self.tool_schemas = tools.resolve_tool_schemas(self.spec.tools)
+        self.terrain_agent = terrain_agent if terrain_agent is not None else TerrainAgent()
+        self.physics_agent = physics_agent if physics_agent is not None else PhysicsAgent()
         self.last_response: str = ""
 
     def step(self, registrar: Registrar, save_dir: Path | None, turn: int) -> None:
@@ -354,13 +360,48 @@ class ResolverAgentSystem(AgentSystem):
         # InputSystem/NPCAgentSystem.
         actor_alias = _acting_character_alias(registrar, turn) or "player"
         active_aliases = _active_aliases(registrar)
-        entity_details = asyncio.run(self._gather_entity_details(Path(save_dir), _all_aliases(registrar)))
-        prompt = _build_prompt(actor_alias, command_text, active_aliases, entity_details=entity_details)
-        response = self._respond(prompt)
+        all_aliases = _all_aliases(registrar)
+        response = asyncio.run(
+            self._resolve_async(Path(save_dir), actor_alias, command_text, active_aliases, all_aliases)
+        )
         self.last_response = response
 
         alias = _acting_character_alias(registrar, turn) or _ensure_player_alias(registrar)
         _add_input(registrar, alias, response, "agent", turn)
+
+    async def _resolve_async(
+        self,
+        save_dir: Path,
+        actor_alias: str,
+        command_text: str,
+        active_aliases: set[str],
+        all_aliases: set[str],
+    ) -> str:
+        entity_details = await self._gather_entity_details(save_dir, all_aliases)
+        prompt = _build_prompt(actor_alias, command_text, active_aliases, entity_details=entity_details)
+        return await run_tool_loop(
+            self.spec,
+            [{"role": "user", "content": prompt}],
+            self.tool_schemas,
+            self._dispatch_tool,
+            api_key=resolve_anthropic_api_key(),
+        )
+
+    async def _dispatch_tool(self, name: str, arguments: dict) -> str:
+        """Dispatch one `generate_terrain`/`resolve_physics` call to its specialist.
+
+        Same broad-`except` contract as `ArchivistAgentSystem._dispatch_tool`:
+        a bad argument or unknown tool name becomes a readable error result
+        rather than crashing the turn.
+        """
+        try:
+            if name == "generate_terrain":
+                return tools.generate_terrain(self.terrain_agent, arguments["description"])
+            if name == "resolve_physics":
+                return tools.resolve_physics(self.physics_agent, arguments["scenario"])
+            return f"Error: unknown tool {name!r}"
+        except Exception as e:
+            return f"Error: {e}"
 
     async def _gather_entity_details(self, save_dir: Path, aliases: set[str]) -> str:
         """Ask the local iacs MCP server what's known about every entity in the world.
@@ -387,58 +428,6 @@ class ResolverAgentSystem(AgentSystem):
             ]
         return "\n".join(views)
 
-    def _load_config(self) -> dict:
-        local = yaml.safe_load(self.config_path.read_text())
-        if not local.get("system"):
-            local["system"] = yaml.safe_load(PROD_RESOLVER_CONFIG_PATH.read_text())["system"]
-        return local
-
-    def _sync_agent(self) -> None:
-        local = self._load_config()
-        current = self.client.beta.agents.retrieve(self.agent_id)
-        self.client.beta.agents.update(
-            self.agent_id,
-            version=current.version,
-            name=local["name"],
-            description=local.get("description", ""),
-            model=local["model"],
-            system=local.get("system"),
-            tools=local.get("tools", []),
-        )
-
-    def _start_session(self) -> None:
-        self._sync_agent()
-        session = self.client.beta.sessions.create(
-            agent=self.agent_id,
-            environment_id=self.environment_id,
-        )
-        self.session_id = session.id
-        print(f"Session: https://platform.claude.com/workspaces/default/sessions/{session.id}")
-
-    def _respond(self, text: str) -> str:
-        if self.session_id is None:
-            self._start_session()
-        with self.client.beta.sessions.events.stream(session_id=self.session_id) as stream:
-            self.client.beta.sessions.events.send(
-                session_id=self.session_id,
-                events=[{"type": "user.message", "content": [{"type": "text", "text": text}]}],
-            )
-            return self._drain(stream)
-
-    def _drain(self, stream) -> str:
-        text_parts = []
-        for event in stream:
-            if event.type == "agent.message":
-                for block in event.content:
-                    if block.type == "text":
-                        text_parts.append(block.text)
-            elif event.type == "session.status_terminated":
-                break
-            elif event.type == "session.status_idle":
-                if event.stop_reason.type != "requires_action":
-                    break
-        return "".join(text_parts)
-
 
 class ArchivistAgentSystem(AgentSystem):
     """Transcribes a turn's input exchange into iacs entity-first YAML.
@@ -464,12 +453,7 @@ class ArchivistAgentSystem(AgentSystem):
     """
 
     def __init__(self, config_path: Path = PROD_ARCHIVIST_CONFIG_PATH):
-        self.client = anthropic.Anthropic(api_key=resolve_anthropic_api_key())
-        config = yaml.safe_load(config_path.read_text())
-        if not config.get("system"):
-            config["system"] = yaml.safe_load(PROD_ARCHIVIST_CONFIG_PATH.read_text())["system"]
-        self.model = config["model"]
-        self.system = config["system"]
+        self.spec = AgentSpec.from_yaml(config_path, fallback_system_path=PROD_ARCHIVIST_CONFIG_PATH)
 
     def step(self, registrar: Registrar, save_dir: Path | None, turn: int) -> None:
         if save_dir is None:
@@ -497,30 +481,20 @@ class ArchivistAgentSystem(AgentSystem):
         turn: int,
     ) -> None:
         async with open_iacs_mcp_session(save_dir) as mcp:
-            tools = mcp.tools + [_VIEW_REGISTRY_TOOL, _UPDATE_REGISTRY_TOOL]
-            messages = [
-                {"role": "user", "content": self._build_prompt(actor_alias, player_input, world_response)}
-            ]
-            for _ in range(MAX_ARCHIVIST_TOOL_TURNS):
-                response = self.client.messages.create(
-                    model=self.model,
-                    max_tokens=4096,
-                    system=self.system,
-                    tools=tools,
-                    messages=messages,
-                )
-                messages.append({"role": "assistant", "content": response.content})
-                if response.stop_reason != "tool_use":
-                    return
-                tool_results = []
-                for block in response.content:
-                    if block.type != "tool_use":
-                        continue
-                    result_text = await self._dispatch_tool(mcp, registrar, turn, block.name, block.input)
-                    tool_results.append(
-                        {"type": "tool_result", "tool_use_id": block.id, "content": result_text}
-                    )
-                messages.append({"role": "user", "content": tool_results})
+            tool_schemas = mcp.tools + tools.resolve_tool_schemas(self.spec.tools)
+            prompt = self._build_prompt(actor_alias, player_input, world_response)
+
+            async def dispatch(name: str, arguments: dict) -> str:
+                return await self._dispatch_tool(mcp, registrar, turn, name, arguments)
+
+            await run_tool_loop(
+                self.spec,
+                [{"role": "user", "content": prompt}],
+                tool_schemas,
+                dispatch,
+                max_turns=MAX_ARCHIVIST_TOOL_TURNS,
+                api_key=resolve_anthropic_api_key(),
+            )
 
     @staticmethod
     def _build_prompt(actor_alias: str, player_input: str, world_response: str) -> str:
@@ -553,7 +527,7 @@ class ArchivistAgentSystem(AgentSystem):
         malformed `update_registry` YAML, ...) would otherwise crash the
         whole turn instead of giving the model something it can read and
         retry from. Deliberately just one broad `except`, not a bespoke
-        pre-check per tool: `_merge_yaml_string`'s own YAML parsing (via
+        pre-check per tool: `tools.update_registry`'s own YAML parsing (via
         `Registrar.update`) already raises a perfectly readable
         `yaml.YAMLError` on malformed content, so there's nothing a separate
         `yaml.safe_load` pre-check here would add beyond what running the
@@ -561,10 +535,9 @@ class ArchivistAgentSystem(AgentSystem):
         """
         try:
             if name == "view_registry":
-                return registrar.view_df(arguments["component_type"]).to_csv()
+                return tools.view_registry(registrar, arguments["component_type"])
             if name == "update_registry":
-                _merge_yaml_string(registrar, WORLD_FILE_ID, arguments["yaml_string"], turn)
-                return "Merged into the registry."
+                return tools.update_registry(registrar, turn, arguments["yaml_string"])
             return await mcp.call_tool(name, arguments)
         except Exception as e:
             return f"Error: {e}"
@@ -704,46 +677,6 @@ def _expand_limits_to_fit_labels(fig, ax, annotations: list) -> None:
         corners.append(inv.transform((bbox.x1, bbox.y1)))
     ax.update_datalim(corners)
     ax.autoscale_view()
-
-
-_VIEW_REGISTRY_TOOL = {
-    "name": "view_registry",
-    "description": (
-        "View all recorded data for one component type (e.g. \"position\", "
-        "\"object\", \"character\") directly from the world registry — "
-        "covers both the starting scenario and anything recorded in prior "
-        "turns, so entities already known can be added to rather than "
-        "duplicated."
-    ),
-    "input_schema": {
-        "type": "object",
-        "properties": {
-            "component_type": {
-                "type": "string",
-                "description": "The component type to view, e.g. \"position\".",
-            },
-        },
-        "required": ["component_type"],
-    },
-}
-
-_UPDATE_REGISTRY_TOOL = {
-    "name": "update_registry",
-    "description": (
-        "Merge entity-first YAML into the world registry, run through the "
-        "same ETL pipeline used to load save files."
-    ),
-    "input_schema": {
-        "type": "object",
-        "properties": {
-            "yaml_string": {
-                "type": "string",
-                "description": "Entity-first YAML content to merge in.",
-            },
-        },
-        "required": ["yaml_string"],
-    },
-}
 
 
 def _merge_yaml_string(

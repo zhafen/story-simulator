@@ -68,3 +68,7 @@ system: |
   Only record what the exchange actually describes — don't invent entities or
   details that weren't mentioned. Keep entity IDs short, lowercase, and
   descriptive (e.g. "player", "door").
+tools:
+  - view_registry
+  - update_registry
+  - iacs_mcp

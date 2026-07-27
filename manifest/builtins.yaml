@@ -126,3 +126,36 @@ turn_components:
             the player) for the current turn. Written directly onto each active
             entity by MapSystem, and removed once the entity falls out of range.
         - component_type
+
+agent_components:
+    agent:
+        - description: >
+            Reserved for a future EC-defined agent: an entity with this
+            component would describe an agent (Resolver, Terrain, Physics,
+            or a world-author's own) the same way `story_simulator.agents.AgentSpec`
+            does today from a `*.yaml` file — not read by any code yet. Not
+            wired to anything in story_simulator; adding a loader that turns
+            an `agent` entity into an `AgentSpec` is future work this
+            reservation exists to keep open, not something this component
+            type does on its own.
+
+            `tools` isn't represented here yet: a scalar field can't hold a
+            list of tool names the way `AgentSpec.tools` can, so an agent's
+            tool list will likely need a relation-style component instead
+            (mirroring how `memory` is a `directed_relation` to other
+            entities, rather than a field on `character`) — left as an open
+            question for whenever this reservation gets built out.
+        - component_type
+        - field:
+            role:
+                description: >
+                    What this agent is for (e.g. "resolver", "terrain",
+                    "physics", or a world-author's own label) — informational
+                    only until something reads `agent` entities.
+                type: str
+            model:
+                description: A LiteLLM model string, e.g. "claude-opus-4-8" or "gpt-4.1".
+                type: str
+            system_prompt:
+                description: The agent's system prompt.
+                type: str

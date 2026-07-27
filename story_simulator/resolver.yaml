@@ -15,9 +15,8 @@ system: |
   Never use metaphors or similes. Describe things directly and literally.
 
   Each message may begin with out-of-character bookkeeping lines, in this order: "Active entities nearby: ..." (characters/objects currently near the acting character) and "Entity details:" (what's known about each active entity). None of that is something the character said or perceived — use it only to keep who/what is nearby consistent in your narration, and always respond to the final "...'s input: ..." line.
+
+  You have two tools available for cases you shouldn't just decide yourself: generate_terrain, for when the character reaches or looks toward a location with no established terrain/environment yet, and resolve_physics, for an action whose physical outcome isn't obvious (a fall, a jump, a collision, a thrown or dropped object, structural collapse). Call whichever applies before narrating that part of your response, then narrate using what it tells you — never mention the tool itself or that you called it.
 tools:
-  - type: agent_toolset_20260401
-    default_config:
-      enabled: true
-      permission_policy:
-        type: always_allow
+  - generate_terrain
+  - resolve_physics

@@ -1,5 +1,6 @@
 import asyncio
 import itertools
+import json
 from contextlib import asynccontextmanager
 from unittest.mock import MagicMock
 
@@ -14,6 +15,7 @@ from story_simulator.systems import (
     ETLLoaderSystem,
     InputSystem,
     MapSystem,
+    NPCAgentSystem,
     ResolverAgentSystem,
     System,
     VisualizerSystem,
@@ -47,24 +49,40 @@ def _registrar_from_yaml(yaml_text: str) -> Registrar:
     return registrar
 
 
-def _make_mock_client(session_id, events):
-    text_block = MagicMock(type="text", text="hello back")
-    message_event = MagicMock(type="agent.message", content=[text_block])
-    idle_event = MagicMock(type="session.status_idle", stop_reason=MagicMock(type="end_turn"))
-
-    mock_stream = MagicMock()
-    mock_stream.__enter__.return_value = events or [message_event, idle_event]
-    mock_stream.__exit__.return_value = False
-
-    mock_client = MagicMock()
-    mock_client.beta.sessions.create.return_value = MagicMock(id=session_id)
-    mock_client.beta.sessions.events.stream.return_value = mock_stream
-    return mock_client
+def _make_tool_call(call_id: str, name: str, arguments: dict):
+    """Build a fake LiteLLM/OpenAI-shaped tool call for a mocked completion response."""
+    function = MagicMock()
+    function.name = name
+    function.arguments = json.dumps(arguments)
+    return MagicMock(id=call_id, function=function)
 
 
-def _sent_text(mock_client):
-    events = mock_client.beta.sessions.events.send.call_args.kwargs["events"]
-    return events[0]["content"][0]["text"]
+def _make_llm_response(content, tool_calls=None, finish_reason=None):
+    """Build a fake LiteLLM `ModelResponse` (OpenAI-shaped: `.choices[0].message`)."""
+    if finish_reason is None:
+        finish_reason = "tool_calls" if tool_calls else "stop"
+    message = MagicMock()
+    message.content = content
+    message.tool_calls = tool_calls
+    dumped = {"role": "assistant", "content": content}
+    if tool_calls:
+        dumped["tool_calls"] = [
+            {
+                "id": call.id,
+                "type": "function",
+                "function": {"name": call.function.name, "arguments": call.function.arguments},
+            }
+            for call in tool_calls
+        ]
+    message.model_dump.return_value = dumped
+    choice = MagicMock(message=message, finish_reason=finish_reason)
+    return MagicMock(choices=[choice])
+
+
+def _sent_text(mock_completion, call_index: int = 0):
+    """The `content` of the last message sent on `mock_completion`'s `call_index`-th call."""
+    messages = mock_completion.call_args_list[call_index].kwargs["messages"]
+    return messages[-1]["content"]
 
 
 class _FakeMcpSession:
@@ -258,16 +276,46 @@ def test_map_system_untags_entities_that_leave_radius(tmp_path):
 
 
 # ---------------------------------------------------------------------------
+# NPCAgentSystem
+# ---------------------------------------------------------------------------
+
+
+def test_npc_agent_system_writes_a_command_as_player_type_input(tmp_path, monkeypatch):
+    save_dir = tmp_path / "save"
+    registrar = _registrar_from_yaml("traveler:\n    - character:\n        interaction_type: npc\n")
+    mock_completion = MagicMock(return_value=_make_llm_response("I look around."))
+    monkeypatch.setattr("story_simulator.agents.litellm.completion", mock_completion)
+
+    NPCAgentSystem().step(registrar, save_dir, turn=1)
+
+    assert _latest_input(registrar, "player", turn=1) == "I look around."
+
+
+def test_npc_agent_system_does_nothing_when_a_command_already_exists(tmp_path, monkeypatch):
+    save_dir = tmp_path / "save"
+    registrar = _empty_registrar()
+    mock_completion = MagicMock(return_value=_make_llm_response("I look around."))
+    monkeypatch.setattr("story_simulator.agents.litellm.completion", mock_completion)
+    input_system = InputSystem()
+    input_system.receive("open the door")
+    input_system.step(registrar, save_dir, turn=1)
+
+    NPCAgentSystem().step(registrar, save_dir, turn=1)
+
+    mock_completion.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
 # ResolverAgentSystem
 # ---------------------------------------------------------------------------
 
 
 def test_resolver_agent_system_calls_agent_and_records_reply(tmp_path, monkeypatch):
     save_dir = tmp_path / "save"
-    mock_client = _make_mock_client("sesn_test123", events=None)
-    monkeypatch.setattr("story_simulator.systems.anthropic.Anthropic", lambda **kwargs: mock_client)
+    mock_completion = MagicMock(return_value=_make_llm_response("hello back"))
+    monkeypatch.setattr("story_simulator.agents.litellm.completion", mock_completion)
 
-    resolver = ResolverAgentSystem()
+    resolver = ResolverAgentSystem(terrain_agent=MagicMock(), physics_agent=MagicMock())
     registrar = _empty_registrar()
     input_system = InputSystem()
     input_system.receive("open the door")
@@ -278,7 +326,7 @@ def test_resolver_agent_system_calls_agent_and_records_reply(tmp_path, monkeypat
     # No active entities and no positioned entities at all yet (the seeded
     # "player" entity has no position component), so the prompt reduces to
     # the bare player input, and no iacs MCP session is opened at all.
-    assert _sent_text(mock_client) == "open the door"
+    assert _sent_text(mock_completion) == "open the door"
     assert resolver.last_response == "hello back"
     assert _latest_input(registrar, "agent", turn=1) == "hello back"
 
@@ -286,20 +334,20 @@ def test_resolver_agent_system_calls_agent_and_records_reply(tmp_path, monkeypat
 def test_resolver_agent_system_includes_active_entities_in_prompt(tmp_path, monkeypatch):
     save_dir = tmp_path / "save"
     registrar = _registrar_from_yaml(_SAMPLE_WORLD_YAML)
-    mock_client = _make_mock_client("sesn_test123", events=None)
-    monkeypatch.setattr("story_simulator.systems.anthropic.Anthropic", lambda **kwargs: mock_client)
+    mock_completion = MagicMock(return_value=_make_llm_response("hello back"))
+    monkeypatch.setattr("story_simulator.agents.litellm.completion", mock_completion)
     monkeypatch.setattr("story_simulator.systems.open_iacs_mcp_session", _fake_open_iacs_mcp_session)
 
     MapSystem(radius=10.0).step(registrar, save_dir, turn=1)
     input_system = InputSystem()
     input_system.receive("look around")
     input_system.step(registrar, save_dir, turn=1)
-    ResolverAgentSystem().step(registrar, save_dir, turn=1)
+    ResolverAgentSystem(terrain_agent=MagicMock(), physics_agent=MagicMock()).step(registrar, save_dir, turn=1)
 
     # Entity details cover every known entity (distant_rock, nearby_npc,
     # player), not just the one tagged active — only the "Active entities
     # nearby" bookkeeping line is radius-limited.
-    assert _sent_text(mock_client) == (
+    assert _sent_text(mock_completion) == (
         "Active entities nearby: nearby_npc\n"
         "Entity details:\n"
         "distant_rock description\n"
@@ -311,33 +359,86 @@ def test_resolver_agent_system_includes_active_entities_in_prompt(tmp_path, monk
 
 def test_resolver_agent_system_does_nothing_without_command(tmp_path, monkeypatch):
     save_dir = tmp_path / "save"
-    mock_client = _make_mock_client("sesn_test123", events=None)
-    monkeypatch.setattr("story_simulator.systems.anthropic.Anthropic", lambda **kwargs: mock_client)
+    mock_completion = MagicMock(return_value=_make_llm_response("hello back"))
+    monkeypatch.setattr("story_simulator.agents.litellm.completion", mock_completion)
 
-    ResolverAgentSystem().step(_empty_registrar(), save_dir, turn=1)
+    ResolverAgentSystem(terrain_agent=MagicMock(), physics_agent=MagicMock()).step(
+        _empty_registrar(), save_dir, turn=1
+    )
 
-    mock_client.beta.sessions.create.assert_not_called()
+    mock_completion.assert_not_called()
 
 
 def test_resolver_agent_system_does_nothing_without_save_dir(monkeypatch):
-    mock_client = _make_mock_client("sesn_test123", events=None)
-    monkeypatch.setattr("story_simulator.systems.anthropic.Anthropic", lambda **kwargs: mock_client)
-    resolver = ResolverAgentSystem()
+    mock_completion = MagicMock(return_value=_make_llm_response("hello back"))
+    monkeypatch.setattr("story_simulator.agents.litellm.completion", mock_completion)
+    resolver = ResolverAgentSystem(terrain_agent=MagicMock(), physics_agent=MagicMock())
 
     resolver.step(_empty_registrar(), None, turn=1)
 
-    mock_client.beta.sessions.create.assert_not_called()
+    mock_completion.assert_not_called()
+
+
+def test_resolver_agent_system_calls_generate_terrain_tool(tmp_path, monkeypatch):
+    save_dir = tmp_path / "save"
+    tool_call = _make_tool_call("call_1", "generate_terrain", {"description": "a clearing"})
+    mock_completion = MagicMock(
+        side_effect=[
+            _make_llm_response(None, tool_calls=[tool_call]),
+            _make_llm_response("You see a mossy clearing."),
+        ]
+    )
+    monkeypatch.setattr("story_simulator.agents.litellm.completion", mock_completion)
+
+    fake_terrain = MagicMock()
+    fake_terrain.generate.return_value = "Mossy ground, quiet air."
+    resolver = ResolverAgentSystem(terrain_agent=fake_terrain, physics_agent=MagicMock())
+    registrar = _empty_registrar()
+    input_system = InputSystem()
+    input_system.receive("look around")
+    input_system.step(registrar, save_dir, turn=1)
+
+    resolver.step(registrar, save_dir, turn=1)
+
+    fake_terrain.generate.assert_called_once_with("a clearing")
+    assert resolver.last_response == "You see a mossy clearing."
+    # The specialist's result round-trips into the next turn sent to the model.
+    second_call_messages = mock_completion.call_args_list[1].kwargs["messages"]
+    assert {
+        "role": "tool",
+        "tool_call_id": "call_1",
+        "content": "Mossy ground, quiet air.",
+    } in second_call_messages
+
+
+def test_resolver_agent_system_calls_resolve_physics_tool(tmp_path, monkeypatch):
+    save_dir = tmp_path / "save"
+    tool_call = _make_tool_call("call_1", "resolve_physics", {"scenario": "jumping a gap"})
+    mock_completion = MagicMock(
+        side_effect=[
+            _make_llm_response(None, tool_calls=[tool_call]),
+            _make_llm_response("You clear the gap easily."),
+        ]
+    )
+    monkeypatch.setattr("story_simulator.agents.litellm.completion", mock_completion)
+
+    fake_physics = MagicMock()
+    fake_physics.resolve.return_value = "The gap is narrow enough to clear."
+    resolver = ResolverAgentSystem(terrain_agent=MagicMock(), physics_agent=fake_physics)
+    registrar = _empty_registrar()
+    input_system = InputSystem()
+    input_system.receive("I jump the gap")
+    input_system.step(registrar, save_dir, turn=1)
+
+    resolver.step(registrar, save_dir, turn=1)
+
+    fake_physics.resolve.assert_called_once_with("jumping a gap")
+    assert resolver.last_response == "You clear the gap easily."
 
 
 # ---------------------------------------------------------------------------
 # ArchivistAgentSystem
 # ---------------------------------------------------------------------------
-
-
-def _make_tool_use_block(tool_name, tool_input, block_id):
-    block = MagicMock(type="tool_use", input=tool_input, id=block_id)
-    block.name = tool_name
-    return block
 
 
 def test_archivist_agent_system_does_nothing_without_narration(tmp_path, monkeypatch):
@@ -346,14 +447,14 @@ def test_archivist_agent_system_does_nothing_without_narration(tmp_path, monkeyp
     input_system = InputSystem()
     input_system.receive("open the door")
     input_system.step(registrar, save_dir, turn=1)
-    mock_client = MagicMock()
-    monkeypatch.setattr("story_simulator.systems.anthropic.Anthropic", lambda **kwargs: mock_client)
+    mock_completion = MagicMock()
+    monkeypatch.setattr("story_simulator.agents.litellm.completion", mock_completion)
 
     ArchivistAgentSystem().step(registrar, save_dir, turn=1)
 
     # The Archivist's own LLM tool loop should never have run without a
     # narration to transcribe.
-    mock_client.messages.create.assert_not_called()
+    mock_completion.assert_not_called()
 
 
 def test_archivist_agent_system_dispatches_mcp_and_local_tools(tmp_path, monkeypatch):
@@ -364,25 +465,26 @@ def test_archivist_agent_system_dispatches_mcp_and_local_tools(tmp_path, monkeyp
     input_system.step(registrar, save_dir, turn=1)
     _add_input(registrar, "player", "you see a door", "agent", 1)
 
-    mcp_tool_use = _make_tool_use_block("describe_format", {}, "tool_1")
-    update_tool_use = _make_tool_use_block(
-        "update_registry", {"yaml_string": "player:\n    - origin\n"}, "tool_2"
+    describe_call = _make_tool_call("tool_1", "describe_format", {})
+    update_call = _make_tool_call(
+        "tool_2", "update_registry", {"yaml_string": "player:\n    - origin\n"}
     )
-    final_text = MagicMock(type="text", text="done")
 
-    responses = [
-        MagicMock(content=[mcp_tool_use], stop_reason="tool_use"),
-        MagicMock(content=[update_tool_use], stop_reason="tool_use"),
-        MagicMock(content=[final_text], stop_reason="end_turn"),
-    ]
-    mock_client = MagicMock()
-    mock_client.messages.create.side_effect = responses
-    monkeypatch.setattr("story_simulator.systems.anthropic.Anthropic", lambda **kwargs: mock_client)
+    mock_completion = MagicMock(
+        side_effect=[
+            _make_llm_response(None, tool_calls=[describe_call]),
+            _make_llm_response(None, tool_calls=[update_call]),
+            _make_llm_response("done"),
+        ]
+    )
+    monkeypatch.setattr("story_simulator.agents.litellm.completion", mock_completion)
 
     mcp_calls = []
 
     class FakeMcpSession:
-        tools = [{"name": "describe_format", "description": "", "input_schema": {}}]
+        tools = [
+            {"type": "function", "function": {"name": "describe_format", "description": "", "parameters": {}}}
+        ]
 
         async def call_tool(self, name, arguments):
             mcp_calls.append((name, arguments))
@@ -399,7 +501,7 @@ def test_archivist_agent_system_dispatches_mcp_and_local_tools(tmp_path, monkeyp
     ArchivistAgentSystem().step(registrar, save_dir, turn=1)
 
     assert mcp_calls == [("describe_format", {})]
-    assert mock_client.messages.create.call_count == 3
+    assert mock_completion.call_count == 3
     # `update_registry` fed the YAML straight to Registrar.update and merged
     # it into the registry directly, with no on-disk save file involved.
     assert registrar.get("origin").count().execute() == 1
@@ -510,23 +612,21 @@ def test_archivist_agent_system_stamps_turn_on_position_writes(tmp_path, monkeyp
     """
     save_dir = tmp_path / "save"
     registrar = _empty_registrar()
-    final_text = MagicMock(type="text", text="done")
 
     def _turn_responses(content):
+        tool_call = _make_tool_call("tool_update", "update_registry", {"yaml_string": content})
         return [
-            MagicMock(
-                content=[_make_tool_use_block("update_registry", {"yaml_string": content}, "tool_update")],
-                stop_reason="tool_use",
-            ),
-            MagicMock(content=[final_text], stop_reason="end_turn"),
+            _make_llm_response(None, tool_calls=[tool_call]),
+            _make_llm_response("done"),
         ]
 
-    mock_client = MagicMock()
-    mock_client.messages.create.side_effect = (
-        _turn_responses("player:\n    - position:\n        x: 0.0\n        y: 0.0\n")
-        + _turn_responses("player:\n    - position:\n        x: 5.0\n        y: 5.0\n")
+    mock_completion = MagicMock(
+        side_effect=(
+            _turn_responses("player:\n    - position:\n        x: 0.0\n        y: 0.0\n")
+            + _turn_responses("player:\n    - position:\n        x: 5.0\n        y: 5.0\n")
+        )
     )
-    monkeypatch.setattr("story_simulator.systems.anthropic.Anthropic", lambda **kwargs: mock_client)
+    monkeypatch.setattr("story_simulator.agents.litellm.completion", mock_completion)
 
     class FakeMcpSession:
         tools = []

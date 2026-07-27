@@ -7,6 +7,7 @@ requires-python = ">=3.12"
 dependencies = [
     "anthropic>=0.116.0",
     "iacs",
+    "litellm>=1.60.0",
     "matplotlib>=3.11.0",
     "mcp>=1.28.1",
     "pytest>=9.1.1",

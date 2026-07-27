@@ -63,6 +63,22 @@ def _make_mock_client(session_id, events):
     return mock_client
 
 
+def _make_llm_response(content):
+    """Build a fake LiteLLM `ModelResponse` (OpenAI-shaped) with no tool calls."""
+    message = MagicMock()
+    message.content = content
+    message.tool_calls = None
+    message.model_dump.return_value = {"role": "assistant", "content": content}
+    choice = MagicMock(message=message, finish_reason="stop")
+    return MagicMock(choices=[choice])
+
+
+def _sent_text(mock_completion, call_index: int = -1):
+    """The `content` of the last message sent on `mock_completion`'s `call_index`-th call."""
+    messages = mock_completion.call_args_list[call_index].kwargs["messages"]
+    return messages[-1]["content"]
+
+
 def test_agent_world_creates_session_and_returns_response(monkeypatch):
     mock_client = _make_mock_client("sesn_test123", events=None)
     monkeypatch.setattr("story_simulator.world.anthropic.Anthropic", lambda **kwargs: mock_client)
@@ -232,8 +248,8 @@ def test_ensemble_world_forwards_text_to_input_system(tmp_path):
 
 
 def test_ensemble_world_returns_resolvers_last_response(tmp_path, monkeypatch):
-    mock_client = _make_mock_client("sesn_test123", events=None)
-    monkeypatch.setattr("story_simulator.systems.anthropic.Anthropic", lambda **kwargs: mock_client)
+    mock_completion = MagicMock(return_value=_make_llm_response("hello back"))
+    monkeypatch.setattr("story_simulator.agents.litellm.completion", mock_completion)
 
     world = EnsembleWorld(
         systems=OrderedDict(input=InputSystem(), resolver=ResolverAgentSystem()),
@@ -244,14 +260,14 @@ def test_ensemble_world_returns_resolvers_last_response(tmp_path, monkeypatch):
 
 
 def test_ensemble_world_returns_empty_string_without_save_dir(monkeypatch):
-    mock_client = _make_mock_client("sesn_test123", events=None)
-    monkeypatch.setattr("story_simulator.systems.anthropic.Anthropic", lambda **kwargs: mock_client)
+    mock_completion = MagicMock(return_value=_make_llm_response("hello back"))
+    monkeypatch.setattr("story_simulator.agents.litellm.completion", mock_completion)
 
     resolver = ResolverAgentSystem()
     world = EnsembleWorld(systems=OrderedDict(input=InputSystem(), resolver=resolver))
 
     assert world.respond("open the door") == ""
-    mock_client.beta.sessions.create.assert_not_called()
+    mock_completion.assert_not_called()
 
 
 def test_ensemble_world_returns_empty_string_without_a_resolver():
@@ -261,8 +277,8 @@ def test_ensemble_world_returns_empty_string_without_a_resolver():
 
 def test_ensemble_world_full_turn_updates_active_entities_next_turn(tmp_path, monkeypatch):
     save_dir = tmp_path / "save"
-    mock_client = _make_mock_client("sesn_test123", events=None)
-    monkeypatch.setattr("story_simulator.systems.anthropic.Anthropic", lambda **kwargs: mock_client)
+    mock_completion = MagicMock(return_value=_make_llm_response("hello back"))
+    monkeypatch.setattr("story_simulator.agents.litellm.completion", mock_completion)
     monkeypatch.setattr("story_simulator.systems.open_iacs_mcp_session", _fake_open_iacs_mcp_session)
 
     def _record(registrar, save_dir, turn):
@@ -285,16 +301,12 @@ def test_ensemble_world_full_turn_updates_active_entities_next_turn(tmp_path, mo
     )
     world = EnsembleWorld(systems=systems, save_dir=save_dir)
 
-    def _sent_text():
-        events = mock_client.beta.sessions.events.send.call_args.kwargs["events"]
-        return events[0]["content"][0]["text"]
-
     world.respond("look around")
-    assert _sent_text() == "look around"
+    assert _sent_text(mock_completion) == "look around"
 
     world.respond("say hello")
 
-    prompt = _sent_text()
+    prompt = _sent_text(mock_completion)
     assert "nearby_npc" in prompt
     assert prompt.endswith("player's input: say hello")
 

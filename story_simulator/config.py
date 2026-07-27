@@ -11,17 +11,23 @@ ENVIRONMENT_ID = "env_01Rhk13fhp1wwS3RgiDQcK2g"
 # definitions for them and passes their data through unvalidated/untyped.
 MANIFEST_DIR = Path(__file__).parent.parent / "manifest"
 
-# The tracked, ever-growing "living world" save data — the game state
-# everyone starts from by default (see cli.py's `--living` flag). Copied
-# wholesale into any brand-new save_dir (see
-# story_simulator.world._seed_from_living_world) so a fresh sandbox starts
-# from wherever the living world currently stands rather than from scratch.
-LIVING_WORLD_DIR = Path(__file__).parent.parent / "data" / "default"
+# The tracked, ever-growing "living world" save data (see cli.py's `--living`
+# flag). Its setting.yaml carries the door mechanic that teleports the player
+# forward in time and further from the origin each time they walk through it
+# (see data/living_world/setting.yaml), and its save_dir accumulates history
+# turn over turn as it's played. Not used to seed fresh sandboxes (see
+# DEFAULT_WORLD_DIR for that) — `--living` points `save_dir` at this
+# directory directly, so play there both reads and writes the tracked world.
+LIVING_WORLD_DIR = Path(__file__).parent.parent / "data" / "living_world"
 
-# The world's starting premise (the player, the door, the empty expanse) as a
-# hand-authored EC save file — the one part of the living world's save data
-# that's always present, even before it's grown any further.
-DEFAULT_SETTING_PATH = LIVING_WORLD_DIR / "setting.yaml"
+# A plain, hand-authored starting scenario (the player, a door, an empty
+# expanse) with none of the living world's teleport/history mechanic. This is
+# what a brand-new save_dir is seeded from by default (see
+# story_simulator.world._seed_save_dir), so an ordinary throwaway sandbox
+# starts from the same simple premise every time rather than wherever the
+# living world currently stands.
+DEFAULT_WORLD_DIR = Path(__file__).parent.parent / "data" / "default"
+DEFAULT_SETTING_PATH = DEFAULT_WORLD_DIR / "setting.yaml"
 
 
 def resolve_anthropic_api_key() -> str | None:

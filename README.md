@@ -10,7 +10,8 @@ Type `/help` to list available commands, or `/quit` to exit. `run.sh` forwards a
 `./run.sh --world mirror`.
 
 Defaults to the `ensemble` world, saving to a throwaway sandbox at `./data/sandbox` seeded from
-the tracked living world (override with `--world`/`--save-dir`, or pass `--living` to edit the
-tracked living world at `./data/default` directly).
+the plain default world at `./data/default` (override with `--world`/`--save-dir`, or pass
+`--living` to edit the tracked, ever-growing living world at `./data/living_world` directly — it
+has its own teleport-and-advance-time door mechanic, see `data/living_world/setting.yaml`).
 For the `ensemble` world, an SVG scatter plot of every entity with a position is (re)written to
 `<save-dir>/render.svg` after each turn (override with `--render-path`).

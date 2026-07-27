@@ -31,7 +31,7 @@ def parse_args(argv=None):
         "--save-dir",
         default=None,
         help="Directory for the ensemble world's save data (default: a "
-        f"throwaway sandbox at {DEFAULT_SAVE_DIR}, seeded from the living world).",
+        f"throwaway sandbox at {DEFAULT_SAVE_DIR}, seeded from the plain default world).",
     )
     save_dir_group.add_argument(
         "--living",

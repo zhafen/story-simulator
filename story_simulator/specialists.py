@@ -28,6 +28,9 @@ class TerrainAgent:
         self.spec = AgentSpec.from_yaml(config_path)
 
     def generate(self, description: str) -> str:
+        """Return generated terrain/environment text for the given location `description`."""
+        # A single, tool-free completion call: no prior turns to carry, no
+        # follow-up tool use, just "here's what's known, describe the terrain."
         response = complete(
             self.spec,
             [{"role": "user", "content": description}],
@@ -43,6 +46,9 @@ class PhysicsAgent:
         self.spec = AgentSpec.from_yaml(config_path)
 
     def resolve(self, scenario: str) -> str:
+        """Return a plausibility/outcome judgment for the given `scenario` text."""
+        # Same shape as TerrainAgent.generate: one plain completion call,
+        # no tools, no multi-turn back-and-forth.
         response = complete(
             self.spec,
             [{"role": "user", "content": scenario}],

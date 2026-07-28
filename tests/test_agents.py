@@ -5,6 +5,9 @@ from story_simulator.agents import AgentSpec, complete, run_tool_loop
 
 
 def _make_tool_call(call_id: str, name: str, arguments: dict):
+    """Build a fake LiteLLM/OpenAI-shaped tool call for a mocked completion response."""
+    # `.function.arguments` is a JSON *string* on the real object; run_tool_loop
+    # does its own json.loads on it, so the fake has to match that shape.
     function = MagicMock()
     function.name = name
     function.arguments = json.dumps(arguments)
@@ -12,11 +15,17 @@ def _make_tool_call(call_id: str, name: str, arguments: dict):
 
 
 def _make_llm_response(content, tool_calls=None, finish_reason=None):
+    """Build a fake LiteLLM `ModelResponse` (OpenAI-shaped: `.choices[0].message`)."""
+    # Default finish_reason follows the real API's convention: "tool_calls"
+    # when the model wants to call a tool, "stop" for a plain text reply.
     if finish_reason is None:
         finish_reason = "tool_calls" if tool_calls else "stop"
     message = MagicMock()
     message.content = content
     message.tool_calls = tool_calls
+    # run_tool_loop appends `message.model_dump(exclude_none=True)` to the
+    # transcript, so the mock needs a realistic dict there, not a default
+    # auto-generated MagicMock return value.
     dumped = {"role": "assistant", "content": content}
     if tool_calls:
         dumped["tool_calls"] = [

@@ -65,6 +65,8 @@ def _make_mock_client(session_id, events):
 
 def _make_llm_response(content):
     """Build a fake LiteLLM `ModelResponse` (OpenAI-shaped) with no tool calls."""
+    # Simpler than test_systems.py's version: EnsembleWorld-level tests only
+    # exercise plain text replies, never a tool-calling round trip.
     message = MagicMock()
     message.content = content
     message.tool_calls = None
@@ -75,6 +77,9 @@ def _make_llm_response(content):
 
 def _sent_text(mock_completion, call_index: int = -1):
     """The `content` of the last message sent on `mock_completion`'s `call_index`-th call."""
+    # Defaults to the *last* call (-1) here, unlike test_systems.py's
+    # default of the first (0) — EnsembleWorld tests more often care about
+    # what was sent on the most recent turn.
     messages = mock_completion.call_args_list[call_index].kwargs["messages"]
     return messages[-1]["content"]
 

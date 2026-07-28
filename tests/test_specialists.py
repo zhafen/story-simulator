@@ -4,6 +4,12 @@ from story_simulator.specialists import PhysicsAgent, TerrainAgent
 
 
 def _make_llm_response(content):
+    """Build a fake LiteLLM `ModelResponse` (OpenAI-shaped) with no tool calls.
+
+    Both specialists only ever make a single plain completion call (see
+    TerrainAgent.generate/PhysicsAgent.resolve), so this doesn't need the
+    tool_calls handling test_systems.py's/test_agents.py's versions have.
+    """
     message = MagicMock()
     message.content = content
     message.tool_calls = None

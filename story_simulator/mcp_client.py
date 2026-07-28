@@ -60,5 +60,7 @@ async def open_iacs_mcp_session(manifest_dir: str | Path) -> AsyncIterator[McpTo
         async with ClientSession(read, write) as session:
             await session.initialize()
             tools_result = await session.list_tools()
+            # OpenAI-style schemas: what agents.run_tool_loop's LiteLLM calls
+            # expect, regardless of which provider a given agent uses.
             tools = [tool_to_openai_schema(t) for t in tools_result.tools]
             yield McpToolSession(session, tools)

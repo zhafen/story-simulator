@@ -284,16 +284,23 @@ class NPCAgentSystem(AgentSystem):
     def step(self, registrar: Registrar, save_dir: Path | None, turn: int) -> None:
         if save_dir is None:
             return
+        # A human's command (or an NPC decision already made this turn)
+        # exists — nothing left for this System to decide.
         if _latest_input(registrar, "player", turn) is not None:
             return
+        # No NPCs in this world at all — nothing to do.
         npc_aliases = _npc_aliases(registrar)
         if not npc_aliases:
             return
+        # Only one NPC acts per turn (see class docstring); always the
+        # alphabetically-first one when there's more than one.
         alias = npc_aliases[0]
         command = self._decide(registrar, alias)
         _add_input(registrar, alias, command, "player", turn)
 
     def _decide(self, registrar: Registrar, alias: str) -> str:
+        # Build the NPC's decision prompt from its agenda/perception, then a
+        # single non-tool completion call decides what it does this turn.
         prompt = _build_npc_prompt(registrar, alias)
         response = complete(
             self.spec,
@@ -340,8 +347,13 @@ class ResolverAgentSystem(AgentSystem):
         terrain_agent: TerrainAgent | None = None,
         physics_agent: PhysicsAgent | None = None,
     ):
+        # Load this agent's config and pre-resolve its tools: names (from
+        # resolver.yaml, currently generate_terrain/resolve_physics) to
+        # actual tool schemas once, rather than on every turn.
         self.spec = AgentSpec.from_yaml(config_path)
         self.tool_schemas = tools.resolve_tool_schemas(self.spec.tools)
+        # Specialists are injectable (tests pass mocks); production code
+        # gets the real ones, each loading its own config independently.
         self.terrain_agent = terrain_agent if terrain_agent is not None else TerrainAgent()
         self.physics_agent = physics_agent if physics_agent is not None else PhysicsAgent()
         self.last_response: str = ""
@@ -349,10 +361,15 @@ class ResolverAgentSystem(AgentSystem):
     def step(self, registrar: Registrar, save_dir: Path | None, turn: int) -> None:
         if save_dir is None:
             return
+        # Step 1: nothing to resolve until this turn's command exists.
         command_text = _latest_input(registrar, "player", turn)
         if command_text is None:
             return
 
+        # Step 2: gather this turn's context — who's acting, what's active
+        # (nearby) right now, and every entity that exists at all (so the
+        # Resolver can reason about a move's destination even before it's
+        # nearby; see _gather_entity_details).
         # Whichever character actually acted this turn (the human player, or
         # an NPC via NPCAgentSystem) — falling back to "player" only for the
         # degenerate case of a command recorded with no character entity
@@ -361,11 +378,19 @@ class ResolverAgentSystem(AgentSystem):
         actor_alias = _acting_character_alias(registrar, turn) or "player"
         active_aliases = _active_aliases(registrar)
         all_aliases = _all_aliases(registrar)
+
+        # Step 3: run the actual narration — an async tool-calling loop
+        # that may call out to the Terrain/Physics specialists along the
+        # way (see _dispatch_tool) before settling on final narration text.
         response = asyncio.run(
             self._resolve_async(Path(save_dir), actor_alias, command_text, active_aliases, all_aliases)
         )
         self.last_response = response
 
+        # Step 4: record the reply as this turn's narration, attached to
+        # the acting character (seeding a minimal player entity if none
+        # exists yet — only possible on turn 1, before the Archivist has
+        # ever run).
         alias = _acting_character_alias(registrar, turn) or _ensure_player_alias(registrar)
         _add_input(registrar, alias, response, "agent", turn)
 
@@ -377,8 +402,15 @@ class ResolverAgentSystem(AgentSystem):
         active_aliases: set[str],
         all_aliases: set[str],
     ) -> str:
+        # Step 1: look up what's known about every entity, not just active
+        # ones (see _gather_entity_details's docstring for why).
         entity_details = await self._gather_entity_details(save_dir, all_aliases)
+        # Step 2: assemble the full prompt: active entities, their details,
+        # and the actor's own input, in that order.
         prompt = _build_prompt(actor_alias, command_text, active_aliases, entity_details=entity_details)
+        # Step 3: hand it to the provider-agnostic tool-calling loop, which
+        # calls self._dispatch_tool for any generate_terrain/resolve_physics
+        # request before returning the model's final narration text.
         return await run_tool_loop(
             self.spec,
             [{"role": "user", "content": prompt}],
@@ -395,10 +427,14 @@ class ResolverAgentSystem(AgentSystem):
         rather than crashing the turn.
         """
         try:
+            # Route by tool name to the matching specialist; each call
+            # returns plain text for the loop to feed back to the model.
             if name == "generate_terrain":
                 return tools.generate_terrain(self.terrain_agent, arguments["description"])
             if name == "resolve_physics":
                 return tools.resolve_physics(self.physics_agent, arguments["scenario"])
+            # Only reachable if the model hallucinates a tool name that
+            # isn't one of the two above.
             return f"Error: unknown tool {name!r}"
         except Exception as e:
             return f"Error: {e}"
@@ -419,8 +455,12 @@ class ResolverAgentSystem(AgentSystem):
         so a turn with no entities yet at all never pays for spawning the
         `iacs-mcp` subprocess.
         """
+        # Nothing to look up yet (e.g. turn 1, before anything's registered).
         if not aliases:
             return ""
+        # Spawn the iacs MCP subprocess just for this lookup, ask it about
+        # every alias in a stable (sorted) order, then join the results into
+        # one text block for the prompt.
         async with open_iacs_mcp_session(save_dir) as mcp:
             views = [
                 await mcp.call_tool("view_entity", {"entity_id": alias})
@@ -453,11 +493,15 @@ class ArchivistAgentSystem(AgentSystem):
     """
 
     def __init__(self, config_path: Path = PROD_ARCHIVIST_CONFIG_PATH):
+        # fallback_system_path lets a *.test.yaml variant omit `system` and
+        # inherit archivist.yaml's prompt (see AgentSpec.from_yaml).
         self.spec = AgentSpec.from_yaml(config_path, fallback_system_path=PROD_ARCHIVIST_CONFIG_PATH)
 
     def step(self, registrar: Registrar, save_dir: Path | None, turn: int) -> None:
         if save_dir is None:
             return
+        # Nothing to transcribe until both halves of the exchange exist:
+        # the actor's command and the Resolver's narrated reply.
         command_text = _latest_input(registrar, "player", turn)
         narration_text = _latest_input(registrar, "agent", turn)
         if command_text is None or narration_text is None:
@@ -469,6 +513,8 @@ class ArchivistAgentSystem(AgentSystem):
         actor_alias = _acting_character_alias(registrar, turn) or "player"
         save_dir = Path(save_dir)
         save_dir.mkdir(parents=True, exist_ok=True)
+        # Run the actual transcription loop (async, since it spawns the
+        # iacs MCP subprocess).
         asyncio.run(self._record_async(registrar, save_dir, actor_alias, command_text, narration_text, turn))
 
     async def _record_async(
@@ -480,13 +526,24 @@ class ArchivistAgentSystem(AgentSystem):
         world_response: str,
         turn: int,
     ) -> None:
+        # Step 1: spawn the iacs MCP subprocess for this turn only — no
+        # session persists across turns.
         async with open_iacs_mcp_session(save_dir) as mcp:
+            # Step 2: this agent's tools are the iacs MCP server's own tools
+            # plus whatever local tools archivist.yaml names (view_registry,
+            # update_registry), resolved from names via tools.resolve_tool_schemas.
             tool_schemas = mcp.tools + tools.resolve_tool_schemas(self.spec.tools)
             prompt = self._build_prompt(actor_alias, player_input, world_response)
 
+            # Step 3: a small closure so run_tool_loop's uniform
+            # dispatch(name, arguments) signature can still reach this
+            # call's own mcp session/registrar/turn.
             async def dispatch(name: str, arguments: dict) -> str:
                 return await self._dispatch_tool(mcp, registrar, turn, name, arguments)
 
+            # Step 4: run the transcription loop. Its returned text is
+            # discarded — the point of this loop is the update_registry
+            # tool calls it makes along the way, not a reply to show anyone.
             await run_tool_loop(
                 self.spec,
                 [{"role": "user", "content": prompt}],
@@ -534,10 +591,13 @@ class ArchivistAgentSystem(AgentSystem):
         real thing and catching its failure already gives for free.
         """
         try:
+            # The two local tools this System backs itself...
             if name == "view_registry":
                 return tools.view_registry(registrar, arguments["component_type"])
             if name == "update_registry":
                 return tools.update_registry(registrar, turn, arguments["yaml_string"])
+            # ...anything else is one of the iacs MCP server's own tools
+            # (describe_format, validate_yaml, ...), passed straight through.
             return await mcp.call_tool(name, arguments)
         except Exception as e:
             return f"Error: {e}"

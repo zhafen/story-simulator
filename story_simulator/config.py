@@ -1,3 +1,10 @@
+"""Shared configuration: file paths, source identifiers, and credential lookup.
+
+Every other story_simulator module imports from here rather than
+hardcoding these paths/constants itself, so there's one place that knows
+where the manifest, save-data seeds, and world-registry source key live.
+"""
+
 import os
 from pathlib import Path
 

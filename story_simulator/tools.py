@@ -145,6 +145,8 @@ def resolve_tool_schemas(tool_names: list[str]) -> list[dict]:
     the iacs MCP server's own tool schemas separately, since those aren't
     known until an MCP session is opened.
     """
+    # Look each name up in the static registry, silently dropping the
+    # sentinel — callers that care about it check for it separately.
     return [TOOLS_BY_NAME[name] for name in tool_names if name != IACS_MCP_SENTINEL]
 
 
@@ -161,7 +163,10 @@ def update_registry(registrar: Registrar, turn: int | None, yaml_string: str) ->
     `story_simulator.systems`, which itself needs to import this module's
     schemas/functions.
     """
+    # Run the model's YAML through the same ETL pipeline every other write
+    # in this project uses, merging it straight into the live registrar.
     registrar.update(input_dirs=[str(MANIFEST_DIR)], yaml_strings={WORLD_FILE_ID: yaml_string}, time=turn)
+    # Confirmation text handed back to the model as the tool's result.
     return "Merged into the registry."
 
 

@@ -1,23 +1,21 @@
 # story-simulator
 
-## Running the REPL
+story-simulator is an MCP server for a text simulation whose world state lives in a structured
+entity/component registry ([`iacs`](iacs)), not in whatever AI narrates it. There's no built-in
+agent loop — you play by connecting an MCP-aware chat client (Claude Code, Claude Desktop, or
+similar) to the server below and talking to it; that client's own replies *are* the narration.
+
+## Running the server
 
 ```
-./run.sh
+uv run story-simulator-mcp
 ```
 
-Type `/help` to list available commands, or `/quit` to exit. `run.sh` forwards any arguments to `story_simulator.cli`, e.g.
-`./run.sh --world mirror`.
-
-Defaults to the `ensemble` world, saving to a throwaway sandbox at `./data/sandbox` seeded from
-the plain default world at `./data/default` (override with `--world`/`--save-dir`, or pass
-`--living` to edit the tracked, ever-growing living world at `./data/living_world` directly — it
-has its own teleport-and-advance-time door mechanic, see `data/living_world/setting.yaml`).
-For the `ensemble` world, an SVG scatter plot of every entity with a position is (re)written to
-`<save-dir>/render.svg` after each turn (override with `--render-path`).
+Speaks MCP over stdio. Configure your client to launch this command (and, for entity-format
+guidance while transcribing, `iacs-mcp` alongside it — see [`docs/architecture.md`](docs/architecture.md)
+for why both are needed). Once connected, ask the client to call `start_world` to begin.
 
 ## Architecture
 
-See [`docs/architecture.md`](docs/architecture.md) for the turn pipeline, how each agent
-(Resolver, Archivist, NPC, and the Terrain/Physics specialists) is configured and called, and
-how the Resolver delegates to Terrain/Physics on demand.
+See [`docs/architecture.md`](docs/architecture.md) for the full tool list, who plays which role,
+and how `advance_npc_turn` resolves an NPC's turn on its own.

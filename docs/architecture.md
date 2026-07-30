@@ -1,135 +1,101 @@
-# Agent architecture
+# Architecture
 
-This documents the agent/model-call architecture as of the LiteLLM
-migration: every agent (Resolver, Archivist, NPC, and the new Terrain and
-Physics specialists) runs through the same provider-agnostic call path
-instead of a hosted, Anthropic-only platform. See the git history for the
-step-by-step rationale; this page is the current-state map.
+story-simulator is **just an MCP server**. There is no agent loop inside
+this project — the loop is whatever MCP-aware client connects (a human's
+chat agent, an automated harness, ...). story-simulator's job is to expose
+good tools for playing a text simulation whose state lives in a structured
+entity/component registry ([`iacs`](../iacs)), not in the connected agent's
+own context.
 
-## 1. One turn of `EnsembleWorld`
-
-Every turn runs a fixed sequence of `System`s (`story_simulator/systems.py`).
-Systems never call each other directly — the only channel between them is
-the shared iacs `Registrar`, which each System reads from and writes to.
+## 1. Who plays which role
 
 ```mermaid
 flowchart LR
-    ETL[ETLLoaderSystem] --> M1[MapSystem]
-    M1 --> IN["InputSystem /<br/>NPCAgentSystem"]
-    IN --> RES[ResolverAgentSystem]
-    RES --> ARC[ArchivistAgentSystem]
-    ARC --> M2["MapSystem<br/>(again)"]
-    M2 --> VIZ[VisualizerSystem]
-
-    REG[("iacs Registrar / Registry")]
-    ETL <--> REG
-    M1 <--> REG
-    IN <--> REG
-    RES <--> REG
-    ARC <--> REG
-    M2 <--> REG
-    VIZ <--> REG
+    Human(("Human player")) <--> Client["MCP-aware chat client<br/>(the narrator/game master)"]
+    Client -- "start_world, perceive,<br/>view_registry, view_entity,<br/>update_registry,<br/>generate_terrain, resolve_physics,<br/>advance_npc_turn" --> Server["story-simulator-mcp"]
+    Client -- "describe_format,<br/>validate_yaml" --> Iacs["iacs-mcp"]
+    Server -- "reads/writes" --> DB[("registry.duckdb<br/>(per save_dir)")]
+    Server -- "generate_terrain /<br/>resolve_physics calls" --> LiteLLM
+    LiteLLM --> Provider[("Anthropic, OpenAI, Ollama, ...")]
 ```
 
-- **ETLLoaderSystem** loads any not-yet-seen EC files from `save_dir`.
-- **MapSystem** tags nearby entities `active` and records what the
-  reference character has ever perceived (`memory`).
-- **InputSystem** (a human's typed command) or **NPCAgentSystem** (an
-  agenda-driven NPC's decided command, when there's no human command this
-  turn) writes this turn's command.
-- **ResolverAgentSystem** narrates what happens (detailed below).
-- **ArchivistAgentSystem** transcribes the exchange into the registry as
-  entities/components.
-- **MapSystem** runs again so `active`/`memory` reflect where the turn
-  actually landed.
-- **VisualizerSystem** re-renders the position plot.
+For a human player, narration is just the connected agent's own replies —
+nothing in story-simulator narrates *for* it. The agent calls `perceive`/
+`view_registry`/`view_entity` to see what's going on, calls
+`generate_terrain`/`resolve_physics` when it wants a specialist's judgment,
+writes its own reply directly to the player, and calls `update_registry` to
+record what happened. `iacs-mcp` (attached alongside, unmodified) stays the
+format/validation reference — `describe_format`/`validate_yaml` — since it
+has no way to see story-simulator's live, accumulating registry state (its
+own `load_manifest` only re-reads static files).
 
-## 2. Every agent's call path
+## 2. Tools
 
-`AgentSpec` (`story_simulator/agents.py`) is the interchange format between
-"where an agent's config comes from" (today, a `*.yaml` file next to the
-code — `resolver.yaml`, `archivist.yaml`, `npc.yaml`, `terrain.yaml`,
-`physics.yaml`) and "how it's run." Every agent goes through the same two
-entry points, `agents.complete()` (one call) and `agents.run_tool_loop()`
-(a multi-turn tool-calling loop), which call LiteLLM rather than a
-provider-specific SDK — so an agent's `model:` field can name any
-LiteLLM-supported provider, not just Anthropic.
-
-```mermaid
-flowchart TB
-    YAML["*.yaml config<br/>(name / model / system / tools)"] --> Spec[AgentSpec]
-    Spec --> Call["agents.complete() /<br/>agents.run_tool_loop()"]
-    Call --> LiteLLM
-    LiteLLM --> Provider[("Anthropic, OpenAI, Ollama, ...<br/>per agent's model: string")]
-
-    Registry["tools.py named tool registry<br/>(view_registry, update_registry,<br/>generate_terrain, resolve_physics)"] -.->|"resolves spec tools"| Call
-
-    NPCSys[NPCAgentSystem] -->|"complete() — single call"| Call
-    Resolver[ResolverAgentSystem] -->|"run_tool_loop()"| Call
-    Archivist[ArchivistAgentSystem] -->|"run_tool_loop()"| Call
-    Terrain[TerrainAgent] -->|"complete() — single call"| Call
-    Physics[PhysicsAgent] -->|"complete() — single call"| Call
-```
-
-Which agents get a multi-turn tool loop versus a single call, and what
-tools each one has, differs by role:
-
-| Agent | Call shape | Tools |
+| Tool | Needs `start_world` first? | What it does |
 |---|---|---|
-| `NPCAgentSystem` | single `complete()` call | none |
-| `ResolverAgentSystem` | `run_tool_loop()` | `generate_terrain`, `resolve_physics` |
-| `ArchivistAgentSystem` | `run_tool_loop()` | `view_registry`, `update_registry`, plus every tool the iacs MCP server exposes |
-| `TerrainAgent` / `PhysicsAgent` | single `complete()` call | none |
+| `start_world(save_dir, settings_dir=None)` | — | Opens or seeds a save, remembered for this session. |
+| `view_registry(component_type)` | yes | CSV dump of every recorded instance of a component type. |
+| `view_entity(entity_id)` | yes | Every recorded component instance for one entity. |
+| `update_registry(yaml_string)` | yes | Merge entity-first YAML into the registry. |
+| `perceive(reference_alias, radius=20.0)` | yes | Nearby entities for `reference_alias`, tagging them `active` and merging them into its permanent `memory` — same computation the old per-turn `MapSystem` did, now on demand (`story_simulator/spatial.py`). |
+| `generate_terrain(description)` | no | `TerrainAgent` — one LiteLLM call, its own held credentials/model. |
+| `resolve_physics(scenario)` | no | `PhysicsAgent` — same shape. |
+| `advance_npc_turn(npc_alias)` | yes | Decides, narrates, and records one NPC's turn end-to-end — the one case with nobody chatting to drive it. |
 
-## 3. Resolver calling Terrain/Physics on demand
+## 3. `advance_npc_turn`: a tool that calls other tools
 
-The Resolver is the only System that calls the Terrain and Physics
-specialists — neither `TerrainAgent` nor `PhysicsAgent` is a `System`, so
-`EnsembleWorld` never schedules either directly. They're reachable only
-through `ResolverAgentSystem`'s own tool dispatch, on whichever turns the
-Resolver's own judgment calls for them (a location with nothing established
-yet, an action with a non-obvious physical outcome) — not every turn.
+Nested tool calls are how an autonomous NPC turn gets resolved without a
+human or connected chat agent driving it — the outer caller sees one opaque
+tool call; internally it decides, then runs its own small tool-calling loop
+(`agents.run_tool_loop`, unchanged from before) that can call
+`generate_terrain`/`resolve_physics`/`update_registry` in-process before
+returning.
 
 ```mermaid
 sequenceDiagram
-    participant World as EnsembleWorld
-    participant Resolver as ResolverAgentSystem
-    participant LLM as LiteLLM / model
-    participant Terrain as TerrainAgent
-    participant Physics as PhysicsAgent
+    participant Caller as Connected agent
+    participant Tool as advance_npc_turn
+    participant Decide as npc.yaml (complete)
+    participant Narrate as npc_resolver.yaml (run_tool_loop)
 
-    World->>Resolver: step(registrar, save_dir, turn)
-    Resolver->>LLM: run_tool_loop(prompt, tools=[generate_terrain, resolve_physics])
-    alt model requests generate_terrain
-        LLM-->>Resolver: tool_call(generate_terrain, description)
-        Resolver->>Terrain: generate(description)
-        Terrain->>LLM: complete() — its own call
-        Terrain-->>Resolver: terrain text
-        Resolver->>LLM: tool result
+    Caller->>Tool: advance_npc_turn(npc_alias)
+    Tool->>Tool: perceive(npc_alias) — in-process
+    Tool->>Decide: what does npc_alias do?
+    Decide-->>Tool: decided action text
+    Tool->>Narrate: resolve this action
+    alt narration needs terrain
+        Narrate->>Tool: generate_terrain(description)
     end
-    alt model requests resolve_physics
-        LLM-->>Resolver: tool_call(resolve_physics, scenario)
-        Resolver->>Physics: resolve(scenario)
-        Physics->>LLM: complete() — its own call
-        Physics-->>Resolver: outcome text
-        Resolver->>LLM: tool result
+    alt narration needs physics
+        Narrate->>Tool: resolve_physics(scenario)
     end
-    LLM-->>Resolver: final narration text
-    Resolver-->>World: last_response
+    Narrate->>Tool: update_registry(yaml_string)
+    Narrate-->>Tool: summary text
+    Tool-->>Caller: "npc_alias: <action>\n<summary>"
 ```
 
-## 4. What's out of scope today
+## 4. What's still shared with before
 
-- **`AgentWorld`** (`--world agent`/`agent-test`) still talks to the hosted
-  Anthropic Agents/Sessions platform directly — a separate, simpler code
-  path from `EnsembleWorld`, untouched by this migration. It's now the only
-  hosted-platform-dependent code left in the project.
-- **Bring-your-own-agent (EC-defined agents)** isn't implemented. An
-  unwired `agent` component type is reserved in `manifest/builtins.yaml`
-  (`role`/`model`/`system_prompt` fields) as a landing spot for a future
-  loader that turns an `agent` entity into an `AgentSpec` — but nothing
-  reads it yet.
+`story_simulator/agents.py` (`AgentSpec`, `complete`, `run_tool_loop`) and
+`story_simulator/specialists.py` (`TerrainAgent`, `PhysicsAgent`) are
+unchanged from the previous LiteLLM migration — they just get called from
+MCP tool handlers now instead of a `System.step()`. `manifest/builtins.yaml`
+and the `iacs` registry model are untouched.
+
+## 5. What's out of scope today
+
+- **Bring-your-own-agent (EC-defined agents)** isn't implemented. The
+  unwired `agent` component type reserved in `manifest/builtins.yaml`
+  (`role`/`model`/`system_prompt`) is still just a reservation.
 - **Per-provider credential management** is minimal: `resolve_anthropic_api_key()`
-  (`story_simulator/config.py`) covers Anthropic-flavored `model:` strings;
-  any other provider relies on LiteLLM's own standard env-var discovery
-  (e.g. `OPENAI_API_KEY`).
+  (`story_simulator/config.py`) covers Anthropic-flavored `model:` strings
+  for `generate_terrain`/`resolve_physics`/`advance_npc_turn`'s own calls;
+  any other provider relies on LiteLLM's own standard env-var discovery.
+- **`render()`** (the old `VisualizerSystem`'s SVG position plot) hasn't
+  been ported to a tool yet — a natural, low-risk follow-up, not done here.
+- **MCP sampling** (asking the *connected client* to fulfill
+  `generate_terrain`/`resolve_physics` using its own model/credentials,
+  instead of story-simulator holding its own) was considered and deferred —
+  it's human-in-the-loop by design and client support is inconsistent as of
+  this writing, which risks a lot of approval friction for calls this
+  frequent.

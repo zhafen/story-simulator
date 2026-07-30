@@ -2,18 +2,20 @@
 
 `AgentSpec` is the interchange format between "where an agent's config comes
 from" and "how it's run" — today every spec is loaded from a `*.yaml` file
-sitting next to this package (`resolver.yaml`, `npc.yaml`, ...), the same
-files System classes in `story_simulator.systems` already read directly.
-Routing every agent's model call through `complete`/`run_tool_loop` instead
-of a provider-specific SDK (previously `anthropic.Anthropic(...)` calls
-scattered across `systems.py`) is what lets an agent's `model:` field name
-any LiteLLM-supported provider, not just Anthropic.
+sitting next to this package (`npc.yaml`, `terrain.yaml`, ...), read
+directly by whatever calls `complete`/`run_tool_loop`. Routing every agent's
+model call through those instead of a provider-specific SDK is what lets an
+agent's `model:` field name any LiteLLM-supported provider, not just
+Anthropic. Tool schemas themselves aren't part of `AgentSpec` — the MCP
+server (`story_simulator/mcp_server.py`) that calls `run_tool_loop` builds
+those directly, since it's the one place that knows what its own tools
+look like.
 """
 
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Awaitable, Callable
 
@@ -26,33 +28,25 @@ DEFAULT_MAX_TOOL_TURNS = 8
 
 @dataclass
 class AgentSpec:
-    """An agent's provider-agnostic configuration: who it is, what it knows, what it can call.
-
-    `tools` holds tool *names* (resolved against `story_simulator.tools`'s
-    registry, or the `"iacs_mcp"` sentinel meaning "attach every tool the
-    iacs MCP server exposes") rather than provider-specific tool schemas, so
-    a spec stays serializable independent of how its tools end up wired.
-    """
+    """An agent's provider-agnostic configuration: who it is, what it knows."""
 
     name: str
     model: str
     system: str
     description: str = ""
-    tools: list[str] = field(default_factory=list)
 
     @classmethod
     def from_yaml(cls, config_path: Path, fallback_system_path: Path | None = None) -> "AgentSpec":
         """Load an AgentSpec from a config YAML, inheriting `system` from `fallback_system_path` if omitted.
 
-        Mirrors the "test config inherits the prod system prompt" behavior
-        `ResolverAgentSystem._load_config`/`AgentWorld._load_config` already
-        implement, so `*.test.yaml` variants (e.g. `resolver.test.yaml`) can
-        keep overriding just `model`/`name` without repeating the prompt.
+        Lets a config that wants another's system prompt (e.g. a leaner
+        variant of an existing agent) omit `system` entirely rather than
+        repeating it.
         """
         # Step 1: read this agent's own config file.
         local = yaml.safe_load(config_path.read_text())
         # Step 2: if it has no system prompt of its own, borrow one from the
-        # fallback config (e.g. a *.test.yaml pulling resolver.yaml's prompt).
+        # fallback config.
         system = local.get("system")
         if not system and fallback_system_path is not None:
             system = yaml.safe_load(fallback_system_path.read_text())["system"]
@@ -63,7 +57,6 @@ class AgentSpec:
             model=local["model"],
             system=system or "",
             description=local.get("description", ""),
-            tools=local.get("tools", []),
         )
 
 
@@ -106,21 +99,17 @@ async def run_tool_loop(
 ) -> str:
     """Run a multi-turn tool-calling loop for `spec`, returning the final assistant text.
 
-    Generalizes `ArchivistAgentSystem`'s hand-rolled loop (previously tied to
-    `anthropic.Anthropic().messages.create`'s Anthropic-specific content-block
-    shape) into a provider-agnostic one, since LiteLLM normalizes tool
-    calling to the OpenAI shape across every provider it supports: a
-    response's `message.tool_calls` (each with `.id`, `.function.name`,
-    `.function.arguments` as a JSON string) instead of Anthropic's
-    `tool_use` content blocks, and a tool's result goes back as its own
-    `{"role": "tool", "tool_call_id": ..., "content": ...}` message instead
-    of a `tool_result` block nested in a `user` message.
+    Provider-agnostic since LiteLLM normalizes tool calling to the OpenAI
+    shape across every provider it supports: a response's `message.tool_calls`
+    (each with `.id`, `.function.name`, `.function.arguments` as a JSON
+    string), and a tool's result goes back as its own `{"role": "tool",
+    "tool_call_id": ..., "content": ...}` message.
 
-    `dispatch` converts an exception into an `"Error: {e}"` string result
-    rather than raising, the same contract `ArchivistAgentSystem._dispatch_tool`
-    already documents: a malformed tool call from the model (bad arguments,
-    an unknown name) shouldn't crash the turn, just give the model something
-    readable to retry from.
+    `dispatch` is expected to convert an exception into an `"Error: {e}"`
+    string result rather than raising (see e.g. `advance_npc_turn`'s
+    `dispatch` closure in `story_simulator/mcp_server.py`): a malformed tool
+    call from the model (bad arguments, an unknown name) shouldn't crash the
+    turn, just give the model something readable to retry from.
     """
     # Step 1: copy the caller's messages so this loop's own appends don't
     # mutate whatever list they passed in, and make the first model call.

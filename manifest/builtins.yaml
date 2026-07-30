@@ -66,13 +66,15 @@ character_components:
     memory:
         - description: >
             Marks that the owning character has perceived, and now
-            remembers, the entity referenced by value. Written by MapSystem
-            alongside `active` whenever an entity is computed active for a
-            character (see manifest field docs on `active`) but, unlike
-            `active`, never removed once written — a character's memory only
-            grows. Scopes what an NPC's decision-making agent (see
-            NPCAgentSystem) is told about, as opposed to the Resolver, which
-            narrates from every known entity regardless of memory.
+            remembers, the entity referenced by value. Written by the
+            `perceive` MCP tool (`story_simulator/spatial.py`) alongside
+            `active` whenever an entity is computed nearby a character (see
+            manifest field docs on `active`) but, unlike `active`, never
+            removed once written — a character's memory only grows. Scopes
+            what `advance_npc_turn` tells that NPC's decision-making call
+            about, as opposed to a connected agent narrating a human
+            player's turn, which can look up any known entity regardless of
+            memory via `view_registry`/`view_entity`.
         - parent: directed_relation
         - field:
             value:
@@ -81,10 +83,10 @@ character_components:
     agenda:
         - description: >
             A freeform statement of what the owning character wants to do or
-            achieve. Read by NPCAgentSystem to prompt that character's
-            decision-making agent for its command each turn. Player
-            characters don't need one, since a human supplies their commands
-            directly.
+            achieve. Read by `advance_npc_turn` to prompt that character's
+            decision-making call for its action each turn. Player characters
+            don't need one, since a human (via the connected agent) decides
+            their actions directly.
         - parent: str
         - field:
             value:
@@ -92,66 +94,37 @@ character_components:
                 type: str
 
 turn_components:
-    input:
-        - description: A turn's raw text, owned by the acting character's own
-            entity — either that character's command or the Resolver's
-            narrated reply to it, distinguished by `type`. Written by
-            InputSystem (a human player's typed command)/NPCAgentSystem (an
-            NPC's agent-decided command)/ResolverAgentSystem, and read back
-            by ResolverAgentSystem/ArchivistAgentSystem instead of being
-            passed between them directly.
-        - component_type
-        - field:
-            text:
-                description: The turn's raw text.
-                type: str
-                nullable: false
-            type:
-                description: >
-                    Whether this row is a command (a character's action for
-                    the turn — "player" regardless of whether a human typed
-                    it or NPCAgentSystem generated it) or the Resolver's
-                    narrated reply ("agent").
-                type: str
-                nullable: false
-                range:
-                    - player
-                    - agent
-            turn:
-                description: The turn counter this input was produced on.
-                type: int
-                nullable: false
     active:
-        - description: Tag component marking an entity as active (within radius of
-            the player) for the current turn. Written directly onto each active
-            entity by MapSystem, and removed once the entity falls out of range.
+        - description: Tag component marking an entity as currently perceived by
+            whichever character `perceive` was last called for. Written
+            directly onto each nearby entity by the `perceive` MCP tool
+            (`story_simulator/spatial.py`), and removed once the entity
+            falls out of range on the next `perceive` call.
         - component_type
 
 agent_components:
     agent:
         - description: >
             Reserved for a future EC-defined agent: an entity with this
-            component would describe an agent (Resolver, Terrain, Physics,
-            or a world-author's own) the same way `story_simulator.agents.AgentSpec`
-            does today from a `*.yaml` file — not read by any code yet. Not
-            wired to anything in story_simulator; adding a loader that turns
-            an `agent` entity into an `AgentSpec` is future work this
-            reservation exists to keep open, not something this component
-            type does on its own.
+            component would describe an agent (Terrain, Physics, an NPC's
+            own decision-maker, or a world-author's own) the same way
+            `story_simulator.agents.AgentSpec` does today from a `*.yaml`
+            file — not read by any code yet. Not wired to anything in
+            story_simulator; adding a loader that turns an `agent` entity
+            into an `AgentSpec`, and something that dispatches to it from an
+            MCP tool, is future work this reservation exists to keep open,
+            not something this component type does on its own.
 
-            `tools` isn't represented here yet: a scalar field can't hold a
-            list of tool names the way `AgentSpec.tools` can, so an agent's
-            tool list will likely need a relation-style component instead
-            (mirroring how `memory` is a `directed_relation` to other
-            entities, rather than a field on `character`) — left as an open
-            question for whenever this reservation gets built out.
+            `tools` isn't represented here: an MCP-exposed agent's tools are
+            whatever its own tool handler code calls, not something this
+            component needs to declare — see docs/architecture.md.
         - component_type
         - field:
             role:
                 description: >
-                    What this agent is for (e.g. "resolver", "terrain",
-                    "physics", or a world-author's own label) — informational
-                    only until something reads `agent` entities.
+                    What this agent is for (e.g. "terrain", "physics", or a
+                    world-author's own label) — informational only until
+                    something reads `agent` entities.
                 type: str
             model:
                 description: A LiteLLM model string, e.g. "claude-opus-4-8" or "gpt-4.1".

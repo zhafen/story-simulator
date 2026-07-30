@@ -53,8 +53,6 @@ def test_agent_spec_from_yaml_reads_fields(tmp_path):
         "description: A test agent.\n"
         "model: claude-haiku-4-5\n"
         "system: Be terse.\n"
-        "tools:\n"
-        "  - view_registry\n"
     )
 
     spec = AgentSpec.from_yaml(config_path)
@@ -63,16 +61,15 @@ def test_agent_spec_from_yaml_reads_fields(tmp_path):
     assert spec.description == "A test agent."
     assert spec.model == "claude-haiku-4-5"
     assert spec.system == "Be terse."
-    assert spec.tools == ["view_registry"]
 
 
-def test_agent_spec_from_yaml_defaults_tools_to_empty_list(tmp_path):
+def test_agent_spec_from_yaml_defaults_description_to_empty_string(tmp_path):
     config_path = tmp_path / "agent.yaml"
     config_path.write_text("name: Test Agent\nmodel: claude-haiku-4-5\nsystem: Be terse.\n")
 
     spec = AgentSpec.from_yaml(config_path)
 
-    assert spec.tools == []
+    assert spec.description == ""
 
 
 def test_agent_spec_from_yaml_inherits_system_from_fallback_when_omitted(tmp_path):

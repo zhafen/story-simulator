@@ -1,13 +1,9 @@
-"""Single-call specialist agents invoked by ResolverAgentSystem's tool loop.
+"""Single-call specialist agents backing the `generate_terrain`/`resolve_physics` MCP tools.
 
-`TerrainAgent`/`PhysicsAgent` are the concrete form of "called primarily by
-the Resolver": neither is a `System`/`AgentSystem`, so `EnsembleWorld` never
-schedules either directly (see `story_simulator.systems.System`) — they're
-only ever reached through `ResolverAgentSystem`'s `generate_terrain`/
-`resolve_physics` tool dispatch, on whichever turns the Resolver itself
-decides to call them. Mirrors `NPCAgentSystem`'s shape (load an `AgentSpec`,
-make one non-tool completion call per invocation) since neither specialist
-needs its own tools or multi-turn reasoning.
+`TerrainAgent`/`PhysicsAgent` hold no state beyond their own `AgentSpec` and
+make one plain, tool-free completion call per invocation — there's no
+per-turn scheduling here, they only ever run when a connected agent (or
+`advance_npc_turn`'s own nested loop) actually calls the corresponding tool.
 """
 
 from __future__ import annotations

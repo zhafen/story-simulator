@@ -8,14 +8,9 @@ where the manifest, save-data seeds, and world-registry source key live.
 import os
 from pathlib import Path
 
-PROD_AGENT_ID = "agent_01AxMwvbKDkfbVZd73DLNiAy"
-TEST_AGENT_ID = "agent_01FVJeTDVA2mMkYHzkaYvZLo"
-ENVIRONMENT_ID = "env_01Rhk13fhp1wwS3RgiDQcK2g"
-
-# The source identifier every direct registrar update in story_simulator.systems
-# and story_simulator.tools merges under. Shared here (rather than defined once
-# in systems.py) so tools.py's update_registry dispatch can use the same key
-# without importing story_simulator.systems, which itself imports tools.py.
+# The source identifier every direct registrar update (story_simulator.mcp_server,
+# story_simulator.spatial) merges under. Shared here so every module writing
+# to the registry uses the same key without depending on each other.
 WORLD_FILE_ID = "world"
 
 # The story-simulator's own component/field schema (position, character, ...).
@@ -24,23 +19,21 @@ WORLD_FILE_ID = "world"
 # definitions for them and passes their data through unvalidated/untyped.
 MANIFEST_DIR = Path(__file__).parent.parent / "manifest"
 
-# The tracked, ever-growing "living world" save data (see cli.py's `--living`
-# flag). Its setting.yaml carries the door mechanic that teleports the player
-# forward in time and further from the origin each time they walk through it
-# (see data/living_world/setting.yaml), and its save_dir accumulates history
-# turn over turn as it's played. Not used to seed fresh sandboxes (see
-# DEFAULT_WORLD_DIR for that) — `--living` points `save_dir` at this
-# directory directly, so play there both reads and writes the tracked world.
+# The tracked, ever-growing "living world" save data — a `settings_dir` a
+# caller can pass to `start_world` instead of the plain default. Its
+# setting.yaml carries a door mechanic that teleports the player forward in
+# time and further from the origin each time they walk through it (see
+# data/living_world/setting.yaml), and its own directory accumulates history
+# turn over turn as it's played, unlike a fresh save_dir seeded from
+# DEFAULT_WORLD_DIR.
 LIVING_WORLD_DIR = Path(__file__).parent.parent / "data" / "living_world"
 
 # A plain, hand-authored starting scenario (the player, a door, an empty
 # expanse) with none of the living world's teleport/history mechanic. This is
-# what a brand-new save_dir is seeded from by default (see
-# story_simulator.world._seed_save_dir), so an ordinary throwaway sandbox
-# starts from the same simple premise every time rather than wherever the
-# living world currently stands.
+# what `start_world` seeds a save_dir from when no `settings_dir` is given,
+# so an ordinary throwaway save always starts from the same simple premise
+# rather than wherever the living world currently stands.
 DEFAULT_WORLD_DIR = Path(__file__).parent.parent / "data" / "default"
-DEFAULT_SETTING_PATH = DEFAULT_WORLD_DIR / "setting.yaml"
 
 
 def resolve_anthropic_api_key() -> str | None:
@@ -49,10 +42,10 @@ def resolve_anthropic_api_key() -> str | None:
     Some hosting environments reserve ANTHROPIC_API_KEY for their own
     credential plumbing and strip user-supplied values under that name, so
     the key is read from STORY_SIM_ANTHROPIC_API_KEY here. Every agent
-    (`story_simulator.agents.complete`/`run_tool_loop`, and `AgentWorld`'s
-    own `anthropic.Anthropic` client) passes this explicitly as `api_key=`.
-    Returning None falls back to each SDK/LiteLLM's own ANTHROPIC_API_KEY
-    auto-discovery, which still works for local development.
+    (`story_simulator.agents.complete`/`run_tool_loop`) passes this
+    explicitly as `api_key=`. Returning None falls back to each SDK/LiteLLM's
+    own ANTHROPIC_API_KEY auto-discovery, which still works for local
+    development.
 
     Only covers Anthropic-flavored `model:` strings (still every agent's
     default today). An agent configured for another provider relies on

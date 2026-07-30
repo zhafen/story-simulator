@@ -1,0 +1,159 @@
+"""Position/distance/perception helpers shared by the MCP server's tools.
+
+Ported from the old per-turn `MapSystem` into plain functions any tool can
+call on demand: there's no more automatic per-turn pass recomputing "what's
+active" for a fixed reference character, since there's no more per-turn
+pipeline at all. `perceive` (in `mcp_server.py`) calls these when a caller
+actually asks who/what a given character can perceive, for whichever
+character it names — there's no single privileged "the player" anymore, so
+every function here takes its reference character explicitly.
+"""
+
+from __future__ import annotations
+
+import math
+
+import pandas as pd
+import yaml
+from iacs.registrar import Registrar
+
+from story_simulator.config import MANIFEST_DIR, WORLD_FILE_ID
+
+DEFAULT_PERCEPTION_RADIUS = 20.0
+
+
+def merge_yaml_string(registrar: Registrar, yaml_text: str, turn: int | None = None) -> None:
+    """Run the ETL pipeline on a raw YAML string and merge the result into `registrar`.
+
+    Same mechanism every write in this project uses (see the old
+    `story_simulator.systems._merge_yaml_string`): `turn`, when given, backfills
+    the `position.turn` time-dimension field so `latest_positions` can resolve
+    which of an entity's accumulated position rows is current.
+    """
+    registrar.update(input_dirs=[str(MANIFEST_DIR)], yaml_strings={WORLD_FILE_ID: yaml_text}, time=turn)
+
+
+def safe_view(registrar: Registrar, fields: str | list[str]) -> pd.DataFrame | None:
+    """Execute `registrar.view(fields)`, or None if that component type isn't loaded yet."""
+    names = [fields] if isinstance(fields, str) else fields
+    tables = {name.split(".", 1)[0] for name in names}
+    if not tables <= set(registrar.registry.component_types):
+        return None
+    try:
+        return registrar.view(fields).execute()
+    except KeyError:
+        return None
+
+
+def latest_positions(registrar: Registrar) -> pd.DataFrame:
+    """Return one row per entity: its highest-turn `position` (resolves accumulated history)."""
+    columns = ["entity_id", "entity_id.alias", "position.x", "position.y", "position.z", "position.turn"]
+    if "position" not in registrar.registry.component_types:
+        return pd.DataFrame(columns=columns)
+    return registrar.view_current(["position.x", "position.y", "position.z", "position.turn"]).execute()[columns]
+
+
+def entity_position(registrar: Registrar, alias: str) -> tuple[float, float] | None:
+    """Return the (x, y) position of the entity aliased `alias`, or None if it has none yet."""
+    positions = latest_positions(registrar)
+    match = positions[positions["entity_id.alias"] == alias]
+    if match.empty:
+        return None
+    row = match.iloc[0]
+    return (float(row["position.x"]), float(row["position.y"]))
+
+
+def _resolve_point(registrar: Registrar, value: "str | tuple[float, float]") -> tuple[float, float]:
+    """Resolve `value` to an (x, y) point, looking it up as an entity alias if it's a string."""
+    if not isinstance(value, str):
+        return value
+    pos = entity_position(registrar, value)
+    if pos is None:
+        raise ValueError(f"No known position for entity alias {value!r}")
+    return pos
+
+
+def distance(registrar: Registrar, a: "str | tuple[float, float]", b: "str | tuple[float, float]") -> float:
+    """Euclidean distance between `a` and `b`, each an entity alias or a bare (x, y) point."""
+    return math.dist(_resolve_point(registrar, a), _resolve_point(registrar, b))
+
+
+def entities_within(registrar: Registrar, center: "str | tuple[float, float]", radius: float) -> set[str]:
+    """Return the aliases of every positioned entity within `radius` of `center`.
+
+    `center` is an entity alias or a bare (x, y) point; when it's an alias,
+    that entity itself is excluded from the result.
+    """
+    center_pos = _resolve_point(registrar, center)
+    positions = latest_positions(registrar)
+    result = set()
+    for _, row in positions.iterrows():
+        alias = row["entity_id.alias"]
+        if isinstance(center, str) and alias == center:
+            continue
+        pos = (float(row["position.x"]), float(row["position.y"]))
+        if math.dist(pos, center_pos) <= radius:
+            result.add(alias)
+    return result
+
+
+def sync_active_tags(registrar: Registrar, active_aliases: set[str]) -> None:
+    """Overwrite the `active` component table so it exactly matches `active_aliases`.
+
+    A merge can only union rows in, never drop a tag, so the existing
+    `active` table is cleared first, then the current set is merged back in
+    via `same_as` so each tag attaches to its alias's existing entity.
+    """
+    if "active" in registrar.registry.component_types:
+        registrar.overwrite("active", registrar.get("active").limit(0).to_pyarrow())
+    if not active_aliases:
+        return
+    data = {
+        f"{alias}_update": [{"same_as": {"value": alias}}, "active"] for alias in sorted(active_aliases)
+    }
+    merge_yaml_string(registrar, yaml.safe_dump(data, sort_keys=False))
+
+
+def memory_aliases(registrar: Registrar, owner_alias: str) -> set[str]:
+    """Return every alias `owner_alias` has ever perceived (see `record_memory`)."""
+    df = safe_view(registrar, "memory.value")
+    if df is None:
+        return set()
+    return set(df[df["entity_id.alias"] == owner_alias]["memory.value"])
+
+
+def record_memory(registrar: Registrar, owner_alias: str, perceived_aliases: set[str]) -> None:
+    """Merge `perceived_aliases` into `owner_alias`'s permanent `memory` relation.
+
+    Unlike `active`, `memory` is never cleared — a character's memory only
+    grows. Re-merging an already-known alias is a harmless no-op (iacs
+    dedupes exact repeats), so this is safe to call every time `perceive` runs.
+    """
+    if not perceived_aliases:
+        return
+    data = {
+        f"{owner_alias}_memory_update": [
+            {"same_as": {"value": owner_alias}},
+            {"memory": [{"value": alias} for alias in sorted(perceived_aliases)]},
+        ]
+    }
+    merge_yaml_string(registrar, yaml.safe_dump(data, sort_keys=False))
+
+
+def entity_descriptions(registrar: Registrar, aliases: set[str]) -> str:
+    """Return one `alias: description` line per alias in `aliases` that has a `description`."""
+    if not aliases:
+        return ""
+    df = safe_view(registrar, "description.value")
+    if df is None:
+        return ""
+    df = df[df["entity_id.alias"].isin(aliases)]
+    return "\n".join(f"{row['entity_id.alias']}: {row['description.value']}" for _, row in df.iterrows())
+
+
+def active_aliases(registrar: Registrar) -> set[str]:
+    """Return the aliases of every entity currently tagged `active`."""
+    df = safe_view(registrar, "active")
+    if df is None:
+        return set()
+    return set(df["entity_id.alias"])

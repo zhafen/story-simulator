@@ -99,3 +99,63 @@ and the `iacs` registry model are untouched.
   it's human-in-the-loop by design and client support is inconsistent as of
   this writing, which risks a lot of approval friction for calls this
   frequent.
+
+## 6. Follow-ups
+
+Things this rebuild surfaced or left open, not addressed here:
+
+- **Revalidate the human-validated (live) tests.** `tests/test_human_validated.py`
+  tested `EnsembleWorld`/`Interpreter` end-to-end against a real model
+  (`test_startup_one_loop_save`, `test_move`, `test_npc`) and was removed
+  along with those classes. Verification since has been: unit tests against
+  individual tool functions with a mocked LLM, plus one manual MCP client
+  handshake (`list_tools`/`start_world`/`perceive`) — no real-model coverage
+  of narration content, `advance_npc_turn`'s actual LLM behavior, or a
+  multi-turn play session. Need a new `@pytest.mark.live` suite for this
+  shape: at minimum real-model tests for `generate_terrain`/`resolve_physics`/
+  `advance_npc_turn` (the tools with LLM calls inside them), and ideally a
+  scripted client that drives a realistic multi-tool-call sequence against a
+  real save to confirm the tools compose correctly — harder to automate than
+  before, since narration itself now lives in whatever external agent
+  connects rather than one Python entry point like `EnsembleWorld.advance()`.
+
+- **Create an iacs manifest for story-simulator's own architecture.** iacs is
+  built for exactly this (requirement/solution/component entities, plus
+  built-in Requirement Coverage, Traceability, and Todo audits — see
+  `iacs/CLAUDE.md`), but story-simulator has only ever used it as the
+  world-state backend, never on itself. Add a manifest (e.g.
+  `manifest/architecture.yaml`) modeling what each tool needs to guarantee
+  as `requirement` entities and which code satisfies it as `solution of`
+  entities, so `run_dataflow("audit.requirement_coverage")`/`"audit.traceability"`
+  can run against the project's own design — catching an unsolved
+  requirement or orphaned code, and giving reviewers a structured, queryable
+  map alongside this prose doc.
+
+- **Restrict the NPC's write access — it should only say what it wants to
+  do.** Real gap in the current `advance_npc_turn`: its nested narrate/record
+  step (`npc_resolver.yaml` via `run_tool_loop`) is handed `update_registry`
+  directly, so an NPC's automated turn ends up with the same unrestricted
+  write authority as a full narrator. That's inconsistent with how a human
+  player's command works — the player's input never itself writes anything;
+  the *connected agent* does, with full narrator authority. The NPC's decide
+  step (`_build_npc_decision_prompt` + `complete()`) is already correctly
+  scoped (perceive-limited view, no tools at all) — it's the narrate+record
+  step that piggybacks unrestricted authority onto the same automated turn.
+  Needs a redesign that keeps "decide" (restricted, intent-only, no tools)
+  separate from "resolve and record" (needs broader authority), and
+  reconsiders whether the latter belongs in `advance_npc_turn` at all versus
+  being handed to whichever narrator already holds that authority — reserving
+  full autonomy for the case where genuinely nobody is watching.
+
+- **Evaluate a "world time" distinct from system time.** `_next_turn_stamp()`
+  (`int(time.time())`) is a narrow technical fix — a monotonic ordering value
+  so `Registry.view_current` can resolve which of an entity's accumulated
+  position rows is current, now that there's no global turn counter. It
+  isn't, and shouldn't be conflated with, an in-fiction clock. The story
+  itself has no representation of elapsed narrative time today (how long a
+  character has walked, day/night, the living world's "teleport a year
+  forward" door mechanic is currently just narration with no backing data).
+  Worth evaluating an explicit world-time concept — a component tracking
+  in-fiction elapsed time/calendar, independent of wall-clock ordering — so
+  the simulation can reason about story-internal chronology instead of only
+  narrating it.

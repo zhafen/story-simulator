@@ -39,7 +39,7 @@ from story_simulator.config import (
     registry_schema_name,
     registry_url,
     resolve_anthropic_api_key,
-    resolve_postgres_dsn,
+    resolve_database_dsn,
 )
 from story_simulator.specialists import PhysicsAgent, TerrainAgent
 
@@ -128,17 +128,20 @@ def _seed_save_dir(save_dir: Path, settings_dir: Path) -> None:
     shutil.copytree(settings_dir, save_dir, dirs_exist_ok=True)
 
 
-def _ensure_schema(save_dir: Path) -> None:
+def _ensure_postgres_schema(save_dir: Path) -> None:
     """Create `save_dir`'s registry schema if it doesn't exist yet.
 
-    A plain psycopg connection, not `Registrar`/`ibis`: `CREATE SCHEMA` is a
-    one-off admin statement against the database, not registry data, and an
-    unknown schema in a connection's search_path fails silently rather than
-    erroring (see `config.registry_url`), so this has to run before
-    `Registrar.load` ever connects with that schema name.
+    The one Postgres-specific piece of this file -- everywhere else talks to
+    the registry database only through `config.registry_url`/`Registrar`,
+    which stay backend-agnostic via `ibis.connect`. `CREATE SCHEMA` is a
+    one-off admin statement against the database, not registry data, so it's
+    a plain psycopg connection rather than something routed through
+    `Registrar`/`ibis`. Has to run before `Registrar.load` ever connects
+    with that schema name: an unknown schema in a connection's search_path
+    fails silently rather than erroring (see `config.registry_url`).
     """
     schema = registry_schema_name(save_dir)
-    with psycopg.connect(resolve_postgres_dsn(), autocommit=True) as con:
+    with psycopg.connect(resolve_database_dsn(), autocommit=True) as con:
         con.execute(
             psycopg.sql.SQL("CREATE SCHEMA IF NOT EXISTS {}").format(
                 psycopg.sql.Identifier(schema)
@@ -191,7 +194,7 @@ def start_world(save_dir: str, ctx: Context, settings_dir: str | None = None) ->
     save_dir_path.mkdir(parents=True, exist_ok=True)
     _seed_save_dir(save_dir_path, settings_path)
 
-    _ensure_schema(save_dir_path)
+    _ensure_postgres_schema(save_dir_path)
     registrar = Registrar.load(registry_url(save_dir_path))
     # Only load the seed EC files into the registry the first time this
     # save_dir is ever opened (a brand-new schema has no component types

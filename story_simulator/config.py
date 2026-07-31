@@ -52,29 +52,32 @@ DEFAULT_WORLD_DIR = Path(__file__).parent.parent / "data" / "default"
 # writer, same or different process -- for as long as one process holds it
 # open, which is fundamentally incompatible with a live MCP session (the
 # registry needs to stay open for the session's whole lifetime) ever being
-# inspected from anywhere else. Postgres is a real server: any number of
-# processes can hold their own connection to the same schema concurrently,
-# each seeing current committed state, with no coordination between them
-# needed. Defaults match the credentials GitHub Actions' `postgres:` service
-# container ships with, so CI needs no override; local dev needs a Postgres
-# server matching this (or STORY_SIM_POSTGRES_DSN set to point elsewhere).
-DEFAULT_POSTGRES_DSN = "postgresql://postgres:postgres@localhost:5432/postgres"
+# inspected from anywhere else. A client/server database doesn't have this
+# problem: any number of processes can hold their own connection to the same
+# schema concurrently, each seeing current committed state, with no
+# coordination between them needed. iacs's Registry is fully backend-agnostic
+# (`ibis.connect` infers the backend from the URL scheme), so any such
+# backend works here -- the default and currently verified one is Postgres,
+# matching the credentials GitHub Actions' `postgres:` service container
+# ships with, so CI needs no override; local dev needs a database server
+# matching this (or STORY_SIM_DATABASE_DSN set to point elsewhere).
+DEFAULT_DATABASE_DSN = "postgresql://postgres:postgres@localhost:5432/postgres"
 
 
-def resolve_postgres_dsn() -> str:
+def resolve_database_dsn() -> str:
     """Read the registry database's connection string, minus any save's own schema."""
-    return os.environ.get("STORY_SIM_POSTGRES_DSN") or DEFAULT_POSTGRES_DSN
+    return os.environ.get("STORY_SIM_DATABASE_DSN") or DEFAULT_DATABASE_DSN
 
 
 def registry_schema_name(save_dir: Path) -> str:
-    """Derive a stable Postgres schema name for `save_dir`'s registry data.
+    """Derive a stable schema name for `save_dir`'s registry data.
 
-    A hash of the resolved absolute path, not the path itself: Postgres
-    identifiers are case-folded and can't contain characters a filesystem
-    path routinely does (dashes, dots, mixed case that would silently
-    collide once lowercased), so a hash sidesteps sanitizing arbitrary path
-    text while still mapping the same save_dir to the same schema every
-    time `start_world` reopens it.
+    A hash of the resolved absolute path, not the path itself: a SQL
+    identifier is typically case-folded and can't contain characters a
+    filesystem path routinely does (dashes, dots, mixed case that would
+    silently collide once lowercased), so a hash sidesteps sanitizing
+    arbitrary path text while still mapping the same save_dir to the same
+    schema every time `start_world` reopens it.
     """
     digest = hashlib.sha256(str(Path(save_dir).resolve()).encode()).hexdigest()
     return f"save_{digest[:24]}"
@@ -83,16 +86,17 @@ def registry_schema_name(save_dir: Path) -> str:
 def registry_url(save_dir: Path) -> str:
     """Return the `ibis.connect`-able URL for `save_dir`'s registry schema.
 
-    Points at the same database every save shares (`resolve_postgres_dsn`),
-    scoped to that save's own schema via the `schema` query param `ibis`'s
-    postgres backend reads off the URL. The schema itself is not created by
-    connecting to it -- an unknown schema in Postgres's search_path is
+    Points at the same database every save shares (`resolve_database_dsn`),
+    scoped to that save's own schema via the `schema` query param. The
+    schema itself is not created by connecting to it -- with the current
+    Postgres backend, an unknown schema in the connection's search_path is
     silently skipped rather than erroring, which would mean every
     not-yet-created save quietly falls through to whatever's next on the
     path (typically `public`) instead of failing loudly. Callers must
-    `CREATE SCHEMA IF NOT EXISTS` it first (see mcp_server._ensure_schema).
+    create it first (see mcp_server._ensure_postgres_schema); a different
+    backend may need a different equivalent.
     """
-    dsn = resolve_postgres_dsn()
+    dsn = resolve_database_dsn()
     schema = registry_schema_name(save_dir)
     separator = "&" if urllib.parse.urlparse(dsn).query else "?"
     return f"{dsn}{separator}schema={schema}"

@@ -13,13 +13,14 @@ similar) to the server below and talking to it; that client's own replies *are* 
    ```
    export STORY_SIM_ANTHROPIC_API_KEY=sk-...
    ```
-2. Have a Postgres server available for the world registry — any number of processes can hold
-   their own connection to it concurrently (unlike a single-file embedded database), which is
-   what lets the registry stay readable while a session is still live. Defaults to
+2. Have a database available for the world registry — `iacs`'s registry connects via `ibis`, so
+   any backend it supports works, as long as separate processes can hold their own concurrent
+   connection to it (unlike a single-file embedded database), which is what lets the registry
+   stay readable while a session is still live. Defaults to Postgres —
    `postgresql://postgres:postgres@localhost:5432/postgres` (matching GitHub Actions' `postgres:`
    service container, so CI needs no override); point elsewhere with:
    ```
-   export STORY_SIM_POSTGRES_DSN=postgresql://user:pass@host:5432/dbname
+   export STORY_SIM_DATABASE_DSN=postgresql://user:pass@host:5432/dbname
    ```
    Each `save_dir` gets its own schema within that database, created automatically on first
    `start_world`.

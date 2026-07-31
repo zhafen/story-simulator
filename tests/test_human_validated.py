@@ -21,7 +21,7 @@ import psycopg
 import pytest
 
 from iacs.registrar import Registrar
-from story_simulator.config import registry_schema_name, registry_url, resolve_postgres_dsn
+from story_simulator.config import registry_schema_name, registry_url, resolve_database_dsn
 
 REPO_ROOT = Path(__file__).parent.parent
 
@@ -90,18 +90,18 @@ def test_startup_one_loop_save(tmp_path):
     # The claude -p subprocess (and the story-simulator-mcp server it spawned
     # as its own child) has exited by now, releasing its connection --
     # reconnect to the same schema to check what actually got recorded, the
-    # same way the pre-MCP test read `w.registry` in-process. Postgres lets
-    # any process open its own connection to shared, live state, so this
-    # would work even before the subprocess exits.
+    # same way the pre-MCP test read `w.registry` in-process. The registry
+    # database lets any process open its own connection to shared, live
+    # state, so this would work even before the subprocess exits.
     #
     # A weak model can narrate a plausible-sounding scene without ever
     # calling start_world -- confirm the schema actually got created before
     # asserting on its effects, so that failure mode reads as a clear
-    # message rather than silently reading whichever schema Postgres falls
-    # through to when the named one doesn't exist (see
-    # config.registry_url's docstring).
+    # message rather than silently reading whichever schema the current
+    # Postgres backend falls through to when the named one doesn't exist
+    # (see config.registry_url's docstring).
     schema = registry_schema_name(save_dir)
-    with psycopg.connect(resolve_postgres_dsn()) as con:
+    with psycopg.connect(resolve_database_dsn()) as con:
         schema_exists = (
             con.execute(
                 "SELECT 1 FROM information_schema.schemata WHERE schema_name = %s",

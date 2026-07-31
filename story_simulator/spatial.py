@@ -54,9 +54,19 @@ def latest_positions(registrar: Registrar) -> pd.DataFrame:
 
 
 def entity_position(registrar: Registrar, alias: str) -> tuple[float, float] | None:
-    """Return the (x, y) position of the entity aliased `alias`, or None if it has none yet."""
+    """Return the (x, y) position of the entity aliased `alias`, or None if it has none yet.
+
+    Resolves `alias` via `Registrar.get_entity_id` (exact hash, else exact
+    alias, else unambiguous path fragment) rather than a literal
+    `entity_id.alias ==` string match, so a dotted path fragment (e.g.
+    "desk" for "journaling_desk.desk") or a raw entity_id hash resolves the
+    same way `same_as`/`entity_ref` fields already do.
+    """
+    entity_id = registrar.get_entity_id(alias)
+    if entity_id is None:
+        return None
     positions = latest_positions(registrar)
-    match = positions[positions["entity_id.alias"] == alias]
+    match = positions[positions["entity_id"] == entity_id]
     if match.empty:
         return None
     row = match.iloc[0]
@@ -82,18 +92,20 @@ def entities_within(registrar: Registrar, center: "str | tuple[float, float]", r
     """Return the aliases of every positioned entity within `radius` of `center`.
 
     `center` is an entity alias or a bare (x, y) point; when it's an alias,
-    that entity itself is excluded from the result.
+    that entity itself is excluded from the result (resolved via
+    `Registrar.get_entity_id`, so a path fragment or raw hash excludes the
+    right entity even when it doesn't match `entity_id.alias` literally).
     """
+    center_id = registrar.get_entity_id(center) if isinstance(center, str) else None
     center_pos = _resolve_point(registrar, center)
     positions = latest_positions(registrar)
     result = set()
     for _, row in positions.iterrows():
-        alias = row["entity_id.alias"]
-        if isinstance(center, str) and alias == center:
+        if center_id is not None and row["entity_id"] == center_id:
             continue
         pos = (float(row["position.x"]), float(row["position.y"]))
         if math.dist(pos, center_pos) <= radius:
-            result.add(alias)
+            result.add(row["entity_id.alias"])
     return result
 
 
@@ -119,7 +131,10 @@ def memory_aliases(registrar: Registrar, owner_alias: str) -> set[str]:
     df = safe_view(registrar, "memory.value")
     if df is None:
         return set()
-    return set(df[df["entity_id.alias"] == owner_alias]["memory.value"])
+    owner_id = registrar.get_entity_id(owner_alias)
+    if owner_id is None:
+        return set()
+    return set(df[df["entity_id"] == owner_id]["memory.value"])
 
 
 def record_memory(registrar: Registrar, owner_alias: str, perceived_aliases: set[str]) -> None:
@@ -147,7 +162,10 @@ def entity_descriptions(registrar: Registrar, aliases: set[str]) -> str:
     df = safe_view(registrar, "description.value")
     if df is None:
         return ""
-    df = df[df["entity_id.alias"].isin(aliases)]
+    entity_ids = {
+        entity_id for alias in aliases if (entity_id := registrar.get_entity_id(alias)) is not None
+    }
+    df = df[df["entity_id"].isin(entity_ids)]
     return "\n".join(f"{row['entity_id.alias']}: {row['description.value']}" for _, row in df.iterrows())
 
 

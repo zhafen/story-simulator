@@ -206,15 +206,19 @@ def view_entity(entity_id: str, ctx: Context) -> str:
     """Return every recorded component instance for a specific entity.
 
     Args:
-        entity_id: Entity alias (e.g. "player" or "journaling_desk.desk").
+        entity_id: Entity hash, alias, or unambiguous path fragment (e.g.
+            "player", "desk", or "journaling_desk.desk").
     """
     registrar = _get_registrar(ctx)
+    resolved_id = registrar.get_entity_id(entity_id)
+    if resolved_id is None:
+        return f"No data found for {entity_id!r}."
     lines = []
     for component_type in sorted(registrar.registry.component_types):
         df = spatial.safe_view(registrar, component_type)
-        if df is None or df.empty or "entity_id.alias" not in df.columns:
+        if df is None or df.empty or "entity_id" not in df.columns:
             continue
-        matches = df[df["entity_id.alias"] == entity_id]
+        matches = df[df["entity_id"] == resolved_id]
         for _, row in matches.iterrows():
             fields = {k: v for k, v in row.items() if k not in ("entity_id", "entity_id.alias")}
             lines.append(f"{component_type}: {fields}")
@@ -351,8 +355,9 @@ def _build_npc_decision_prompt(registrar: Registrar, alias: str) -> str:
     """Assemble an NPC's decision prompt from its agenda and what it has perceived."""
     agenda_df = spatial.safe_view(registrar, "agenda.value")
     agenda_text = ""
-    if agenda_df is not None:
-        match = agenda_df[agenda_df["entity_id.alias"] == alias]
+    alias_id = registrar.get_entity_id(alias)
+    if agenda_df is not None and alias_id is not None:
+        match = agenda_df[agenda_df["entity_id"] == alias_id]
         if not match.empty:
             agenda_text = match.iloc[-1]["agenda.value"]
 

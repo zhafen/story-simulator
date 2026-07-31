@@ -18,17 +18,25 @@ IACS_MCP_ARGS = ["run", "iacs-mcp"]
 IACS_MANIFEST_ENV_VAR = "IACS_MANIFEST"
 
 
-def tool_to_anthropic_schema(tool: Any) -> dict[str, Any]:
-    """Translate an MCP tool listing into an Anthropic `tools=[...]` entry."""
+def tool_to_openai_schema(tool: Any) -> dict[str, Any]:
+    """Translate an MCP tool listing into an OpenAI-style `tools=[...]` entry.
+
+    LiteLLM normalizes tool calling to this shape across every provider it
+    supports, so this is what `story_simulator.agents.run_tool_loop` needs
+    for any agent that attaches the iacs MCP server's tools.
+    """
     return {
-        "name": tool.name,
-        "description": tool.description or "",
-        "input_schema": tool.inputSchema,
+        "type": "function",
+        "function": {
+            "name": tool.name,
+            "description": tool.description or "",
+            "parameters": tool.inputSchema,
+        },
     }
 
 
 class McpToolSession:
-    """An initialized MCP session, with its tools exposed as Anthropic schemas."""
+    """An initialized MCP session, with its tools exposed as OpenAI-style schemas."""
 
     def __init__(self, session: ClientSession, tools: list[dict[str, Any]]):
         self.session = session
@@ -52,5 +60,7 @@ async def open_iacs_mcp_session(manifest_dir: str | Path) -> AsyncIterator[McpTo
         async with ClientSession(read, write) as session:
             await session.initialize()
             tools_result = await session.list_tools()
-            tools = [tool_to_anthropic_schema(t) for t in tools_result.tools]
+            # OpenAI-style schemas: what agents.run_tool_loop's LiteLLM calls
+            # expect, regardless of which provider a given agent uses.
+            tools = [tool_to_openai_schema(t) for t in tools_result.tools]
             yield McpToolSession(session, tools)

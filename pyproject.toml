@@ -1,3 +1,7 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "story-simulator"
 version = "0.1.0"
@@ -5,8 +9,8 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "anthropic>=0.116.0",
     "iacs",
+    "litellm>=1.60.0",
     "matplotlib>=3.11.0",
     "mcp>=1.28.1",
     "pytest>=9.1.1",
@@ -14,8 +18,15 @@ dependencies = [
     "pyyaml>=6.0.3",
 ]
 
+[project.scripts]
+story-simulator-mcp = "story_simulator.mcp_server:main"
+
 [tool.uv.sources]
 iacs = { path = "iacs", editable = true }
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["story_simulator*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

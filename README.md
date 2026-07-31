@@ -1,17 +1,34 @@
 # story-simulator
 
-## Running the REPL
+story-simulator is an MCP server for a text simulation whose world state lives in a structured
+entity/component registry ([`iacs`](iacs)), not in whatever AI narrates it. There's no built-in
+agent loop — you play by connecting an MCP-aware chat client (Claude Code, Claude Desktop, or
+similar) to the server below and talking to it; that client's own replies *are* the narration.
 
-```
-./run.sh
-```
+## Quick start
 
-Type `/help` to list available commands, or `/quit` to exit. `run.sh` forwards any arguments to `story_simulator.cli`, e.g.
-`./run.sh --world mirror`.
+1. Set a model API key the `generate_terrain`/`resolve_physics`/`advance_npc_turn` tools can use
+   (Anthropic by default — see `.env.example`; any other LiteLLM-supported provider works too,
+   configured via that provider's own standard env var):
+   ```
+   export STORY_SIM_ANTHROPIC_API_KEY=sk-...
+   ```
+2. Configure your MCP-aware client to launch two servers: `uv run story-simulator-mcp` (world
+   state + narrative tools) and `uv run iacs-mcp` (entity-format guidance — `describe_format`/
+   `validate_yaml` — see [`docs/architecture.md`](docs/architecture.md) for why both are needed).
+3. Talk to it:
+   ```
+   you:   I want to play story-simulator. Please start up a world.
+   agent: [calls start_world, view_registry] The world is ready. You are in a vast,
+          empty expanse, with only a door in front of you.
+   you:   I walk through the door.
+   agent: [calls perceive, maybe generate_terrain/resolve_physics, then update_registry]
+          You are now in a wide, empty field.
+   ```
+   The connected agent does the narrating and tool-calling itself — nothing above is
+   story-simulator code running a loop.
 
-Defaults to the `ensemble` world, saving to a throwaway sandbox at `./data/sandbox` seeded from
-the plain default world at `./data/default` (override with `--world`/`--save-dir`, or pass
-`--living` to edit the tracked, ever-growing living world at `./data/living_world` directly — it
-has its own teleport-and-advance-time door mechanic, see `data/living_world/setting.yaml`).
-For the `ensemble` world, an SVG scatter plot of every entity with a position is (re)written to
-`<save-dir>/render.svg` after each turn (override with `--render-path`).
+## Architecture
+
+See [`docs/architecture.md`](docs/architecture.md) for the full tool list, who plays which role,
+how `advance_npc_turn` resolves an NPC's turn on its own, and known follow-ups.

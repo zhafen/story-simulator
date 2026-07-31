@@ -8,9 +8,19 @@ where the manifest, save-data seeds, and world-registry source key live.
 import os
 from pathlib import Path
 
-# The source identifier every direct registrar update (story_simulator.mcp_server,
-# story_simulator.spatial) merges under. Shared here so every module writing
-# to the registry uses the same key without depending on each other.
+# iacs hashes an entity's ID from (source key, entity path) — merging two
+# YAML strings under the SAME source key with the SAME entity path (e.g.
+# "player") resolves to the SAME entity, letting a later write attach to
+# data an earlier write created; merging under a DIFFERENT source key would
+# hash to a different entity_id even for the identical path, silently
+# forking a duplicate instead of updating the original. Every direct
+# registrar.update() call across this project (story_simulator.mcp_server,
+# story_simulator.spatial) must therefore use this one shared key — that's
+# what makes `same_as`-based updates from different tool calls (perceive's
+# active-tag sync, update_registry, ...) reliably land on the same
+# persistent entities rather than fragmenting into duplicates. Not a
+# meaningful name in its own right (any consistent string would do) — it
+# exists purely so every write site agrees on it.
 WORLD_FILE_ID = "world"
 
 # The story-simulator's own component/field schema (position, character, ...).

@@ -14,7 +14,7 @@ flowchart LR
     Human(("Human player")) <--> Client["MCP-aware chat client<br/>(the narrator/game master)"]
     Client -- "start_world, perceive,<br/>view_registry, view_entity,<br/>update_registry,<br/>generate_terrain, resolve_physics,<br/>advance_npc_turn" --> Server["story-simulator-mcp"]
     Client -- "describe_format,<br/>validate_yaml" --> Iacs["iacs-mcp"]
-    Server -- "reads/writes" --> DB[("registry.duckdb<br/>(per save_dir)")]
+    Server -- "reads/writes" --> DB[("Postgres<br/>(one schema per save_dir)")]
     Server -- "generate_terrain /<br/>resolve_physics calls" --> LiteLLM
     LiteLLM --> Provider[("Anthropic, OpenAI, Ollama, ...")]
 ```

@@ -5,7 +5,9 @@ hardcoding these paths/constants itself, so there's one place that knows
 where the manifest, save-data seeds, and world-registry source key live.
 """
 
+import hashlib
 import os
+import urllib.parse
 from pathlib import Path
 
 # iacs hashes an entity's ID from (source key, entity path) — merging two
@@ -44,6 +46,56 @@ LIVING_WORLD_DIR = Path(__file__).parent.parent / "data" / "living_world"
 # so an ordinary throwaway save always starts from the same simple premise
 # rather than wherever the living world currently stands.
 DEFAULT_WORLD_DIR = Path(__file__).parent.parent / "data" / "default"
+
+
+# DuckDB's file-based storage locks out every other connection -- reader or
+# writer, same or different process -- for as long as one process holds it
+# open, which is fundamentally incompatible with a live MCP session (the
+# registry needs to stay open for the session's whole lifetime) ever being
+# inspected from anywhere else. Postgres is a real server: any number of
+# processes can hold their own connection to the same schema concurrently,
+# each seeing current committed state, with no coordination between them
+# needed. Defaults match the credentials GitHub Actions' `postgres:` service
+# container ships with, so CI needs no override; local dev needs a Postgres
+# server matching this (or STORY_SIM_POSTGRES_DSN set to point elsewhere).
+DEFAULT_POSTGRES_DSN = "postgresql://postgres:postgres@localhost:5432/postgres"
+
+
+def resolve_postgres_dsn() -> str:
+    """Read the registry database's connection string, minus any save's own schema."""
+    return os.environ.get("STORY_SIM_POSTGRES_DSN") or DEFAULT_POSTGRES_DSN
+
+
+def registry_schema_name(save_dir: Path) -> str:
+    """Derive a stable Postgres schema name for `save_dir`'s registry data.
+
+    A hash of the resolved absolute path, not the path itself: Postgres
+    identifiers are case-folded and can't contain characters a filesystem
+    path routinely does (dashes, dots, mixed case that would silently
+    collide once lowercased), so a hash sidesteps sanitizing arbitrary path
+    text while still mapping the same save_dir to the same schema every
+    time `start_world` reopens it.
+    """
+    digest = hashlib.sha256(str(Path(save_dir).resolve()).encode()).hexdigest()
+    return f"save_{digest[:24]}"
+
+
+def registry_url(save_dir: Path) -> str:
+    """Return the `ibis.connect`-able URL for `save_dir`'s registry schema.
+
+    Points at the same database every save shares (`resolve_postgres_dsn`),
+    scoped to that save's own schema via the `schema` query param `ibis`'s
+    postgres backend reads off the URL. The schema itself is not created by
+    connecting to it -- an unknown schema in Postgres's search_path is
+    silently skipped rather than erroring, which would mean every
+    not-yet-created save quietly falls through to whatever's next on the
+    path (typically `public`) instead of failing loudly. Callers must
+    `CREATE SCHEMA IF NOT EXISTS` it first (see mcp_server._ensure_schema).
+    """
+    dsn = resolve_postgres_dsn()
+    schema = registry_schema_name(save_dir)
+    separator = "&" if urllib.parse.urlparse(dsn).query else "?"
+    return f"{dsn}{separator}schema={schema}"
 
 
 def resolve_anthropic_api_key() -> str | None:

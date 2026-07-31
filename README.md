@@ -13,10 +13,20 @@ similar) to the server below and talking to it; that client's own replies *are* 
    ```
    export STORY_SIM_ANTHROPIC_API_KEY=sk-...
    ```
-2. Configure your MCP-aware client to launch two servers: `uv run story-simulator-mcp` (world
+2. Have a Postgres server available for the world registry — any number of processes can hold
+   their own connection to it concurrently (unlike a single-file embedded database), which is
+   what lets the registry stay readable while a session is still live. Defaults to
+   `postgresql://postgres:postgres@localhost:5432/postgres` (matching GitHub Actions' `postgres:`
+   service container, so CI needs no override); point elsewhere with:
+   ```
+   export STORY_SIM_POSTGRES_DSN=postgresql://user:pass@host:5432/dbname
+   ```
+   Each `save_dir` gets its own schema within that database, created automatically on first
+   `start_world`.
+3. Configure your MCP-aware client to launch two servers: `uv run story-simulator-mcp` (world
    state + narrative tools) and `uv run iacs-mcp` (entity-format guidance — `describe_format`/
    `validate_yaml` — see [`docs/architecture.md`](docs/architecture.md) for why both are needed).
-3. Talk to it:
+4. Talk to it:
    ```
    you:   I want to play story-simulator. Please start up a world.
    agent: [calls start_world, view_registry] The world is ready. You are in a vast,

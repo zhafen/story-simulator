@@ -43,3 +43,20 @@ similar) to the server below and talking to it; that client's own replies *are* 
 
 See [`docs/architecture.md`](docs/architecture.md) for the full tool list, who plays which role,
 how `advance_npc_turn` resolves an NPC's turn on its own, and known follow-ups.
+
+## Testing
+
+```
+uv run pytest -m "not live"
+```
+runs the full unit suite — fast, no external dependencies beyond the database from Quick start.
+
+```
+uv run pytest -m live
+```
+runs `tests/test_human_validated.py`'s end-to-end tests, which spawn a real headless `claude`
+CLI session against this repo's `.mcp.json` and exercise the actual model + database stack, on
+the cheapest available model on purpose — these tools need to hold up under a bad model's
+mistakes, not just a good one's. Requires the `claude` CLI on `PATH`, a running database (see
+Quick start), and costs real API money, so it's excluded from CI (`pytest -m "not live"`) and
+meant to be run manually.

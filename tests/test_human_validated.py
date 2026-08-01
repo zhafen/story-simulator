@@ -17,7 +17,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
-import psycopg
+import ibis
 import pytest
 
 from iacs.registrar import Registrar
@@ -97,18 +97,14 @@ def test_startup_one_loop_save(tmp_path):
     # A weak model can narrate a plausible-sounding scene without ever
     # calling start_world -- confirm the schema actually got created before
     # asserting on its effects, so that failure mode reads as a clear
-    # message rather than silently reading whichever schema the current
-    # Postgres backend falls through to when the named one doesn't exist
-    # (see config.registry_url's docstring).
+    # message rather than silently reading whichever schema the connection
+    # falls through to when the named one doesn't exist (see
+    # config.registry_url's docstring). `list_databases` is `ibis`'s own,
+    # backend-agnostic name for this -- for the current Postgres backend
+    # that means schemas, but the call itself doesn't hardcode that.
     schema = registry_schema_name(save_dir)
-    with psycopg.connect(resolve_database_dsn()) as con:
-        schema_exists = (
-            con.execute(
-                "SELECT 1 FROM information_schema.schemata WHERE schema_name = %s",
-                (schema,),
-            ).fetchone()
-            is not None
-        )
+    base_con = ibis.connect(resolve_database_dsn())
+    schema_exists = schema in base_con.list_databases()
     assert schema_exists, (
         f"No registry schema was ever created for {save_dir} -- start_world "
         f"was not actually called despite this narration: {narration!r}"

@@ -119,13 +119,13 @@ def _next_turn_stamp() -> int:
     return int(time.time())
 
 
-def _seed_save_dir(save_dir: Path, settings_dir: Path) -> None:
+def _seed_save_dir(save_dir: Path, scenario_dir: Path) -> None:
     """Copy a starting scenario's save data into a brand-new, still-empty save_dir."""
-    if save_dir.resolve() == settings_dir.resolve():
+    if save_dir.resolve() == scenario_dir.resolve():
         return
     if any(save_dir.iterdir()):
         return
-    shutil.copytree(settings_dir, save_dir, dirs_exist_ok=True)
+    shutil.copytree(scenario_dir, save_dir, dirs_exist_ok=True)
 
 
 def _ensure_postgres_schema(save_dir: Path) -> None:
@@ -179,20 +179,20 @@ server = FastMCP(
 
 
 @server.tool()
-def start_world(save_dir: str, ctx: Context, settings_dir: str | None = None) -> str:
-    """Open a world save for this session, seeding it from `settings_dir` if it's empty.
+def start_world(save_dir: str, ctx: Context, scenario_dir: str | None = None) -> str:
+    """Open a world save for this session, seeding it from `scenario_dir` if it's empty.
 
     Args:
         save_dir: Directory holding (or to hold) this world's save data.
-        settings_dir: Starting scenario to seed a brand-new save_dir from
-            (an EC directory, e.g. containing setting.yaml). Defaults to
+        scenario_dir: Starting scenario to seed a brand-new save_dir from
+            (an EC directory, e.g. containing scenario.yaml). Defaults to
             story-simulator's plain default world (a player, a door, an
             empty expanse). Ignored if save_dir already has any save data.
     """
     save_dir_path = Path(save_dir)
-    settings_path = Path(settings_dir) if settings_dir else DEFAULT_WORLD_DIR
+    scenario_path = Path(scenario_dir) if scenario_dir else DEFAULT_WORLD_DIR
     save_dir_path.mkdir(parents=True, exist_ok=True)
-    _seed_save_dir(save_dir_path, settings_path)
+    _seed_save_dir(save_dir_path, scenario_path)
 
     _ensure_postgres_schema(save_dir_path)
     registrar = Registrar.load(registry_url(save_dir_path))

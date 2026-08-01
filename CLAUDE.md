@@ -45,3 +45,29 @@ For validating plain Python logic changes (not the live MCP tool surface
 itself), prefer `pytest`/a fresh `python -c` invocation over this — it's
 lower-friction and always reads current disk state, same reasoning, less
 ceremony.
+
+## Recovering from an idle-triggered MCP disconnect mid-play
+
+A player stepping away between turns for long enough is a routine,
+expected event, not an error state — the story-simulator MCP connection
+can drop while they're gone and reconnect on its own once they're back.
+Handle both failure shapes below without asking the player what to do;
+they don't need to know any of this happened.
+
+- A `mcp__story-simulator__*` call fails with `"No world open for this
+  session yet — call start_world first."` The session-scoped registrar
+  cache reset (a fresh subprocess), but world state itself is untouched —
+  it lives in Postgres, not that process. Silently call `start_world`
+  again with the same `save_dir` (and `settings_dir`, if this is the
+  session's first-ever open) already established earlier in the
+  conversation, then retry the action that failed.
+- The server disconnects entirely (its tools vanish from the deferred
+  list; a system notice says the MCP server disconnected). There's no tool
+  to force a reconnect — just wait. It comes back on its own (confirmed
+  repeatedly, sometimes within the same exchange); the moment a "deferred
+  tools available again" notice arrives, resume the pending player action
+  immediately in the same turn instead of waiting for them to re-prompt.
+
+Keep the save's `save_dir` (and `settings_dir`) in mind for exactly this
+reason — the whole recovery path depends on being able to reopen the same
+save without asking the player to repeat it.

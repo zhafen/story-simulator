@@ -5,8 +5,15 @@
 story-simulator is an MCP server exposing a text-simulation game master's
 tools (`start_world`, `perceive`, `update_registry`, ...). World state lives
 in a Postgres-backed `iacs` registry, not in this project's own process
-memory or in any YAML file — see `docs/architecture.md` for the full
-picture.
+memory — see `docs/architecture.md` for the full picture.
+
+Every `update_registry` call (including the NPC turn's own internal one)
+re-exports the registry's current state to `save_dir/world.yaml` — a
+generated, read-only mirror, not the source of truth, but current as of the
+last turn. The save's original seed (`setting.yaml`, or wherever
+`settings_dir` pointed) is still frozen turn-zero data and never updated —
+if you're reading a save's YAML for current state, read `world.yaml`, not
+the seed file.
 
 ## Reloading `story-simulator-mcp` after editing its code
 

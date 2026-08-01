@@ -148,41 +148,43 @@ Things this rebuild surfaced or left open, not addressed here:
   full autonomy for the case where genuinely nobody is watching.
 
 - **Agents default to reading the seed YAML instead of the live registry.**
-  Coding agents (and probably most agents) are optimized for text-file
-  development, so left to their own defaults they'll grep/read
-  `data/*/setting.yaml` when asked about world state. Those files are only
-  ever a save's *starting* seed (`_seed_save_dir` copies them once, on a
-  brand-new `save_dir`) — `update_registry` writes exclusively to the
-  registry database, never back to any file (verified directly: after
-  several `update_registry` calls that changed a door's recorded
-  description, both the source seed and the save's copied YAML were still
-  byte-identical to the original, untouched mtimes and all). An agent that
-  answers from the YAML is answering from stale, possibly turn-zero state
-  while the actual current state sits in Postgres, reachable only through
-  `view_registry`/`view_entity`. Currently nothing stops this — it's on
-  whoever's narrating to remember `view_entity`/`view_registry` are the
-  source of truth, not the seed files. Candidate fixes, not yet
-  implemented: a repo-root `CLAUDE.md` (read automatically by Claude Code
-  sessions in this repo), a line added to the MCP server's own
-  `instructions` string in `story_simulator/mcp_server.py` (read
-  automatically by any connected MCP client, not just Claude Code), and/or
-  a comment at the top of each seed YAML under `data/` as a last line of
-  defense for an agent that greps straight into the file anyway.
+  **Root-cause fix implemented.** Coding agents (and probably most agents)
+  are optimized for text-file development, so left to their own defaults
+  they'll grep/read `data/*/setting.yaml` when asked about world state —
+  but that file is only ever a save's *starting* seed (`_seed_save_dir`
+  copies it once, on a brand-new `save_dir`), frozen from then on (verified
+  directly: after several `update_registry` calls that changed a door's
+  recorded description, the seed was still byte-identical to the original,
+  untouched mtime and all).
 
-  Another candidate, addressing the root cause rather than just warning
-  around it: have `update_registry` (or a step right after it) sync the
-  registry's current state back out to `save_dir`'s YAML every turn, the
-  direction `iacs-mcp`'s existing `refresh` tool already writes in (`iacs`
-  key findings, `docs/startup-loop-save-plan.md`) — so a save's own YAML
-  stops being frozen seed data and instead reads as a live export, and an
-  agent that defaults to grepping it sees current state instead of stale
-  turn-zero state. This is the opposite direction from the abandoned
-  `IacsArchivist` design (which had an agent author YAML *into* the
-  registry from a growing `world.yaml`); here the registry stays the
-  single source of truth and the YAML becomes a generated, read-only
-  mirror of it. Needs its own design pass (e.g. does every `update_registry`
-  call trigger a full re-export, or is it batched/on-demand) before
-  implementing.
+  Fixed by making the registry sync itself back out to disk instead of
+  relying on an agent to remember it's not the source of truth:
+  `update_registry` (and the NPC turn's own internal registry write, via
+  the shared `_update_registry_and_sync` helper) now calls
+  `Registrar.export_manifest(output_dir=save_dir)` after every merge,
+  re-exporting the full current registry to `save_dir/world.yaml` —
+  the same `save_dir/world.yaml` filename the old, since-removed
+  `IacsArchivist` design used, but built the opposite direction. That
+  design had an agent *author* YAML into the registry from a growing
+  `world.yaml`; here the registry stays the single source of truth and
+  `world.yaml` is a generated, read-only mirror of it, rewritten in full
+  each turn (not incrementally). `export_manifest` also round-trips this
+  project's own field-schema manifest (merged into every registry via
+  `input_dirs=[MANIFEST_DIR]`) into a `builtins.yaml` alongside it; since
+  that's just static schema, not game state, `_export_world_yaml` deletes
+  it rather than let it accumulate in `save_dir`. The original seed YAML
+  itself (`setting.yaml`/wherever `settings_dir` pointed) is still never
+  touched — only the new `world.yaml` mirror is written.
+
+  Not fully closed: an agent could still default to grepping `setting.yaml`
+  specifically (the seed, still frozen) instead of the now-live
+  `world.yaml`, or not know `world.yaml` exists at all. Remaining candidate
+  fixes to point agents at it: a repo-root `CLAUDE.md` (read automatically
+  by Claude Code sessions in this repo — already exists, could mention
+  `world.yaml`), a line added to the MCP server's own `instructions` string
+  in `story_simulator/mcp_server.py` (read automatically by any connected
+  MCP client, not just Claude Code), and/or a comment at the top of each
+  seed YAML under `data/` pointing at the live mirror.
 
 - **Evaluate a "world time" distinct from system time.** `_next_turn_stamp()`
   (`int(time.time())`) is a narrow technical fix — a monotonic ordering value

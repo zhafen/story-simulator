@@ -71,9 +71,9 @@ class TestStartWorld:
         registrar = _registrars[ctx.request_context.session]
         assert "origin" in registrar.registry.component_types
 
-    def test_seeds_from_given_settings_dir(self, tmp_path):
+    def test_seeds_from_given_scenario_dir(self, tmp_path):
         ctx = _make_ctx()
-        start_world(str(tmp_path / "save"), ctx, settings_dir=str(LIVING_WORLD_DIR))
+        start_world(str(tmp_path / "save"), ctx, scenario_dir=str(LIVING_WORLD_DIR))
         registrar = _registrars[ctx.request_context.session]
         positions = registrar.view_df("position")
         assert "journaling_desk.journal" in positions["entity_id.alias"].values
@@ -142,13 +142,13 @@ class TestRegistryTools:
 
 class TestPerceive:
     def test_reports_nothing_nearby_when_alone(self, tmp_path):
-        settings_dir = tmp_path / "settings"
-        settings_dir.mkdir()
-        (settings_dir / "setting.yaml").write_text(
+        scenario_dir = tmp_path / "scenario"
+        scenario_dir.mkdir()
+        (scenario_dir / "scenario.yaml").write_text(
             "solo:\n    - character:\n        interaction_type: player\n    - position: {x: 0, y: 0}\n"
         )
         ctx = _make_ctx()
-        start_world(str(tmp_path / "save"), ctx, settings_dir=str(settings_dir))
+        start_world(str(tmp_path / "save"), ctx, scenario_dir=str(scenario_dir))
         result = perceive("solo", ctx)
         assert "Nothing else" in result
 
@@ -223,16 +223,16 @@ def _make_llm_response(content, tool_calls=None, finish_reason=None):
 class TestAdvanceNpcTurn:
     def test_decides_narrates_and_records(self, tmp_path, monkeypatch):
         ctx = _make_ctx()
-        settings_dir = tmp_path / "settings"
-        settings_dir.mkdir()
-        (settings_dir / "setting.yaml").write_text(
+        scenario_dir = tmp_path / "scenario"
+        scenario_dir.mkdir()
+        (scenario_dir / "scenario.yaml").write_text(
             "traveler:\n"
             "    - character:\n"
             "        interaction_type: npc\n"
             "    - position: {x: 0, y: 0}\n"
             "    - agenda: Explore.\n"
         )
-        start_world(str(tmp_path / "save"), ctx, settings_dir=str(settings_dir))
+        start_world(str(tmp_path / "save"), ctx, scenario_dir=str(scenario_dir))
 
         decide_response = _make_llm_response("I look around.")
         narrate_response = _make_llm_response("The traveler looks around and sees nothing new.")

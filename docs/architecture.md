@@ -33,7 +33,7 @@ own `load_manifest` only re-reads static files).
 
 | Tool | Needs `start_world` first? | What it does |
 |---|---|---|
-| `start_world(save_dir, settings_dir=None)` | — | Opens or seeds a save, remembered for this session. |
+| `start_world(save_dir, scenario_dir=None)` | — | Opens or seeds a save, remembered for this session. |
 | `view_registry(component_type)` | yes | CSV dump of every recorded instance of a component type. |
 | `view_entity(entity_id)` | yes | Every recorded component instance for one entity. |
 | `update_registry(yaml_string)` | yes | Merge entity-first YAML into the registry. |

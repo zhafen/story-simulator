@@ -99,7 +99,7 @@ agent_components:
             own decision-maker, or a world-author's own) the same way
             `story_simulator.agents.AgentSpec` does today from a `*.yaml`
             file. Not read by any code yet — see
-            manifest/story-simulator.yaml: story_simulator_requirements.ec_defined_agents.
+            docs/manifest/story-simulator.yaml: story_simulator_requirements.ec_defined_agents.
         - component_type
         - field:
             role:

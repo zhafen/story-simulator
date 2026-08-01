@@ -86,7 +86,7 @@ and the `iacs` registry model are untouched.
 
 Bring-your-own-agent (EC-defined agents), fuller per-provider credential
 management, a `render()` tool, and MCP sampling are all deferred. See
-`manifest/story-simulator.yaml` (`story_simulator_requirements.ec_defined_agents`,
+`docs/manifest/story-simulator.yaml` (`story_simulator_requirements.ec_defined_agents`,
 `.per_provider_credentials`, `.position_render_tool`) for what each needs and
 why, and `next_work` in that same manifest for cost/impact-scored candidates —
 load it with the iacs MCP server (`load_manifest`) and run
@@ -97,5 +97,5 @@ load it with the iacs MCP server (`load_manifest`) and run
 This rebuild's open gaps (restricted NPC write access, live-model test
 coverage, the seed-YAML-vs-live-registry staleness risk, an explicit
 world-time concept, and this manifest's own authoring) are modeled and
-cost/impact-scored in `manifest/story-simulator.yaml` rather than kept here as
+cost/impact-scored in `docs/manifest/story-simulator.yaml` rather than kept here as
 prose — see its `story_simulator_requirements` and `next_work` entities.

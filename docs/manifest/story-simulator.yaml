@@ -5,13 +5,12 @@
 # and the derived resolved_impact_cost table can be used to decide what to work
 # on next instead of re-deriving that from memory each time.
 #
-# NOTE: this file lives under manifest/ (= story_simulator.config.MANIFEST_DIR),
-# which every registrar.update() call passes as input_dirs for schema
-# validation — so these entities also get merged as data into every live game
-# world's registry, the same way manifest/builtins.yaml's own schema-doc rows
-# already do (see project_history.appearance_retired_for_description). Harmless
-# to gameplay (no alias collisions, nothing reads it as game data) but it does
-# mean e.g. view_registry("todo") during play will include these rows too.
+# Deliberately kept under docs/, not manifest/ (= story_simulator.config.MANIFEST_DIR):
+# that directory is passed as input_dirs to every registrar.update() call, so
+# anything under it is merged as data into every live game world's registry, not
+# just used for schema. Load this file explicitly with the iacs MCP server's
+# own load_manifest(["docs/manifest"]) (or set IACS_MANIFEST) when you want to
+# query or audit it — it's independent of any save's registry.
 
 # ---------------------------------------------------------------------------
 # Impact/cost vocabulary for scoring candidate work (see "next_work" below).

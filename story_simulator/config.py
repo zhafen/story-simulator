@@ -72,6 +72,13 @@ def resolve_database_dsn() -> str:
 def registry_schema_name(save_dir: Path) -> str:
     """Derive a stable schema name for `save_dir`'s registry data.
 
+    "Schema" here means a database namespace (`CREATE SCHEMA foo`, a
+    directory-like grouping of tables within one database) -- not a single
+    table's column structure. Every save's registry has the same table
+    names (`position`, `character`, ...), so without each save living in
+    its own schema, two saves sharing one database would collide on those
+    table names directly.
+
     A hash of the resolved absolute path, not the path itself: a SQL
     identifier is typically case-folded and can't contain characters a
     filesystem path routinely does (dashes, dots, mixed case that would

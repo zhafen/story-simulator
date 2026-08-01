@@ -1,0 +1,76 @@
+file_info:
+    - description: >
+        This file is for testing player movement and the active/inactive
+        entity tracking that comes with it: a player, a door, an empty
+        expanse, and a journaling desk 500m away. Deliberately doesn't
+        include the living world's door-teleport mechanic (see
+        data/living_world/setting.yaml) -- this test moves the player past
+        the door, never through it, so that mechanic would only add an
+        ambiguity risk with nothing to test.
+
+player:
+    - character:
+        interaction_type: player
+    - position:
+        x: 0
+        y: 0
+    - origin
+    - description:
+        value: A traveler, pausing at the edge of a quiet space.
+
+door:
+    - object:
+        type: door
+    - position:
+        x: 0
+        y: 2
+    - description:
+        value: A plain door; what's on its far side isn't visible yet.
+
+expanse:
+    - object:
+        type: expanse
+    - position:
+        x: 0
+        y: 0
+    - description:
+        value: An empty, quiet space, without walls or horizon.
+
+journaling_desk:
+    data:
+        - note: >
+            The journaling desk is chosen to be firmly at a distance where the player
+            can no longer see the door, i.e. the door takes up <=1% of their field of
+            view.  The standard field of view is 60 degrees, so we're looking at an
+            angular size of 0.6 degrees. The relationship between angular size,
+            distance, and height is roughly tan(ang_size) = height / distance, so for an
+            average door of height 2 meters (standard) the distance comes out to
+            2 m / tan(0.6 degrees) = 2 m / 0.01 = 200 m. 500 m is plenty safe.
+    journal:
+        - object:
+            type: journal
+        - position:
+            x: 0
+            y: 500
+        - description: >
+            A piece of leather bent in half around a small booklet of lined paper.
+            It rests on top of the desk and next to a pen.
+        - writing:
+            value: "Leave a note."
+    pen:
+        - object:
+            type: pen
+        - position:
+            x: 0
+            y: 500
+        - description: >
+            A capped fountain pen, jade green and faceted with a wide nib. The ink is
+            black. It rests next to a journal and on a desk.
+    desk:
+        - object:
+            type: desk
+        - position:
+            x: 0
+            y: 500
+        - description: >
+            A solid desk made of a deep reddish-brown wood.

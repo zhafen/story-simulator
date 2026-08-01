@@ -206,7 +206,25 @@ def start_world(save_dir: str, ctx: Context, settings_dir: str | None = None) ->
             f for pattern in ("*.yaml", "*.yml") for f in save_dir_path.rglob(pattern)
         )
         if found:
-            registrar.update(input_dirs=[str(MANIFEST_DIR), *(str(f) for f in found)])
+            # Merged as one WORLD_FILE_ID-keyed string, not passed as
+            # input_dirs: iacs hashes an entity's ID from (source key,
+            # entity path), and input_dirs uses each file's own path as
+            # that source key. Every live write (perceive, update_registry)
+            # merges under the shared WORLD_FILE_ID key instead (see
+            # WORLD_FILE_ID's own docstring) -- seeding under a different
+            # key would give "player" two different entity_ids depending on
+            # whether it's referenced from the seed or from a later write.
+            # A write that reuses the "player" alias without bothering with
+            # same_as (confirmed happening with a weak model) would then
+            # silently fork a duplicate instead of landing on the seeded
+            # entity, and same_as itself would raise on any legitimate
+            # cross-reference that happened to resolve both. Seeding under
+            # the same key sidesteps this: same key + same path always
+            # means the same entity_id, same_as or not.
+            seed_text = "\n".join(f.read_text() for f in found)
+            registrar.update(
+                input_dirs=[str(MANIFEST_DIR)], yaml_strings={WORLD_FILE_ID: seed_text}
+            )
 
     _registrars[ctx.request_context.session] = registrar
     _save_dirs[ctx.request_context.session] = save_dir_path

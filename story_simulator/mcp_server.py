@@ -21,7 +21,9 @@ from __future__ import annotations
 
 import asyncio
 import shutil
+import subprocess
 import time
+import urllib.parse
 import weakref
 from pathlib import Path
 
@@ -128,6 +130,98 @@ def _seed_save_dir(save_dir: Path, settings_dir: Path) -> None:
     shutil.copytree(settings_dir, save_dir, dirs_exist_ok=True)
 
 
+def _is_local_dsn(dsn: str) -> bool:
+    """True if `dsn` points at this machine, where auto-starting a server is safe."""
+    return urllib.parse.urlparse(dsn).hostname in ("localhost", "127.0.0.1", "::1", None)
+
+
+def _can_connect(dsn: str) -> str | None:
+    """Try connecting to `dsn`; return None on success or the error text on failure."""
+    try:
+        with psycopg.connect(dsn, connect_timeout=3):
+            return None
+    except psycopg.OperationalError as exc:
+        return str(exc)
+
+
+def _start_local_postgres() -> None:
+    """Best-effort start of a local `postgresql` service, for dev convenience.
+
+    Only ever called on a localhost DSN that just failed with a
+    connection-refused error (see `_ensure_postgres_running`) -- never
+    manages a remote server. Tries whichever service-control command this
+    install actually has; silently no-ops if neither is found; either way,
+    the caller's own follow-up connection attempt is what determines success.
+    """
+    for cmd in (["service", "postgresql", "start"], ["pg_ctlcluster", "16", "main", "start"]):
+        if shutil.which(cmd[0]) is None:
+            continue
+        try:
+            subprocess.run(cmd, check=True, capture_output=True, timeout=30)
+            return
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+            continue
+
+
+def _ensure_default_dev_password() -> None:
+    """Set the local `postgres` role's password to match the documented default DSN.
+
+    Only reached from `_ensure_postgres_running` after *this call* just
+    started a previously-unreachable local server and it's rejecting the
+    default DSN's password -- i.e. a brand-new cluster whose `postgres` role
+    has no password set yet, not a pre-existing, deliberately configured
+    server. Runs the ALTER as the `postgres` OS/DB user over the Unix
+    socket (peer-authenticated, so no password needed for this step itself),
+    the same way a human operator would from the shell.
+    """
+    alter_sql = "ALTER USER postgres WITH PASSWORD 'postgres';"
+    for cmd in (
+        ["sudo", "-u", "postgres", "psql", "-c", alter_sql],
+        ["su", "postgres", "-c", f"psql -c \"{alter_sql}\""],
+    ):
+        if shutil.which(cmd[0]) is None:
+            continue
+        try:
+            subprocess.run(cmd, check=True, capture_output=True, timeout=15)
+            return
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+            continue
+
+
+def _ensure_postgres_running() -> None:
+    """Make sure the registry database is reachable, starting a local one if not.
+
+    Dev convenience only: intervenes solely for a localhost DSN whose server
+    isn't listening at all (connection refused), which is the "nobody has
+    started Postgres in this environment yet" case. Any other failure --
+    including a *reachable* server rejecting these credentials, which could
+    mean a deliberately different local password -- is left to surface via
+    `_ensure_postgres_schema`'s own connection attempt rather than papered
+    over here.
+    """
+    dsn = resolve_database_dsn()
+    if not _is_local_dsn(dsn):
+        return
+
+    error = _can_connect(dsn)
+    if error is None or "refused" not in error:
+        return
+
+    _start_local_postgres()
+    for _ in range(10):
+        time.sleep(1)
+        error = _can_connect(dsn)
+        if error is None:
+            return
+        if "password authentication failed" in error:
+            _ensure_default_dev_password()
+            if _can_connect(dsn) is None:
+                return
+            break
+    # Give up quietly; _ensure_postgres_schema's own connect will raise a
+    # clear error if the server still isn't usable.
+
+
 def _ensure_postgres_schema(save_dir: Path) -> None:
     """Create `save_dir`'s registry schema if it doesn't exist yet.
 
@@ -194,6 +288,7 @@ def start_world(save_dir: str, ctx: Context, settings_dir: str | None = None) ->
     save_dir_path.mkdir(parents=True, exist_ok=True)
     _seed_save_dir(save_dir_path, settings_path)
 
+    _ensure_postgres_running()
     _ensure_postgres_schema(save_dir_path)
     registrar = Registrar.load(registry_url(save_dir_path))
     # Only load the seed EC files into the registry the first time this

@@ -147,6 +147,28 @@ Things this rebuild surfaced or left open, not addressed here:
   being handed to whichever narrator already holds that authority — reserving
   full autonomy for the case where genuinely nobody is watching.
 
+- **Agents default to reading the seed YAML instead of the live registry.**
+  Coding agents (and probably most agents) are optimized for text-file
+  development, so left to their own defaults they'll grep/read
+  `data/*/setting.yaml` when asked about world state. Those files are only
+  ever a save's *starting* seed (`_seed_save_dir` copies them once, on a
+  brand-new `save_dir`) — `update_registry` writes exclusively to the
+  registry database, never back to any file (verified directly: after
+  several `update_registry` calls that changed a door's recorded
+  description, both the source seed and the save's copied YAML were still
+  byte-identical to the original, untouched mtimes and all). An agent that
+  answers from the YAML is answering from stale, possibly turn-zero state
+  while the actual current state sits in Postgres, reachable only through
+  `view_registry`/`view_entity`. Currently nothing stops this — it's on
+  whoever's narrating to remember `view_entity`/`view_registry` are the
+  source of truth, not the seed files. Candidate fixes, not yet
+  implemented: a repo-root `CLAUDE.md` (read automatically by Claude Code
+  sessions in this repo), a line added to the MCP server's own
+  `instructions` string in `story_simulator/mcp_server.py` (read
+  automatically by any connected MCP client, not just Claude Code), and/or
+  a comment at the top of each seed YAML under `data/` as a last line of
+  defense for an agent that greps straight into the file anyway.
+
 - **Evaluate a "world time" distinct from system time.** `_next_turn_stamp()`
   (`int(time.time())`) is a narrow technical fix — a monotonic ordering value
   so `Registry.view_current` can resolve which of an entity's accumulated

@@ -186,6 +186,20 @@ Things this rebuild surfaced or left open, not addressed here:
   MCP client, not just Claude Code), and/or a comment at the top of each
   seed YAML under `data/` pointing at the live mirror.
 
+- **Review `CLAUDE.md` periodically and extract what's MCP-appropriate.**
+  `CLAUDE.md` has accumulated real operational knowledge from dev/playtest
+  sessions — the `story-simulator-mcp` reload trick, the `world.yaml` sync
+  note above, silent recovery from an idle-triggered mid-play disconnect —
+  but it only ever reaches Claude Code sessions in this repo, which is a
+  narrower audience than "whoever is narrating a story-simulator world."
+  Anything that's true of the *game* rather than of *this specific dev
+  environment* (the `world.yaml`-is-current note is the clear example; the
+  reload trick and disconnect recovery are more Claude-Code/session-specific
+  and may belong staying put) is a candidate to fold into the MCP server's
+  own `instructions` string in `story_simulator/mcp_server.py`, which
+  reaches any connected MCP client, not just Claude Code. Needs a pass to
+  sort which entries are which and move the game-level ones over.
+
 - **Evaluate a "world time" distinct from system time.** `_next_turn_stamp()`
   (`int(time.time())`) is a narrow technical fix — a monotonic ordering value
   so `Registry.view_current` can resolve which of an entity's accumulated

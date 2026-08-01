@@ -169,6 +169,21 @@ Things this rebuild surfaced or left open, not addressed here:
   a comment at the top of each seed YAML under `data/` as a last line of
   defense for an agent that greps straight into the file anyway.
 
+  Another candidate, addressing the root cause rather than just warning
+  around it: have `update_registry` (or a step right after it) sync the
+  registry's current state back out to `save_dir`'s YAML every turn, the
+  direction `iacs-mcp`'s existing `refresh` tool already writes in (`iacs`
+  key findings, `docs/startup-loop-save-plan.md`) — so a save's own YAML
+  stops being frozen seed data and instead reads as a live export, and an
+  agent that defaults to grepping it sees current state instead of stale
+  turn-zero state. This is the opposite direction from the abandoned
+  `IacsArchivist` design (which had an agent author YAML *into* the
+  registry from a growing `world.yaml`); here the registry stays the
+  single source of truth and the YAML becomes a generated, read-only
+  mirror of it. Needs its own design pass (e.g. does every `update_registry`
+  call trigger a full re-export, or is it batched/on-demand) before
+  implementing.
+
 - **Evaluate a "world time" distinct from system time.** `_next_turn_stamp()`
   (`int(time.time())`) is a narrow technical fix — a monotonic ordering value
   so `Registry.view_current` can resolve which of an entity's accumulated

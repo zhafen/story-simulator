@@ -1,6 +1,7 @@
 {
   "permissions": {
     "allow": [
+      "mcp__story-simulator__*",
       "mcp__iacs__*"
     ]
   },

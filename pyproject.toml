@@ -13,6 +13,7 @@ dependencies = [
     "litellm>=1.60.0",
     "matplotlib>=3.11.0",
     "mcp>=1.28.1",
+    "psycopg[binary]>=3.2",
     "pytest>=9.1.1",
     "python-dotenv>=1.2.2",
     "pyyaml>=6.0.3",

@@ -1,5 +1,11 @@
 {
   "mcpServers": {
+    "story-simulator": {
+      "type": "stdio",
+      "command": "uv",
+      "args": ["run", "story-simulator-mcp"],
+      "env": {}
+    },
     "iacs": {
       "type": "stdio",
       "command": "uv",

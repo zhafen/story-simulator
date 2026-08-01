@@ -25,6 +25,8 @@ import time
 import weakref
 from pathlib import Path
 
+import psycopg
+import psycopg.sql
 from iacs.registrar import Registrar
 from mcp.server.fastmcp import Context, FastMCP
 
@@ -34,11 +36,13 @@ from story_simulator.config import (
     DEFAULT_WORLD_DIR,
     MANIFEST_DIR,
     WORLD_FILE_ID,
+    registry_schema_name,
+    registry_url,
     resolve_anthropic_api_key,
+    resolve_database_dsn,
 )
 from story_simulator.specialists import PhysicsAgent, TerrainAgent
 
-REGISTRY_DB_FILENAME = "registry.duckdb"
 PROD_NPC_CONFIG_PATH = Path(__file__).parent / "npc.yaml"
 PROD_NPC_RESOLVER_CONFIG_PATH = Path(__file__).parent / "npc_resolver.yaml"
 MAX_NPC_TURN_TOOL_TURNS = 8
@@ -124,6 +128,27 @@ def _seed_save_dir(save_dir: Path, settings_dir: Path) -> None:
     shutil.copytree(settings_dir, save_dir, dirs_exist_ok=True)
 
 
+def _ensure_postgres_schema(save_dir: Path) -> None:
+    """Create `save_dir`'s registry schema if it doesn't exist yet.
+
+    The one Postgres-specific piece of this file -- everywhere else talks to
+    the registry database only through `config.registry_url`/`Registrar`,
+    which stay backend-agnostic via `ibis.connect`. `CREATE SCHEMA` is a
+    one-off admin statement against the database, not registry data, so it's
+    a plain psycopg connection rather than something routed through
+    `Registrar`/`ibis`. Has to run before `Registrar.load` ever connects
+    with that schema name: an unknown schema in a connection's search_path
+    fails silently rather than erroring (see `config.registry_url`).
+    """
+    schema = registry_schema_name(save_dir)
+    with psycopg.connect(resolve_database_dsn(), autocommit=True) as con:
+        con.execute(
+            psycopg.sql.SQL("CREATE SCHEMA IF NOT EXISTS {}").format(
+                psycopg.sql.Identifier(schema)
+            )
+        )
+
+
 server = FastMCP(
     "story-simulator",
     instructions=(
@@ -169,9 +194,10 @@ def start_world(save_dir: str, ctx: Context, settings_dir: str | None = None) ->
     save_dir_path.mkdir(parents=True, exist_ok=True)
     _seed_save_dir(save_dir_path, settings_path)
 
-    registrar = Registrar.load(save_dir_path / REGISTRY_DB_FILENAME)
+    _ensure_postgres_schema(save_dir_path)
+    registrar = Registrar.load(registry_url(save_dir_path))
     # Only load the seed EC files into the registry the first time this
-    # save_dir is ever opened (a brand-new duckdb has no component types
+    # save_dir is ever opened (a brand-new schema has no component types
     # yet) — a resumed save's accumulated state already lives in the
     # persisted registry, so reloading the loose seed YAML again on every
     # start_world call would re-merge the same starting entities repeatedly.
@@ -180,7 +206,25 @@ def start_world(save_dir: str, ctx: Context, settings_dir: str | None = None) ->
             f for pattern in ("*.yaml", "*.yml") for f in save_dir_path.rglob(pattern)
         )
         if found:
-            registrar.update(input_dirs=[str(MANIFEST_DIR), *(str(f) for f in found)])
+            # Merged as one WORLD_FILE_ID-keyed string, not passed as
+            # input_dirs: iacs hashes an entity's ID from (source key,
+            # entity path), and input_dirs uses each file's own path as
+            # that source key. Every live write (perceive, update_registry)
+            # merges under the shared WORLD_FILE_ID key instead (see
+            # WORLD_FILE_ID's own docstring) -- seeding under a different
+            # key would give "player" two different entity_ids depending on
+            # whether it's referenced from the seed or from a later write.
+            # A write that reuses the "player" alias without bothering with
+            # same_as (confirmed happening with a weak model) would then
+            # silently fork a duplicate instead of landing on the seeded
+            # entity, and same_as itself would raise on any legitimate
+            # cross-reference that happened to resolve both. Seeding under
+            # the same key sidesteps this: same key + same path always
+            # means the same entity_id, same_as or not.
+            seed_text = "\n".join(f.read_text() for f in found)
+            registrar.update(
+                input_dirs=[str(MANIFEST_DIR)], yaml_strings={WORLD_FILE_ID: seed_text}
+            )
 
     _registrars[ctx.request_context.session] = registrar
     _save_dirs[ctx.request_context.session] = save_dir_path

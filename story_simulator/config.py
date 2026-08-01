@@ -10,19 +10,11 @@ import os
 import urllib.parse
 from pathlib import Path
 
-# iacs hashes an entity's ID from (source key, entity path) — merging two
-# YAML strings under the SAME source key with the SAME entity path (e.g.
-# "player") resolves to the SAME entity, letting a later write attach to
-# data an earlier write created; merging under a DIFFERENT source key would
-# hash to a different entity_id even for the identical path, silently
-# forking a duplicate instead of updating the original. Every direct
-# registrar.update() call across this project (story_simulator.mcp_server,
-# story_simulator.spatial) must therefore use this one shared key — that's
-# what makes `same_as`-based updates from different tool calls (perceive's
-# active-tag sync, update_registry, ...) reliably land on the same
-# persistent entities rather than fragmenting into duplicates. Not a
-# meaningful name in its own right (any consistent string would do) — it
-# exists purely so every write site agrees on it.
+# The one source key every direct registrar.update() call across this project
+# (mcp_server.py, spatial.py) must merge under — iacs hashes an entity's ID
+# from (source key, entity path), so a different key at any call site would
+# fork a duplicate entity instead of updating the original. See
+# manifest/story-simulator.yaml: story_simulator_requirements.single_shared_source_key.
 WORLD_FILE_ID = "world"
 
 # The story-simulator's own component/field schema (position, character, ...).
@@ -48,19 +40,13 @@ LIVING_WORLD_DIR = Path(__file__).parent.parent / "data" / "living_world"
 DEFAULT_WORLD_DIR = Path(__file__).parent.parent / "data" / "default"
 
 
-# DuckDB's file-based storage locks out every other connection -- reader or
-# writer, same or different process -- for as long as one process holds it
-# open, which is fundamentally incompatible with a live MCP session (the
-# registry needs to stay open for the session's whole lifetime) ever being
-# inspected from anywhere else. A client/server database doesn't have this
-# problem: any number of processes can hold their own connection to the same
-# schema concurrently, each seeing current committed state, with no
-# coordination between them needed. iacs's Registry is fully backend-agnostic
-# (`ibis.connect` infers the backend from the URL scheme), so any such
-# backend works here -- the default and currently verified one is Postgres,
-# matching the credentials GitHub Actions' `postgres:` service container
-# ships with, so CI needs no override; local dev needs a database server
-# matching this (or STORY_SIM_DATABASE_DSN set to point elsewhere).
+# Registry backend: any ibis.connect-resolvable URL works (Registry is
+# backend-agnostic); Postgres is the default and verified one, since it lets
+# multiple processes hold their own concurrent connection to the same schema,
+# unlike a single-file embedded database. Matches GitHub Actions' `postgres:`
+# service container, so CI needs no override; local dev needs a matching
+# database server (or STORY_SIM_DATABASE_DSN pointed elsewhere). See
+# manifest/story-simulator.yaml: story_simulator_requirements.concurrent_readable_registry.
 DEFAULT_DATABASE_DSN = "postgresql://postgres:postgres@localhost:5432/postgres"
 
 
@@ -120,11 +106,9 @@ def resolve_anthropic_api_key() -> str | None:
     own ANTHROPIC_API_KEY auto-discovery, which still works for local
     development.
 
-    Only covers Anthropic-flavored `model:` strings (still every agent's
-    default today). An agent configured for another provider relies on
-    LiteLLM's own standard env-var discovery for that provider (e.g.
-    OPENAI_API_KEY) instead — this project doesn't yet have a per-user,
-    per-provider credential story; that's follow-up work, not something this
-    function tries to anticipate.
+    Only covers Anthropic-flavored `model:` strings. An agent configured for
+    another provider relies on LiteLLM's own standard env-var discovery for
+    that provider instead (e.g. OPENAI_API_KEY) — see
+    manifest/story-simulator.yaml: story_simulator_requirements.per_provider_credentials.
     """
     return os.environ.get("STORY_SIM_ANTHROPIC_API_KEY") or None

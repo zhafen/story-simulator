@@ -84,115 +84,18 @@ and the `iacs` registry model are untouched.
 
 ## 5. What's out of scope today
 
-- **Bring-your-own-agent (EC-defined agents)** isn't implemented. The
-  unwired `agent` component type reserved in `manifest/builtins.yaml`
-  (`role`/`model`/`system_prompt`) is still just a reservation.
-- **Per-provider credential management** is minimal: `resolve_anthropic_api_key()`
-  (`story_simulator/config.py`) covers Anthropic-flavored `model:` strings
-  for `generate_terrain`/`resolve_physics`/`advance_npc_turn`'s own calls;
-  any other provider relies on LiteLLM's own standard env-var discovery.
-- **`render()`** (the old `VisualizerSystem`'s SVG position plot) hasn't
-  been ported to a tool yet — a natural, low-risk follow-up, not done here.
-- **MCP sampling** (asking the *connected client* to fulfill
-  `generate_terrain`/`resolve_physics` using its own model/credentials,
-  instead of story-simulator holding its own) was considered and deferred —
-  it's human-in-the-loop by design and client support is inconsistent as of
-  this writing, which risks a lot of approval friction for calls this
-  frequent.
+Bring-your-own-agent (EC-defined agents), fuller per-provider credential
+management, a `render()` tool, and MCP sampling are all deferred. See
+`manifest/story-simulator.yaml` (`story_simulator_requirements.ec_defined_agents`,
+`.per_provider_credentials`, `.position_render_tool`) for what each needs and
+why, and `next_work` in that same manifest for cost/impact-scored candidates —
+load it with the iacs MCP server (`load_manifest`) and run
+`run_dataflow("audit.requirement_coverage")` to check current status.
 
 ## 6. Follow-ups
 
-Things this rebuild surfaced or left open, not addressed here:
-
-- **Revalidate the human-validated (live) tests.** `tests/test_human_validated.py`
-  tested `EnsembleWorld`/`Interpreter` end-to-end against a real model
-  (`test_startup_one_loop_save`, `test_move`, `test_npc`) and was removed
-  along with those classes. Verification since has been: unit tests against
-  individual tool functions with a mocked LLM, plus one manual MCP client
-  handshake (`list_tools`/`start_world`/`perceive`) — no real-model coverage
-  of narration content, `advance_npc_turn`'s actual LLM behavior, or a
-  multi-turn play session. Need a new `@pytest.mark.live` suite for this
-  shape: at minimum real-model tests for `generate_terrain`/`resolve_physics`/
-  `advance_npc_turn` (the tools with LLM calls inside them), and ideally a
-  scripted client that drives a realistic multi-tool-call sequence against a
-  real save to confirm the tools compose correctly — harder to automate than
-  before, since narration itself now lives in whatever external agent
-  connects rather than one Python entry point like `EnsembleWorld.advance()`.
-
-- **Create an iacs manifest for story-simulator's own architecture.** iacs is
-  built for exactly this (requirement/solution/component entities, plus
-  built-in Requirement Coverage, Traceability, and Todo audits — see
-  `iacs/CLAUDE.md`), but story-simulator has only ever used it as the
-  world-state backend, never on itself. Add a manifest (e.g.
-  `manifest/architecture.yaml`) modeling what each tool needs to guarantee
-  as `requirement` entities and which code satisfies it as `solution of`
-  entities, so `run_dataflow("audit.requirement_coverage")`/`"audit.traceability"`
-  can run against the project's own design — catching an unsolved
-  requirement or orphaned code, and giving reviewers a structured, queryable
-  map alongside this prose doc.
-
-- **Restrict the NPC's write access — it should only say what it wants to
-  do.** Real gap in the current `advance_npc_turn`: its nested narrate/record
-  step (`npc_resolver.yaml` via `run_tool_loop`) is handed `update_registry`
-  directly, so an NPC's automated turn ends up with the same unrestricted
-  write authority as a full narrator. That's inconsistent with how a human
-  player's command works — the player's input never itself writes anything;
-  the *connected agent* does, with full narrator authority. The NPC's decide
-  step (`_build_npc_decision_prompt` + `complete()`) is already correctly
-  scoped (perceive-limited view, no tools at all) — it's the narrate+record
-  step that piggybacks unrestricted authority onto the same automated turn.
-  Needs a redesign that keeps "decide" (restricted, intent-only, no tools)
-  separate from "resolve and record" (needs broader authority), and
-  reconsiders whether the latter belongs in `advance_npc_turn` at all versus
-  being handed to whichever narrator already holds that authority — reserving
-  full autonomy for the case where genuinely nobody is watching.
-
-- **Agents default to reading the seed YAML instead of the live registry.**
-  Coding agents (and probably most agents) are optimized for text-file
-  development, so left to their own defaults they'll grep/read
-  `data/*/setting.yaml` when asked about world state. Those files are only
-  ever a save's *starting* seed (`_seed_save_dir` copies them once, on a
-  brand-new `save_dir`) — `update_registry` writes exclusively to the
-  registry database, never back to any file (verified directly: after
-  several `update_registry` calls that changed a door's recorded
-  description, both the source seed and the save's copied YAML were still
-  byte-identical to the original, untouched mtimes and all). An agent that
-  answers from the YAML is answering from stale, possibly turn-zero state
-  while the actual current state sits in Postgres, reachable only through
-  `view_registry`/`view_entity`. Currently nothing stops this — it's on
-  whoever's narrating to remember `view_entity`/`view_registry` are the
-  source of truth, not the seed files. Candidate fixes, not yet
-  implemented: a repo-root `CLAUDE.md` (read automatically by Claude Code
-  sessions in this repo), a line added to the MCP server's own
-  `instructions` string in `story_simulator/mcp_server.py` (read
-  automatically by any connected MCP client, not just Claude Code), and/or
-  a comment at the top of each seed YAML under `data/` as a last line of
-  defense for an agent that greps straight into the file anyway.
-
-  Another candidate, addressing the root cause rather than just warning
-  around it: have `update_registry` (or a step right after it) sync the
-  registry's current state back out to `save_dir`'s YAML every turn, the
-  direction `iacs-mcp`'s existing `refresh` tool already writes in (`iacs`
-  key findings, `docs/startup-loop-save-plan.md`) — so a save's own YAML
-  stops being frozen seed data and instead reads as a live export, and an
-  agent that defaults to grepping it sees current state instead of stale
-  turn-zero state. This is the opposite direction from the abandoned
-  `IacsArchivist` design (which had an agent author YAML *into* the
-  registry from a growing `world.yaml`); here the registry stays the
-  single source of truth and the YAML becomes a generated, read-only
-  mirror of it. Needs its own design pass (e.g. does every `update_registry`
-  call trigger a full re-export, or is it batched/on-demand) before
-  implementing.
-
-- **Evaluate a "world time" distinct from system time.** `_next_turn_stamp()`
-  (`int(time.time())`) is a narrow technical fix — a monotonic ordering value
-  so `Registry.view_current` can resolve which of an entity's accumulated
-  position rows is current, now that there's no global turn counter. It
-  isn't, and shouldn't be conflated with, an in-fiction clock. The story
-  itself has no representation of elapsed narrative time today (how long a
-  character has walked, day/night, the living world's "teleport a year
-  forward" door mechanic is currently just narration with no backing data).
-  Worth evaluating an explicit world-time concept — a component tracking
-  in-fiction elapsed time/calendar, independent of wall-clock ordering — so
-  the simulation can reason about story-internal chronology instead of only
-  narrating it.
+This rebuild's open gaps (restricted NPC write access, live-model test
+coverage, the seed-YAML-vs-live-registry staleness risk, an explicit
+world-time concept, and this manifest's own authoring) are modeled and
+cost/impact-scored in `manifest/story-simulator.yaml` rather than kept here as
+prose — see its `story_simulator_requirements` and `next_work` entities.

@@ -46,14 +46,12 @@ physics_components:
                 nullable: false
                 default: 0
             turn:
-                description: The turn counter this position was recorded on. Stamped
-                    automatically when the value is merged in (see
-                    story_simulator.systems._merge_yaml_string), not authored
-                    directly, so it stays nullable for rows loaded without one
-                    (e.g. hand-authored save files). Entities can accumulate
-                    multiple position rows over time; flagged time_dimension so
-                    Registry.view_current resolves the row with the highest
-                    turn as the current position.
+                description: Ordering stamp backfilled on merge (see
+                    story_simulator.spatial.merge_yaml_string), not authored
+                    directly, so it stays nullable for hand-authored rows.
+                    Entities can accumulate multiple position rows over time;
+                    flagged time_dimension so Registry.view_current resolves
+                    the row with the highest turn as the current position.
                 type: int
                 nullable: true
                 time_dimension: true
@@ -66,15 +64,10 @@ character_components:
     memory:
         - description: >
             Marks that the owning character has perceived, and now
-            remembers, the entity referenced by value. Written by the
-            `perceive` MCP tool (`story_simulator/spatial.py`) alongside
-            `active` whenever an entity is computed nearby a character (see
-            manifest field docs on `active`) but, unlike `active`, never
-            removed once written — a character's memory only grows. Scopes
-            what `advance_npc_turn` tells that NPC's decision-making call
-            about, as opposed to a connected agent narrating a human
-            player's turn, which can look up any known entity regardless of
-            memory via `view_registry`/`view_entity`.
+            remembers, the entity referenced by value. Written by `perceive`
+            alongside `active`, but unlike `active`, never removed once
+            written — a character's memory only grows. Scopes what
+            `advance_npc_turn` tells that NPC's decision-making call about.
         - parent: directed_relation
         - field:
             value:
@@ -84,9 +77,7 @@ character_components:
         - description: >
             A freeform statement of what the owning character wants to do or
             achieve. Read by `advance_npc_turn` to prompt that character's
-            decision-making call for its action each turn. Player characters
-            don't need one, since a human (via the connected agent) decides
-            their actions directly.
+            decision-making call each turn. Player characters don't need one.
         - parent: str
         - field:
             value:
@@ -96,10 +87,8 @@ character_components:
 turn_components:
     active:
         - description: Tag component marking an entity as currently perceived by
-            whichever character `perceive` was last called for. Written
-            directly onto each nearby entity by the `perceive` MCP tool
-            (`story_simulator/spatial.py`), and removed once the entity
-            falls out of range on the next `perceive` call.
+            whichever character `perceive` was last called for. Replaced
+            wholesale on each `perceive` call to match its current result set.
         - component_type
 
 agent_components:
@@ -109,22 +98,12 @@ agent_components:
             component would describe an agent (Terrain, Physics, an NPC's
             own decision-maker, or a world-author's own) the same way
             `story_simulator.agents.AgentSpec` does today from a `*.yaml`
-            file — not read by any code yet. Not wired to anything in
-            story_simulator; adding a loader that turns an `agent` entity
-            into an `AgentSpec`, and something that dispatches to it from an
-            MCP tool, is future work this reservation exists to keep open,
-            not something this component type does on its own.
-
-            `tools` isn't represented here: an MCP-exposed agent's tools are
-            whatever its own tool handler code calls, not something this
-            component needs to declare — see docs/architecture.md.
+            file. Not read by any code yet — see
+            manifest/story-simulator.yaml: story_simulator_requirements.ec_defined_agents.
         - component_type
         - field:
             role:
-                description: >
-                    What this agent is for (e.g. "terrain", "physics", or a
-                    world-author's own label) — informational only until
-                    something reads `agent` entities.
+                description: What this agent is for (e.g. "terrain", "physics").
                 type: str
             model:
                 description: A LiteLLM model string, e.g. "claude-opus-4-8" or "gpt-4.1".

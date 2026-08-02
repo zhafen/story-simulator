@@ -37,7 +37,7 @@ own `load_manifest` only re-reads static files).
 | `view_registry(component_type)` | yes | CSV dump of every recorded instance of a component type. |
 | `view_entity(entity_id)` | yes | Every recorded component instance for one entity. |
 | `update_registry(yaml_string)` | yes | Merge entity-first YAML into the registry. |
-| `perceive(reference_alias, min_radius=20.0)` | yes | Nearby entities for `reference_alias`, tagging them `active` and merging them into its permanent `memory` — same computation the old per-turn `MapSystem` did, now on demand (`story_simulator/spatial.py`). Each entity's own visibility distance is computed from its `size` component (falling back to `game_config.DEFAULT_ENTITY_SIZE`) via the same field-of-view heuristic `data/living_world/setting.yaml`'s journaling desk placement uses, not a single flat cutoff for everyone; `min_radius` is a floor guaranteeing anything at least this close is always perceptible regardless of size. |
+| `perceive(reference_alias)` | yes | Nearby entities for `reference_alias`, tagging them `active` and merging them into its permanent `memory` — same computation the old per-turn `MapSystem` did, now on demand (`story_simulator/spatial.py`). Each entity's own visibility distance is computed from its `size` component (falling back to `game_config.DEFAULT_ENTITY_SIZE`) via the same field-of-view heuristic `data/living_world/setting.yaml`'s journaling desk placement uses, not a single flat cutoff for everyone — computed as one relational query (join + filter) via ibis, not a Python loop over rows. |
 | `generate_terrain(description)` | no | `TerrainAgent` — one LiteLLM call, its own held credentials/model. |
 | `resolve_physics(scenario)` | no | `PhysicsAgent` — same shape. |
 | `advance_npc_turn(npc_alias)` | yes | Decides, narrates, and records one NPC's turn end-to-end — the one case with nobody chatting to drive it. |
@@ -220,10 +220,16 @@ Things this rebuild surfaced or left open, not addressed here:
   `visibility_distance` and `story_simulator/game_config.py` (a new module
   for tunable gameplay constants, distinct from `config.py`'s
   paths/credentials scope: `FOV_DEGREES`, `PERCEPTIBLE_FOV_FRACTION`,
-  `DEFAULT_ENTITY_SIZE` for entities with no `size` of their own). A
-  mountain now stays perceptible far beyond the old flat 20m default; a
-  dropped coin does not, unless already within `perceive`'s `min_radius`
-  floor.
+  `DEFAULT_ENTITY_SIZE` for entities with no `size` of their own). Computed
+  as a single relational query (a left join between positions and sizes,
+  then a filter) via ibis, not a Python loop over rows, per review feedback
+  on the first version of this fix. A mountain now stays perceptible far
+  beyond the old flat 20m default; a dropped coin does not, once it's more
+  than its own (much shorter) visibility distance away — there's no
+  artificial floor keeping small objects perceptible regardless of range
+  (also review feedback: the first version's `min_radius` floor turned out
+  to have no real justification once checked against the formula's own
+  numbers for a plausibly-sized small object).
 
 - **Evaluate a "world time" distinct from system time.** `_next_turn_stamp()`
   (`int(time.time())`) is a narrow technical fix — a monotonic ordering value

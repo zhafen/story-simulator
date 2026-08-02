@@ -413,17 +413,13 @@ def update_registry(yaml_string: str, ctx: Context) -> str:
 
 
 @server.tool()
-def perceive(
-    reference_alias: str, ctx: Context, min_radius: float = spatial.DEFAULT_PERCEPTION_RADIUS
-) -> str:
+def perceive(reference_alias: str, ctx: Context) -> str:
     """Return what `reference_alias` can currently perceive, and record it.
 
     Each nearby entity's own visibility distance is computed from its
     `size` component (meters), not a single flat cutoff for everyone -- a
-    mountain stays perceptible from far further away than a dropped coin.
-    `min_radius` is a floor guaranteeing anything at least this close is
-    always perceptible, regardless of size (see
-    `story_simulator.spatial.perceptible_entities`/`game_config`).
+    mountain stays perceptible from far further away than a dropped coin
+    (see `story_simulator.spatial.perceptible_entities`/`game_config`).
 
     Tags each perceived entity `active` (replacing whatever was previously
     tagged active) and merges them into `reference_alias`'s permanent
@@ -431,7 +427,7 @@ def perceive(
     instead of automatically every turn.
     """
     registrar = _get_registrar(ctx)
-    nearby = spatial.perceptible_entities(registrar, reference_alias, min_radius)
+    nearby = spatial.perceptible_entities(registrar, reference_alias)
     spatial.sync_active_tags(registrar, nearby)
     spatial.record_memory(registrar, reference_alias, nearby)
     if not nearby:

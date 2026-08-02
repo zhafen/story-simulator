@@ -20,8 +20,6 @@ from iacs.registrar import Registrar
 from story_simulator import game_config
 from story_simulator.config import MANIFEST_DIR, WORLD_FILE_ID
 
-DEFAULT_PERCEPTION_RADIUS = 20.0
-
 
 def merge_yaml_string(registrar: Registrar, yaml_text: str, turn: int | None = None) -> None:
     """Run the ETL pipeline on a raw YAML string and merge the result into `registrar`.
@@ -110,8 +108,8 @@ def entities_within(registrar: Registrar, center: "str | tuple[float, float]", r
     return result
 
 
-def visibility_distance(size: float) -> float:
-    """How far away an object of this characteristic size stays perceptible.
+def _perceptible_fov_tan() -> float:
+    """tan of the angle below which an object blends into the background.
 
     An object subtending less than `game_config.PERCEPTIBLE_FOV_FRACTION` of
     a `game_config.FOV_DEGREES`-wide field of view blends into the
@@ -121,48 +119,49 @@ def visibility_distance(size: float) -> float:
     figures it was checked against.
     """
     threshold_angle = math.radians(game_config.FOV_DEGREES * game_config.PERCEPTIBLE_FOV_FRACTION)
-    return size / math.tan(threshold_angle)
+    return math.tan(threshold_angle)
 
 
-def entity_sizes(registrar: Registrar) -> dict[str, float]:
-    """Return {entity_id: size.value} for every entity with a recorded `size`."""
-    df = safe_view(registrar, "size.value")
-    if df is None:
-        return {}
-    return dict(zip(df["entity_id"], df["size.value"]))
+def visibility_distance(size: float) -> float:
+    """How far away an object of this characteristic size stays perceptible.
+
+    See `_perceptible_fov_tan` for the geometry this is derived from.
+    """
+    return size / _perceptible_fov_tan()
 
 
-def perceptible_entities(
-    registrar: Registrar,
-    center: "str | tuple[float, float]",
-    min_radius: float = DEFAULT_PERCEPTION_RADIUS,
-) -> set[str]:
+def perceptible_entities(registrar: Registrar, center: "str | tuple[float, float]") -> set[str]:
     """Return the aliases of every positioned entity `center` can perceive.
 
     Unlike `entities_within`'s single flat cutoff for every entity, each
     candidate's own visibility distance is computed from its `size`
-    component via `visibility_distance` (falling back to
-    `game_config.DEFAULT_ENTITY_SIZE` when it has none) -- so a mountain
+    component (falling back to `game_config.DEFAULT_ENTITY_SIZE` when it has
+    none) via the same geometry `visibility_distance` uses -- so a mountain
     stays visible from far further away than a dropped coin, with no extra
     calculation required of the caller beyond making sure entities carry a
-    `size` component. `min_radius` is a floor, not a cap: something already
-    this close stays perceptible even if its own size would compute a
-    shorter distance (a coin at your feet is still perceptible, even though
-    a coin-sized object's raw visibility distance is under a meter).
+    `size` component. Done as a single relational query (join + filter) via
+    ibis rather than iterating rows in Python, so the comparison runs in the
+    registry's own backend.
     """
+    if "position" not in registrar.registry.component_types:
+        return set()
+
     center_id = registrar.get_entity_id(center) if isinstance(center, str) else None
-    center_pos = _resolve_point(registrar, center)
-    positions = latest_positions(registrar)
-    sizes = entity_sizes(registrar)
-    result = set()
-    for _, row in positions.iterrows():
-        if center_id is not None and row["entity_id"] == center_id:
-            continue
-        pos = (float(row["position.x"]), float(row["position.y"]))
-        size = sizes.get(row["entity_id"], game_config.DEFAULT_ENTITY_SIZE)
-        if math.dist(pos, center_pos) <= max(min_radius, visibility_distance(size)):
-            result.add(row["entity_id.alias"])
-    return result
+    cx, cy = _resolve_point(registrar, center)
+
+    positions = registrar.view_current(["position.x", "position.y"])
+    sizes = registrar.get("size").group_by("entity_id").aggregate(size=lambda t: t["value"].max())
+    joined = positions.left_join(sizes, positions["entity_id"] == sizes["entity_id"])
+
+    size_col = joined["size"].fill_null(game_config.DEFAULT_ENTITY_SIZE)
+    distance_expr = ((joined["position.x"] - cx) ** 2 + (joined["position.y"] - cy) ** 2).sqrt()
+    visible_radius = size_col / _perceptible_fov_tan()
+
+    perceptible = joined.filter(distance_expr <= visible_radius)
+    if center_id is not None:
+        perceptible = perceptible.filter(perceptible["entity_id"] != center_id)
+
+    return set(perceptible["entity_id.alias"].execute())
 
 
 def sync_active_tags(registrar: Registrar, active_aliases: set[str]) -> None:

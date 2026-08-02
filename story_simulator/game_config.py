@@ -10,16 +10,18 @@ default) is the natural next step if a setting ever needs to override one
 without touching code.
 """
 
+__iacs__ = {"solution of": "story_simulator_mission.tool_catalog.perceive"}
+
 # Perception/visibility geometry: an object subtending less than this
 # fraction of the observer's field of view blends into the background
 # rather than staying perceptible. The same heuristic used to place the
-# living world's journaling desk (data/living_world/setting.yaml) at a
+# living world's journaling desk (data/living_world/scenario.yaml) at a
 # distance the original door would no longer be visible from -- and checked
-# against real-world visual-acuity/recognition-distance figures
-# (docs/architecture.md's door-visibility follow-up): a person/door-sized
-# (~2m) object stays perceptible out to roughly 190m under these defaults,
-# in the same ballpark as the "a few hundred meters" real-world recognition
-# distance research gives for an object that size.
+# against real-world visual-acuity/recognition-distance figures (see
+# docs/manifest/history.yaml: project_history.door_visibility_bug_found_playtesting):
+# a person/door-sized (~2m) object stays perceptible out to roughly 190m
+# under these defaults, in the same ballpark as the "a few hundred meters"
+# real-world recognition distance research gives for an object that size.
 FOV_DEGREES = 60.0
 PERCEPTIBLE_FOV_FRACTION = 0.01
 

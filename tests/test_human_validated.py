@@ -1,10 +1,10 @@
 """Live end-to-end tests that drive story-simulator-mcp through a real MCP client.
 
-Post-MCP-rebuild replacement for the old tests (removed in acb2956 along with
-EnsembleWorld/Interpreter): there is no in-process narrator left to call
-directly, so these spawn `claude -p` as a real subprocess against this repo's
-.mcp.json, exactly the way the README's quick-start describes a client
-connecting. Deliberately not built on story_simulator.agents.run_tool_loop --
+There is no in-process narrator to call directly (see
+docs/manifest/history.yaml: project_history.turn_pipeline_removed), so
+these spawn `claude -p` as a real subprocess against this repo's .mcp.json,
+exactly the way the README's quick-start describes a client connecting.
+Deliberately not built on story_simulator.agents.run_tool_loop --
 reusing this project's own narrowly-scoped agent-loop code (built for
 advance_npc_turn's decide/narrate step, not general narration) as the test
 driver would mean the "client" checking the server was written by the same

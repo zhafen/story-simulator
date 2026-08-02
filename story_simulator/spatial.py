@@ -11,6 +11,8 @@ every function here takes its reference character explicitly.
 
 from __future__ import annotations
 
+__iacs__ = {"solution of": "story_simulator_mission.tool_catalog.perceive"}
+
 import math
 
 import pandas as pd
@@ -114,10 +116,11 @@ def _perceptible_fov_tan() -> float:
     An object subtending less than `game_config.PERCEPTIBLE_FOV_FRACTION` of
     a `game_config.FOV_DEGREES`-wide field of view blends into the
     background rather than staying perceptible -- see
-    `data/living_world/setting.yaml`'s journaling_desk placement note and
+    `data/living_world/scenario.yaml`'s journaling_desk placement note and
     `game_config`'s own docstring for the reasoning and the real-world
     figures it was checked against.
     """
+    __iacs__ = {"solution of": "story_simulator_mission.tool_catalog.perceive"}
     threshold_angle = math.radians(game_config.FOV_DEGREES * game_config.PERCEPTIBLE_FOV_FRACTION)
     return math.tan(threshold_angle)
 

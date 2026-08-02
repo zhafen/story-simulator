@@ -1,0 +1,101 @@
+file_info:
+    - description: >
+          Non-actionable historical context pulled out of code comments and
+          docs, kept here instead of scattered across the codebase. Kept in
+          its own file, separate from story-simulator.yaml, so it isn't
+          scanned in as part of assessing requirements (audit.traceability,
+          audit.requirement_coverage) — load story-simulator.yaml alone for
+          that; load this file too only when the history itself is useful.
+    - file_info
+
+project_history:
+    data:
+        - description: >
+              Non-actionable historical record of how the project reached its
+              current shape. Before this history begins, the repository was
+              reset to a clean slate to start fresh at commit 69a94c3
+              ("Formatted simulation.py with black", 2024-04-28), while
+              preserving its full git history — see RESET_LOG.md;
+              `git checkout 69a94c3` shows the repo as it stood at that point.
+    turn_pipeline_removed:
+        - description: >
+              Commit acb2956 ("Remove the turn-pipeline/REPL apparatus") deleted
+              EnsembleWorld, Interpreter, System.step(), and the Archivist/
+              IacsArchivist transcription agent (previously documented in the
+              since-removed docs/startup-loop-save-plan.md), in favor of the
+              current MCP-only architecture (commit 28ba40c, "Rebuild
+              story-simulator as just an MCP server"). story_simulator/mcp_client.py
+              (the stdio MCP client wrapper written for IacsArchivist to talk
+              to iacs-mcp) survived that removal but is no longer imported by
+              anything — see story-simulator.yaml: story_simulator_mission.no_orphaned_modules.
+    database_migrated_to_postgres:
+        - description: >
+              The registry moved from an embedded DuckDB file to Postgres
+              specifically because DuckDB's file-based storage locks out every
+              other connection for as long as one process holds it open, which
+              is incompatible with a live MCP session that must stay open for
+              its whole lifetime while other processes (e.g. a test) read it.
+    appearance_retired_for_description:
+        - description: >
+              The `appearance` component type used by the pre-rebuild tests was
+              retired in favor of iacs's own builtin `description` component,
+              which every declared component/field already uses for its own
+              schema docstring.
+    seed_yaml_staleness_discovered:
+        - description: >
+              Confirmed directly: several update_registry calls that changed a
+              door's recorded description left both the source seed YAML and
+              the save's copied YAML byte-identical to the original, untouched
+              mtimes and all. Surfaced the seed_yaml_reflects_live_state gap.
+    claude_md_reload_trick_documented:
+        - description: >
+              CLAUDE.md documents that story-simulator-mcp is a long-lived
+              stdio subprocess spawned once per session — editing
+              mcp_server.py (or anything it imports) has no effect until it's
+              killed (pkill -f story-simulator-mcp) so the harness respawns it
+              fresh on the next tool call. Unrelated to seed_yaml_reflects_live_state.
+    manifest_relocated_out_of_manifest_dir:
+        - description: >
+              story-simulator.yaml and this file originally lived under
+              manifest/ (= story_simulator.config.MANIFEST_DIR), which every
+              registrar.update() call passes as input_dirs — so these
+              project-planning entities were being merged as data into every
+              live game world's registry. Moved to docs/manifest/ to stop that.
+    world_yaml_sync_reverses_old_archivist_design:
+        - description: >
+              The world.yaml sync fix (story-simulator.yaml:
+              seed_yaml_reflects_live_state) reuses the exact filename
+              (save_dir/world.yaml) the old, since-removed IacsArchivist
+              design used, but built in the opposite direction: that design
+              had an LLM-driven agent author YAML *into* the registry from a
+              growing world.yaml; the fix keeps the registry as the single
+              source of truth and makes world.yaml a generated, read-only
+              mirror of it instead.
+    door_visibility_bug_found_playtesting:
+        - description: >
+              Playtesting produced narration claiming a 2m-tall door was
+              visible from ~2km away. The living world's own journaling_desk
+              placement note (data/living_world/scenario.yaml) had already
+              worked out a visibility threshold for this — an object
+              subtending <=1% of a 60°-wide field of view blends into the
+              background, ~200m for a 2m door — and checking that against
+              real-world visual-acuity/recognition-distance research (a
+              person/door-sized object is recognizable up to "a few hundred
+              meters" under ideal conditions, ~300m commonly cited as the
+              practical unaided-eye upper limit; Earth's curvature isn't the
+              limiting factor at these ranges — horizon distance for a
+              person's eye height is ~9-10km) confirmed the figure was
+              already in the right ballpark. The actual bug was that perceive
+              applied no distance limit tied to entity size at all during
+              play — see story-simulator.yaml: tool_catalog.perceive.
+    min_radius_floor_tried_and_dropped:
+        - description: >
+              The first version of the size-based visibility fix added a
+              min_radius floor (guaranteeing anything at least this close
+              stays perceptible regardless of size), reasoning a coin at your
+              feet should still be perceptible. Dropped on review: the
+              formula already gives a 0.02m object ~1.9m of visibility
+              distance on its own, so the floor was solving a problem that
+              didn't exist and reintroducing exactly the kind of unjustified
+              flat constant the fix was meant to eliminate. perceive() no
+              longer takes a radius parameter at all.

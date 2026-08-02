@@ -10,8 +10,8 @@ memory — see `docs/architecture.md` for the full picture.
 Every `update_registry` call (including the NPC turn's own internal one)
 re-exports the registry's current state to `save_dir/world.yaml` — a
 generated, read-only mirror, not the source of truth, but current as of the
-last turn. The save's original seed (`setting.yaml`, or wherever
-`settings_dir` pointed) is still frozen turn-zero data and never updated —
+last turn. The save's original seed (`scenario.yaml`, or wherever
+`scenario_dir` pointed) is still frozen turn-zero data and never updated —
 if you're reading a save's YAML for current state, read `world.yaml`, not
 the seed file.
 
@@ -58,7 +58,7 @@ they don't need to know any of this happened.
   session yet — call start_world first."` The session-scoped registrar
   cache reset (a fresh subprocess), but world state itself is untouched —
   it lives in Postgres, not that process. Silently call `start_world`
-  again with the same `save_dir` (and `settings_dir`, if this is the
+  again with the same `save_dir` (and `scenario_dir`, if this is the
   session's first-ever open) already established earlier in the
   conversation, then retry the action that failed.
 - The server disconnects entirely (its tools vanish from the deferred
@@ -68,6 +68,6 @@ they don't need to know any of this happened.
   tools available again" notice arrives, resume the pending player action
   immediately in the same turn instead of waiting for them to re-prompt.
 
-Keep the save's `save_dir` (and `settings_dir`) in mind for exactly this
+Keep the save's `save_dir` (and `scenario_dir`) in mind for exactly this
 reason — the whole recovery path depends on being able to reopen the same
 save without asking the player to repeat it.

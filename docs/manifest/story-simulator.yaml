@@ -1,0 +1,415 @@
+file_info:
+    - description: >
+          Project-level iacs manifest for story-simulator itself (not
+          world-state data — see manifest/builtins.yaml for that). Models
+          what the project must guarantee as a tree of `requirement` entities
+          rooted at story_simulator_mission, what code satisfies each as
+          `solution of` entities, and scores each not-yet-done requirement
+          with `impact`/`cost` components so the derived resolved_impact_cost
+          table can drive a cost-vs-impact read on what to work on next.
+
+          Deliberately kept under docs/, not manifest/ (=
+          story_simulator.config.MANIFEST_DIR): that directory is passed as
+          input_dirs to every registrar.update() call, so anything under it
+          is merged as data into every live game world's registry, not just
+          used for schema. History that isn't itself a requirement lives in
+          history.yaml, kept separate so it isn't scanned in as part of
+          assessing requirements.
+
+          Most solutions live as `__iacs__ = {"solution of": ...}` metadata in
+          the docstring of the code that solves them, not as entities here —
+          load_manifest(["docs/manifest", "story_simulator"]) picks up both
+          this requirement tree and every Python-embedded solution. Loading
+          this directory alone under-reports coverage.
+    - file_info
+
+# ---------------------------------------------------------------------------
+# Impact/cost vocabulary for scoring candidate work (see requirement entities
+# below). Conversion rates are relative weights, not a claim of precise
+# measurement — they only need to rank candidates sensibly against each other.
+# ---------------------------------------------------------------------------
+
+impact_budgets:
+    - description: >
+          Impact types used to score requirement entities in this project.
+    - impact_budget:
+          reliability:
+              description: >
+                  Closes a correctness/consistency gap in a tool that's already
+                  relied on (wrong state, silent duplication, unverified LLM
+                  behavior, an agent acting on stale data).
+              normalized_value_per_unit: 2
+          gameplay_richness:
+              description: >
+                  Expands what a connected agent or player can actually do or
+                  see in a played session.
+              normalized_value_per_unit: 1
+          architecture_clarity:
+              description: >
+                  Reduces ambiguity, dead code, or unresolved design tension for
+                  future contributors (including a future session of this same
+                  assistant).
+              normalized_value_per_unit: 1
+          developer_experience:
+              description: >
+                  Reduces friction or setup cost for whoever is developing or
+                  running the project locally, as opposed to a player.
+              normalized_value_per_unit: 0.5
+
+cost_budgets:
+    - description: >
+          Cost types used to score requirement entities in this project.
+    - cost_budget:
+          engineering_hours:
+              description: Estimated implementation/design time, in hours.
+              normalized_value_per_unit: 1
+          regression_risk:
+              description: >
+                  Chance of destabilizing an already-working tool if this goes
+                  wrong (weighted heavier than plain time cost).
+              normalized_value_per_unit: 2
+
+# ---------------------------------------------------------------------------
+# story_simulator_mission is the tree root; every requirement in the project
+# is a descendant of it. `requirement` is a bare tag (no priority value —
+# that field is semi-deprecated in iacs; use `impact` components instead).
+# work_state distinguishes done requirements from ones still open; open
+# requirements also carry `cost` so resolved_impact_cost can rank them.
+# ---------------------------------------------------------------------------
+
+story_simulator_mission:
+    data:
+        - description: To enable players to create and experience self-consistent stories with simulation mechanics handled by AI.
+        - requirement
+    stateless_client:
+        - description: >
+              Any MCP-aware client can open the same save_dir and see identical
+              world state — nothing narratively load-bearing lives only in one
+              client's conversation context.
+        - requirement
+        - impact:
+              type: reliability
+              value: 1
+        - work_state: done
+    single_shared_source_key:
+        - description: >
+              Every direct registrar.update() call (mcp_server.py, spatial.py)
+              must merge under the same source key (config.WORLD_FILE_ID), or
+              the same alias written from two call sites would hash to two
+              different entity_ids and silently fork a duplicate entity instead
+              of updating the original.
+        - requirement
+        - impact:
+              type: reliability
+              value: 0.9
+        - work_state: done
+    concurrent_readable_registry:
+        - description: >
+              The registry backend must let a live session's connection stay
+              open for the session's whole lifetime while other processes still
+              read or write concurrently — rules out a single-file embedded
+              database (e.g. DuckDB), which locks out every other connection
+              while one process holds it open.
+        - requirement
+        - impact:
+              type: reliability
+              value: 0.8
+        - work_state: done
+    dev_db_bootstrap:
+        - description: >
+              In a dev/sandbox environment, start_world should self-heal a
+              localhost-only Postgres that isn't running yet rather than
+              failing outright — a deliberately remote or already-configured
+              server must never be touched.
+        - requirement
+        - impact:
+              type: developer_experience
+              value: 0.4
+        - work_state: done
+    tool_catalog:
+        data:
+            - description: The MCP tools story-simulator exposes, and what each must guarantee.
+        start_world:
+            - description: >
+                  Opens or seeds a save_dir'd world, remembered for the session.
+                  Must seed only an empty save from scenario_dir/DEFAULT_WORLD_DIR
+                  once — a resumed save's accumulated registry state must never
+                  be re-merged with the starting scenario on reconnect.
+            - requirement
+            - impact:
+                  type: reliability
+                  value: 0.9
+            - work_state: done
+        view_registry:
+            - description: CSV dump of every recorded instance of one component type.
+            - requirement
+            - impact:
+                  type: reliability
+                  value: 0.6
+            - work_state: done
+        view_entity:
+            - description: >
+                  Every recorded component instance for one entity, resolved by
+                  exact hash, exact alias, or unambiguous path fragment.
+            - requirement
+            - impact:
+                  type: reliability
+                  value: 0.6
+            - work_state: done
+        update_registry:
+            - description: Merges entity-first YAML into the registry through the same ETL as save files.
+            - requirement
+            - impact:
+                  type: reliability
+                  value: 0.9
+            - work_state: done
+        perceive:
+            - description: >
+                  Computes nearby entities for a reference alias, tags them
+                  active (replacing whatever was previously tagged active), and
+                  permanently merges them into that alias's memory (memory only
+                  grows; active is a live snapshot). Each candidate's own
+                  visibility distance is computed from its size component
+                  (falling back to game_config.DEFAULT_ENTITY_SIZE), not a
+                  single flat cutoff for every entity — a mountain stays
+                  perceptible far beyond a dropped coin, with no artificial
+                  floor keeping small objects perceptible regardless of range
+                  (a floor was tried and dropped on review: the formula already
+                  gives even a 0.02m object ~1.9m of visibility distance on its
+                  own). Computed as one relational query (a left join between
+                  positions and sizes, then a filter) via ibis, not a Python
+                  loop over rows. Fixes a playtesting bug (see
+                  project_history.door_visibility_bug_found_playtesting) where
+                  a 2m door was narrated as visible from ~2km away.
+            - requirement
+            - impact:
+                  type: reliability
+                  value: 0.8
+            - work_state: done
+        generate_terrain:
+            - description: One LiteLLM call inventing terrain for a location with none established, consistent with what's already known.
+            - requirement
+            - impact:
+                  type: gameplay_richness
+                  value: 0.6
+            - work_state: done
+        resolve_physics:
+            - description: One LiteLLM call judging the plausible physical outcome of an action not obviously safe to decide directly.
+            - requirement
+            - impact:
+                  type: gameplay_richness
+                  value: 0.6
+            - work_state: done
+        advance_npc_turn:
+            - description: >
+                  Decides, narrates, and records one NPC's whole turn — the one
+                  case with nobody chatting to drive it — via a nested
+                  decide-then-(generate_terrain/resolve_physics/update_registry)*
+                  loop.
+            - requirement
+            - impact:
+                  type: gameplay_richness
+                  value: 0.7
+            - work_state: done
+    npc_authority_separation:
+        - description: >
+              An NPC's decide step must stay restricted (perceive-scoped view,
+              no tools) while its resolve+record step, which needs broader
+              authority to call update_registry, should not implicitly carry the
+              same unrestricted write authority a human-narrating client has.
+              Split advance_npc_turn's resolve+record step from unrestricted
+              update_registry authority — either scope it down or hand that
+              step to whichever narrator already holds full authority, reserving
+              true autonomy for when genuinely nobody is watching.
+        - requirement
+        - impact:
+              - type: reliability
+                value: 0.6
+              - type: architecture_clarity
+                value: 0.5
+        - cost:
+              - type: engineering_hours
+                value: 6
+              - type: regression_risk
+                value: 0.5
+        - work_state: in progress
+    seed_yaml_reflects_live_state:
+        - description: >
+              An agent that reads a save's YAML directly should see current
+              registry state, or at least be clearly warned it can't —
+              update_registry used to write only to the registry database,
+              never back to any file, so the seed YAML (data/*/scenario.yaml
+              or its copy in save_dir) stayed frozen at turn-zero while
+              Postgres held the real current state (confirmed happening in
+              practice: a coding agent defaulting to grepping/reading it
+              instead of calling view_registry/view_entity). Root-cause fixed:
+              every update_registry call (including advance_npc_turn's own
+              internal one) now re-exports the registry's current state to
+              save_dir/world.yaml, a generated, read-only mirror rewritten in
+              full each turn — the original seed YAML itself is still never
+              touched. Not fully closed: an agent could still default to
+              grepping the frozen seed specifically instead of the live
+              world.yaml, or not know world.yaml exists — see
+              mcp_instructions_mention_world_yaml.
+        - requirement
+        - impact:
+              type: reliability
+              value: 0.6
+        - work_state: done
+    mcp_instructions_mention_world_yaml:
+        - description: >
+              CLAUDE.md has accumulated real operational game-level knowledge
+              from dev/playtest sessions (that save_dir/world.yaml is a live,
+              current mirror of the registry, distinct from the frozen seed —
+              see seed_yaml_reflects_live_state), but CLAUDE.md only reaches
+              Claude Code sessions in this repo, a narrower audience than
+              "whoever is narrating a story-simulator world." Fold the
+              game-level entries (not the dev-environment-specific ones, like
+              the story-simulator-mcp reload trick or idle-disconnect
+              recovery, which belong staying in CLAUDE.md) into the MCP
+              server's own `instructions` string in mcp_server.py, which
+              reaches any connected MCP client. Needs a periodic pass, not a
+              one-time fix, since CLAUDE.md keeps accumulating this kind of
+              knowledge.
+        - requirement
+        - impact:
+              type: reliability
+              value: 0.3
+        - cost:
+              type: engineering_hours
+              value: 1
+        - work_state: new
+    ec_defined_agents:
+        - description: >
+              An entity with an `agent` component (role/model/system_prompt)
+              should be usable the same way story_simulator.agents.AgentSpec is
+              today from a *.yaml file, letting a world-author define an agent
+              (Terrain, Physics, an NPC decision-maker, or their own) inside the
+              registry instead of only in a checked-in config file. Needs a
+              loader that turns an `agent` entity into an AgentSpec, and an MCP
+              tool that dispatches to it. Reserved in manifest/builtins.yaml;
+              not read by any code yet.
+        - requirement
+        - impact:
+              - type: gameplay_richness
+                value: 0.6
+              - type: architecture_clarity
+                value: 0.3
+        - cost:
+              - type: engineering_hours
+                value: 10
+              - type: regression_risk
+                value: 0.3
+        - work_state: new
+    world_time_concept:
+        - description: >
+              The simulation has no representation of in-fiction elapsed time
+              (day/night, how long a character has walked, the living world's
+              "a year forward" door mechanic) independent of the wall-clock
+              ordering value (_next_turn_stamp) that only exists to resolve
+              which of an entity's position rows is current. Worth evaluating
+              an explicit world-time component (in-fiction elapsed time/
+              calendar) independent of that wall-clock ordering value.
+        - requirement
+        - impact:
+              type: gameplay_richness
+              value: 0.4
+        - cost:
+              - type: engineering_hours
+                value: 8
+              - type: regression_risk
+                value: 0.2
+        - work_state: new
+    live_model_test_coverage:
+        - description: >
+              generate_terrain/resolve_physics/advance_npc_turn's actual LLM
+              behavior, and a realistic multi-tool-call play session, should
+              have real-model (@pytest.mark.live) coverage, not just
+              tool-level tests against a mocked LLM.
+        - requirement
+        - impact:
+              type: reliability
+              value: 0.6
+        - cost:
+              type: engineering_hours
+              value: 5
+        - work_state: new
+    per_provider_credentials:
+        - description: >
+              Only Anthropic-flavored model: strings get app-specific credential
+              handling (resolve_anthropic_api_key). Every other LiteLLM-supported
+              provider relies on that provider's own standard env-var discovery;
+              there's no general per-user, per-provider credential story yet.
+        - requirement
+        - impact:
+              type: gameplay_richness
+              value: 0.2
+        - cost:
+              type: engineering_hours
+              value: 4
+        - work_state: new
+    position_render_tool:
+        - description: >
+              The pre-rebuild VisualizerSystem's SVG position plot has no
+              equivalent MCP tool today — a connected agent can't currently get
+              a rendered top-down view of the world, only text.
+        - requirement
+        - impact:
+              type: gameplay_richness
+              value: 0.5
+        - cost:
+              - type: engineering_hours
+                value: 5
+              - type: regression_risk
+                value: 0.1
+        - work_state: new
+    queryable_architecture:
+        - description: >
+              The project's own architecture and open follow-ups should be
+              modeled as requirement/solution entities, not scattered prose, so
+              run_dataflow("audit.requirement_coverage")/("audit.traceability")
+              can check the project's own design and resolved_impact_cost can
+              rank open work instead of re-deriving priorities from memory.
+        - requirement
+        - impact:
+              type: architecture_clarity
+              value: 0.8
+        - cost:
+              type: engineering_hours
+              value: 3
+        - work_state: done
+    no_orphaned_modules:
+        - description: >
+              story_simulator/mcp_client.py (open_iacs_mcp_session,
+              McpToolSession) has had no importer since the turn-pipeline
+              removal (acb2956) deleted the Archivist that used it. Either
+              delete it or repurpose it for ec_defined_agents (an EC-defined
+              agent could plausibly need to talk to iacs-mcp the same way).
+        - requirement
+        - impact:
+              type: architecture_clarity
+              value: 0.4
+        - cost:
+              - type: engineering_hours
+                value: 1
+              - type: regression_risk
+                value: 0.1
+        - work_state: new
+
+# ---------------------------------------------------------------------------
+# What satisfies each done (or partially done) requirement. Most solutions
+# now live as `__iacs__ = {"solution of": ...}` metadata right in the Python
+# docstring of the code that solves them (mcp_server.py, spatial.py,
+# config.py) rather than described here at a distance — load
+# load_manifest(["docs/manifest", "story_simulator"]) to see the full,
+# solved requirement tree. Only what has no Python home stays here.
+# ---------------------------------------------------------------------------
+
+shared_world_file_id:
+    - solution of: story_simulator_mission.single_shared_source_key
+
+architecture_manifest_solution:
+    - description: >
+          This manifest (story-simulator.yaml + history.yaml), modeling the
+          project as requirement/solution entities scored for cost-vs-impact.
+    - solution of: story_simulator_mission.queryable_architecture

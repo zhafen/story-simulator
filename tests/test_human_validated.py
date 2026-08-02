@@ -1,7 +1,7 @@
 """Live end-to-end tests that drive story-simulator-mcp through a real MCP client.
 
 There is no in-process narrator to call directly (see
-docs/manifest/story-simulator.yaml: project_history.turn_pipeline_removed), so
+docs/manifest/history.yaml: project_history.turn_pipeline_removed), so
 these spawn `claude -p` as a real subprocess against this repo's .mcp.json,
 exactly the way the README's quick-start describes a client connecting.
 Deliberately not built on story_simulator.agents.run_tool_loop --

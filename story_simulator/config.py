@@ -14,7 +14,7 @@ from pathlib import Path
 # (mcp_server.py, spatial.py) must merge under — iacs hashes an entity's ID
 # from (source key, entity path), so a different key at any call site would
 # fork a duplicate entity instead of updating the original. See
-# docs/manifest/story-simulator.yaml: story_simulator_requirements.single_shared_source_key.
+# docs/manifest/story-simulator.yaml: story_simulator_mission.single_shared_source_key.
 WORLD_FILE_ID = "world"
 
 # The story-simulator's own component/field schema (position, character, ...).
@@ -46,7 +46,7 @@ DEFAULT_WORLD_DIR = Path(__file__).parent.parent / "data" / "default"
 # unlike a single-file embedded database. Matches GitHub Actions' `postgres:`
 # service container, so CI needs no override; local dev needs a matching
 # database server (or STORY_SIM_DATABASE_DSN pointed elsewhere). See
-# docs/manifest/story-simulator.yaml: story_simulator_requirements.concurrent_readable_registry.
+# docs/manifest/story-simulator.yaml: story_simulator_mission.concurrent_readable_registry.
 DEFAULT_DATABASE_DSN = "postgresql://postgres:postgres@localhost:5432/postgres"
 
 
@@ -109,6 +109,6 @@ def resolve_anthropic_api_key() -> str | None:
     Only covers Anthropic-flavored `model:` strings. An agent configured for
     another provider relies on LiteLLM's own standard env-var discovery for
     that provider instead (e.g. OPENAI_API_KEY) — see
-    docs/manifest/story-simulator.yaml: story_simulator_requirements.per_provider_credentials.
+    docs/manifest/story-simulator.yaml: story_simulator_mission.per_provider_credentials.
     """
     return os.environ.get("STORY_SIM_ANTHROPIC_API_KEY") or None

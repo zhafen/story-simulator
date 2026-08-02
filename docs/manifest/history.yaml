@@ -1,0 +1,60 @@
+file_info:
+    - description: >
+          Non-actionable historical context pulled out of code comments and
+          docs, kept here instead of scattered across the codebase. Kept in
+          its own file, separate from story-simulator.yaml, so it isn't
+          scanned in as part of assessing requirements (audit.traceability,
+          audit.requirement_coverage) — load story-simulator.yaml alone for
+          that; load this file too only when the history itself is useful.
+    - file_info
+
+project_history:
+    data:
+        - description: >
+              Non-actionable historical record of how the project reached its
+              current shape. See RESET_LOG.md for the pre-history repo reset
+              itself (commit 69a94c3, 2024-04-28).
+    turn_pipeline_removed:
+        - description: >
+              Commit acb2956 ("Remove the turn-pipeline/REPL apparatus") deleted
+              EnsembleWorld, Interpreter, System.step(), and the Archivist/
+              IacsArchivist transcription agent (previously documented in the
+              since-removed docs/startup-loop-save-plan.md), in favor of the
+              current MCP-only architecture (commit 28ba40c, "Rebuild
+              story-simulator as just an MCP server"). story_simulator/mcp_client.py
+              (the stdio MCP client wrapper written for IacsArchivist to talk
+              to iacs-mcp) survived that removal but is no longer imported by
+              anything — see story-simulator.yaml: story_simulator_mission.no_orphaned_modules.
+    database_migrated_to_postgres:
+        - description: >
+              The registry moved from an embedded DuckDB file to Postgres
+              specifically because DuckDB's file-based storage locks out every
+              other connection for as long as one process holds it open, which
+              is incompatible with a live MCP session that must stay open for
+              its whole lifetime while other processes (e.g. a test) read it.
+    appearance_retired_for_description:
+        - description: >
+              The `appearance` component type used by the pre-rebuild tests was
+              retired in favor of iacs's own builtin `description` component,
+              which every declared component/field already uses for its own
+              schema docstring.
+    seed_yaml_staleness_discovered:
+        - description: >
+              Confirmed directly: several update_registry calls that changed a
+              door's recorded description left both the source seed YAML and
+              the save's copied YAML byte-identical to the original, untouched
+              mtimes and all. Surfaced the seed_yaml_reflects_live_state gap.
+    claude_md_reload_trick_documented:
+        - description: >
+              CLAUDE.md documents that story-simulator-mcp is a long-lived
+              stdio subprocess spawned once per session — editing
+              mcp_server.py (or anything it imports) has no effect until it's
+              killed (pkill -f story-simulator-mcp) so the harness respawns it
+              fresh on the next tool call. Unrelated to seed_yaml_reflects_live_state.
+    manifest_relocated_out_of_manifest_dir:
+        - description: >
+              story-simulator.yaml and this file originally lived under
+              manifest/ (= story_simulator.config.MANIFEST_DIR), which every
+              registrar.update() call passes as input_dirs — so these
+              project-planning entities were being merged as data into every
+              live game world's registry. Moved to docs/manifest/ to stop that.

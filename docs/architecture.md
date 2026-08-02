@@ -11,9 +11,10 @@ What each tool must guarantee, what code satisfies it, and every open
 follow-up are modeled as `requirement`/`solution` entities in
 [`docs/manifest/story-simulator.yaml`](manifest/story-simulator.yaml), not
 duplicated here as prose — load it with the iacs MCP server
-(`load_manifest(["docs/manifest"])`) and run
-`run_dataflow("audit.requirement_coverage")`/`("audit.traceability")` to
-check current status, or query `resolved_impact_cost` for a cost-vs-impact
+(`load_manifest(["docs/manifest", "story_simulator"])`, since most solutions
+now live as `__iacs__` metadata in code docstrings rather than in the YAML)
+and run `run_dataflow("audit.requirement_coverage")`/`("audit.traceability")`
+to check current status, or query `resolved_impact_cost` for a cost-vs-impact
 read on what's still open.
 
 ## Who plays which role

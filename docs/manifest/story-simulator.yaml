@@ -168,7 +168,15 @@ story_simulator_mission:
                   Computes nearby entities for a reference alias, tags them
                   active (replacing whatever was previously tagged active), and
                   permanently merges them into that alias's memory (memory only
-                  grows; active is a live snapshot).
+                  grows; active is a live snapshot). Each candidate's own
+                  visibility distance is computed from its size component
+                  (falling back to game_config.DEFAULT_ENTITY_SIZE), not a
+                  single flat cutoff for every entity — min_radius is a floor,
+                  not a cap, so a mountain stays perceptible far beyond it while
+                  a dropped coin does not once past its own, much shorter,
+                  visibility distance. Fixes a playtesting bug (see
+                  project_history.door_visibility_bug_found_playtesting) where
+                  a 2m door was narrated as visible from ~2km away.
             - requirement
             - impact:
                   type: reliability
@@ -223,30 +231,49 @@ story_simulator_mission:
         - work_state: in progress
     seed_yaml_reflects_live_state:
         - description: >
-              An agent that reads a save's seed *.yaml directly (data/*/setting.yaml
-              or its copy in save_dir) should see current registry state, or at
-              least be clearly warned it can't — update_registry writes only to
-              the registry database, never back to any file, so the seed YAML
-              stays frozen at turn-zero while Postgres holds the real current
-              state. Confirmed happening in practice: a coding agent defaults to
-              grepping/reading the YAML instead of calling view_registry/
-              view_entity. Two candidate fixes, not mutually exclusive: (1) warn
-              — a line in the MCP server's own `instructions` string and/or a
-              header comment on each seed YAML, cheap but doesn't fix the root
-              cause; (2) sync — have update_registry export the registry's
-              current state back out to save_dir's YAML every turn (the
-              direction iacs-mcp's refresh tool already writes in), so the
-              save's YAML becomes a live, read-only mirror. Sync needs its own
-              design pass (full re-export per call vs. batched/on-demand) first.
+              An agent that reads a save's YAML directly should see current
+              registry state, or at least be clearly warned it can't —
+              update_registry used to write only to the registry database,
+              never back to any file, so the seed YAML (data/*/setting.yaml
+              or its copy in save_dir) stayed frozen at turn-zero while
+              Postgres held the real current state (confirmed happening in
+              practice: a coding agent defaulting to grepping/reading it
+              instead of calling view_registry/view_entity). Root-cause fixed:
+              every update_registry call (including advance_npc_turn's own
+              internal one) now re-exports the registry's current state to
+              save_dir/world.yaml, a generated, read-only mirror rewritten in
+              full each turn — the original seed YAML itself is still never
+              touched. Not fully closed: an agent could still default to
+              grepping the frozen seed specifically instead of the live
+              world.yaml, or not know world.yaml exists — see
+              mcp_instructions_mention_world_yaml.
         - requirement
         - impact:
               type: reliability
               value: 0.6
+        - work_state: done
+    mcp_instructions_mention_world_yaml:
+        - description: >
+              CLAUDE.md has accumulated real operational game-level knowledge
+              from dev/playtest sessions (that save_dir/world.yaml is a live,
+              current mirror of the registry, distinct from the frozen seed —
+              see seed_yaml_reflects_live_state), but CLAUDE.md only reaches
+              Claude Code sessions in this repo, a narrower audience than
+              "whoever is narrating a story-simulator world." Fold the
+              game-level entries (not the dev-environment-specific ones, like
+              the story-simulator-mcp reload trick or idle-disconnect
+              recovery, which belong staying in CLAUDE.md) into the MCP
+              server's own `instructions` string in mcp_server.py, which
+              reaches any connected MCP client. Needs a periodic pass, not a
+              one-time fix, since CLAUDE.md keeps accumulating this kind of
+              knowledge.
+        - requirement
+        - impact:
+              type: reliability
+              value: 0.3
         - cost:
-              - type: engineering_hours
-                value: 5
-              - type: regression_risk
-                value: 0.3
+              type: engineering_hours
+              value: 1
         - work_state: new
     ec_defined_agents:
         - description: >

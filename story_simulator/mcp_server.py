@@ -363,6 +363,42 @@ def view_entity(entity_id: str, ctx: Context) -> str:
     return f"# {entity_id}\n" + "\n".join(lines)
 
 
+def _export_world_yaml(registrar: Registrar, save_dir: Path) -> None:
+    """Re-export the registry's current state to `save_dir`'s `world.yaml`.
+
+    A straight, mechanical round-trip (`Registrar.export_manifest`) -- not
+    the old `IacsArchivist`'s LLM-driven read/write loop, removed along with
+    `EnsembleWorld`/`Interpreter` in the MCP rebuild (see
+    docs/manifest/history.yaml: project_history.turn_pipeline_removed and
+    .world_yaml_sync_reverses_old_archivist_design). Runs after every
+    registry write so a save's own YAML stops being frozen turn-zero seed
+    data and instead reads as a live mirror of the registry, which stays the
+    actual source of truth.
+
+    `export_manifest` also re-exports this project's own field-schema
+    manifest (merged into every registry via `input_dirs=[MANIFEST_DIR]`)
+    to its own `builtins.yaml` alongside `world.yaml` -- that's just a
+    normalized round-trip of `manifest/builtins.yaml`'s static content, not
+    game state, so it's deleted rather than left to accumulate confusingly
+    in `save_dir`.
+    """
+    __iacs__ = {"solution of": "story_simulator_mission.seed_yaml_reflects_live_state"}
+    world_yaml = save_dir / f"{WORLD_FILE_ID}.yaml"
+    for path in registrar.export_manifest(output_dir=str(save_dir)):
+        if Path(path) != world_yaml:
+            Path(path).unlink(missing_ok=True)
+
+
+def _update_registry_and_sync(registrar: Registrar, save_dir: Path, yaml_string: str) -> None:
+    """Merge `yaml_string` into the registry, then sync `save_dir`'s YAML to match."""
+    registrar.update(
+        input_dirs=[str(MANIFEST_DIR)],
+        yaml_strings={WORLD_FILE_ID: yaml_string},
+        time=_next_turn_stamp(),
+    )
+    _export_world_yaml(registrar, save_dir)
+
+
 @server.tool()
 def update_registry(yaml_string: str, ctx: Context) -> str:
     """Merge entity-first YAML into the world registry, run through the same ETL as save files.
@@ -372,17 +408,23 @@ def update_registry(yaml_string: str, ctx: Context) -> str:
     """
     __iacs__ = {"solution of": "story_simulator_mission.tool_catalog.update_registry"}
     registrar = _get_registrar(ctx)
-    registrar.update(
-        input_dirs=[str(MANIFEST_DIR)],
-        yaml_strings={WORLD_FILE_ID: yaml_string},
-        time=_next_turn_stamp(),
-    )
-    return "Merged into the registry."
+    save_dir = _get_save_dir(ctx)
+    _update_registry_and_sync(registrar, save_dir, yaml_string)
+    return "Merged into the registry and synced to save_dir/world.yaml."
 
 
 @server.tool()
-def perceive(reference_alias: str, ctx: Context, radius: float = spatial.DEFAULT_PERCEPTION_RADIUS) -> str:
-    """Return what `reference_alias` can currently perceive within `radius` meters, and record it.
+def perceive(
+    reference_alias: str, ctx: Context, min_radius: float = spatial.DEFAULT_PERCEPTION_RADIUS
+) -> str:
+    """Return what `reference_alias` can currently perceive, and record it.
+
+    Each nearby entity's own visibility distance is computed from its
+    `size` component (meters), not a single flat cutoff for everyone -- a
+    mountain stays perceptible from far further away than a dropped coin.
+    `min_radius` is a floor guaranteeing anything at least this close is
+    always perceptible, regardless of size (see
+    `story_simulator.spatial.perceptible_entities`/`game_config`).
 
     Tags each perceived entity `active` (replacing whatever was previously
     tagged active) and merges them into `reference_alias`'s permanent
@@ -391,11 +433,11 @@ def perceive(reference_alias: str, ctx: Context, radius: float = spatial.DEFAULT
     """
     __iacs__ = {"solution of": "story_simulator_mission.tool_catalog.perceive"}
     registrar = _get_registrar(ctx)
-    nearby = spatial.entities_within(registrar, reference_alias, radius)
+    nearby = spatial.perceptible_entities(registrar, reference_alias, min_radius)
     spatial.sync_active_tags(registrar, nearby)
     spatial.record_memory(registrar, reference_alias, nearby)
     if not nearby:
-        return f"Nothing else is within {radius} meters of {reference_alias}."
+        return f"Nothing else is within perceptible range of {reference_alias}."
     details = spatial.entity_descriptions(registrar, nearby)
     parts = [f"Entities near {reference_alias}: {', '.join(sorted(nearby))}"]
     if details:
@@ -441,10 +483,11 @@ def advance_npc_turn(npc_alias: str, ctx: Context) -> str:
     """
     __iacs__ = {"solution of": "story_simulator_mission.tool_catalog.advance_npc_turn"}
     registrar = _get_registrar(ctx)
-    return asyncio.run(_advance_npc_turn_async(registrar, npc_alias))
+    save_dir = _get_save_dir(ctx)
+    return asyncio.run(_advance_npc_turn_async(registrar, save_dir, npc_alias))
 
 
-async def _advance_npc_turn_async(registrar: Registrar, npc_alias: str) -> str:
+async def _advance_npc_turn_async(registrar: Registrar, save_dir: Path, npc_alias: str) -> str:
     """Run one NPC's whole turn: perceive, decide (no tools), then narrate+record.
 
     The decide step (`_build_npc_decision_prompt` + `complete()`) is
@@ -459,7 +502,7 @@ async def _advance_npc_turn_async(registrar: Registrar, npc_alias: str) -> str:
     """
     __iacs__ = {"solution of": "story_simulator_mission.npc_authority_separation"}
     # Step 1: perceive — same effect as the perceive tool, called in-process.
-    nearby = spatial.entities_within(registrar, npc_alias, spatial.DEFAULT_PERCEPTION_RADIUS)
+    nearby = spatial.perceptible_entities(registrar, npc_alias)
     spatial.sync_active_tags(registrar, nearby)
     spatial.record_memory(registrar, npc_alias, nearby)
 
@@ -483,11 +526,7 @@ async def _advance_npc_turn_async(registrar: Registrar, npc_alias: str) -> str:
             if name == "resolve_physics":
                 return _physics_agent.resolve(arguments["scenario"])
             if name == "update_registry":
-                registrar.update(
-                    input_dirs=[str(MANIFEST_DIR)],
-                    yaml_strings={WORLD_FILE_ID: arguments["yaml_string"]},
-                    time=_next_turn_stamp(),
-                )
+                _update_registry_and_sync(registrar, save_dir, arguments["yaml_string"])
                 return "Merged into the registry."
             return f"Error: unknown tool {name!r}"
         except Exception as e:

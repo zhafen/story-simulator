@@ -59,6 +59,18 @@ physics_components:
         - description: A tag component indicating that the associated entity is at the
             origin of the coordinate system.
         - component_type
+    size:
+        - description: The entity's characteristic visible dimension, in meters (e.g.
+            height for a person or door). Drives how far away `perceive`
+            (story_simulator/spatial.py) considers the entity perceptible --
+            see `story_simulator.game_config` for the visibility-distance
+            calculation. An entity with no `size` component of its own falls
+            back to `game_config.DEFAULT_ENTITY_SIZE`.
+        - component_type
+        - field:
+            value:
+                description: The size in meters.
+                type: float
 
 character_components:
     memory:

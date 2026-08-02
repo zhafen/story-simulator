@@ -19,6 +19,7 @@ import pandas as pd
 import yaml
 from iacs.registrar import Registrar
 
+from story_simulator import game_config
 from story_simulator.config import MANIFEST_DIR, WORLD_FILE_ID
 
 DEFAULT_PERCEPTION_RADIUS = 20.0
@@ -107,6 +108,62 @@ def entities_within(registrar: Registrar, center: "str | tuple[float, float]", r
             continue
         pos = (float(row["position.x"]), float(row["position.y"]))
         if math.dist(pos, center_pos) <= radius:
+            result.add(row["entity_id.alias"])
+    return result
+
+
+def visibility_distance(size: float) -> float:
+    """How far away an object of this characteristic size stays perceptible.
+
+    An object subtending less than `game_config.PERCEPTIBLE_FOV_FRACTION` of
+    a `game_config.FOV_DEGREES`-wide field of view blends into the
+    background rather than staying perceptible -- see
+    `data/living_world/setting.yaml`'s journaling_desk placement note and
+    `game_config`'s own docstring for the reasoning and the real-world
+    figures it was checked against.
+    """
+    __iacs__ = {"solution of": "story_simulator_mission.tool_catalog.perceive"}
+    threshold_angle = math.radians(game_config.FOV_DEGREES * game_config.PERCEPTIBLE_FOV_FRACTION)
+    return size / math.tan(threshold_angle)
+
+
+def entity_sizes(registrar: Registrar) -> dict[str, float]:
+    """Return {entity_id: size.value} for every entity with a recorded `size`."""
+    df = safe_view(registrar, "size.value")
+    if df is None:
+        return {}
+    return dict(zip(df["entity_id"], df["size.value"]))
+
+
+def perceptible_entities(
+    registrar: Registrar,
+    center: "str | tuple[float, float]",
+    min_radius: float = DEFAULT_PERCEPTION_RADIUS,
+) -> set[str]:
+    """Return the aliases of every positioned entity `center` can perceive.
+
+    Unlike `entities_within`'s single flat cutoff for every entity, each
+    candidate's own visibility distance is computed from its `size`
+    component via `visibility_distance` (falling back to
+    `game_config.DEFAULT_ENTITY_SIZE` when it has none) -- so a mountain
+    stays visible from far further away than a dropped coin, with no extra
+    calculation required of the caller beyond making sure entities carry a
+    `size` component. `min_radius` is a floor, not a cap: something already
+    this close stays perceptible even if its own size would compute a
+    shorter distance (a coin at your feet is still perceptible, even though
+    a coin-sized object's raw visibility distance is under a meter).
+    """
+    center_id = registrar.get_entity_id(center) if isinstance(center, str) else None
+    center_pos = _resolve_point(registrar, center)
+    positions = latest_positions(registrar)
+    sizes = entity_sizes(registrar)
+    result = set()
+    for _, row in positions.iterrows():
+        if center_id is not None and row["entity_id"] == center_id:
+            continue
+        pos = (float(row["position.x"]), float(row["position.y"]))
+        size = sizes.get(row["entity_id"], game_config.DEFAULT_ENTITY_SIZE)
+        if math.dist(pos, center_pos) <= max(min_radius, visibility_distance(size)):
             result.add(row["entity_id.alias"])
     return result
 

@@ -237,6 +237,21 @@ def test_perceptible_entities_falls_back_to_default_size_when_missing():
     assert "no_size_far" not in perceptible_entities(registrar, "observer")
 
 
+def test_perceptible_entities_when_no_entity_has_ever_had_a_size_component(tmp_path):
+    # _SAMPLE_WORLD_YAML has no `size` component anywhere, so an in-memory
+    # registrar built straight off it still carries the manifest-declared
+    # `size` schema in-process. Round-trip through a database, the same way
+    # `start_world` reopens a save via Registrar.load, to reproduce a
+    # reloaded registry that has genuinely never seen a `size` table and
+    # falls back to Registry.get's generic (string) schema for it.
+    registrar = _registrar_from_yaml(_SAMPLE_WORLD_YAML)
+    db_path = tmp_path / "registry.duckdb"
+    registrar.save(str(db_path))
+    reloaded = Registrar.load(str(db_path))
+    assert "size" not in reloaded.registry.component_types
+    assert perceptible_entities(reloaded, "player") == {"nearby_npc"}
+
+
 def test_latest_positions_resolves_to_highest_turn():
     registrar = Registrar()
     merge_yaml_string(registrar, "player:\n    - position: {x: 0.0, y: 0.0}\n", turn=1)

@@ -15,6 +15,7 @@ __iacs__ = {"solution of": "story_simulator_mission.tool_catalog.perceive"}
 
 import math
 
+import ibis
 import pandas as pd
 import yaml
 from iacs.registrar import Registrar
@@ -153,10 +154,23 @@ def perceptible_entities(registrar: Registrar, center: "str | tuple[float, float
     cx, cy = _resolve_point(registrar, center)
 
     positions = registrar.view_current(["position.x", "position.y"])
-    sizes = registrar.get("size").group_by("entity_id").aggregate(size=lambda t: t["value"].max())
-    joined = positions.left_join(sizes, positions["entity_id"] == sizes["entity_id"])
 
-    size_col = joined["size"].fill_null(game_config.DEFAULT_ENTITY_SIZE)
+    # "size" may not be a known component type at all yet -- a fresh
+    # Registrar.load() only recovers declared schemas from tables that
+    # already have data (see Registry.get), so if no entity anywhere has
+    # ever carried a `size` component, registrar.get("size") falls back to
+    # a generic entity_id/value-as-string schema, and fill_null(<float>)
+    # against that string column blows up with a string/float64 precedence
+    # error instead of a sensible default. Skip the join entirely in that
+    # case and treat every candidate as game_config.DEFAULT_ENTITY_SIZE.
+    if "size" in registrar.registry.component_types:
+        sizes = registrar.get("size").group_by("entity_id").aggregate(size=lambda t: t["value"].max())
+        joined = positions.left_join(sizes, positions["entity_id"] == sizes["entity_id"])
+        size_col = joined["size"].fill_null(game_config.DEFAULT_ENTITY_SIZE)
+    else:
+        joined = positions
+        size_col = ibis.literal(game_config.DEFAULT_ENTITY_SIZE)
+
     distance_expr = ((joined["position.x"] - cx) ** 2 + (joined["position.y"] - cy) ** 2).sqrt()
     visible_radius = size_col / _perceptible_fov_tan()
 

@@ -46,6 +46,25 @@ def safe_view(registrar: Registrar, fields: str | list[str]) -> pd.DataFrame | N
         return None
 
 
+def safe_view_current(registrar: Registrar, fields: str | list[str]) -> pd.DataFrame | None:
+    """Like `safe_view`, but resolves each field's current row per entity.
+
+    Uses `registrar.view_current` (see `Registry.view_current`) instead of
+    `view` -- the right choice for anything meant to show an entity's
+    *current* state (`perceive`, narration) rather than its full change
+    history. A component type with no `time_dimension` field behaves
+    exactly like `safe_view` (every row is "current").
+    """
+    names = [fields] if isinstance(fields, str) else fields
+    tables = {name.split(".", 1)[0] for name in names}
+    if not tables <= set(registrar.registry.component_types):
+        return None
+    try:
+        return registrar.view_current(fields).execute()
+    except KeyError:
+        return None
+
+
 def latest_positions(registrar: Registrar) -> pd.DataFrame:
     """Return one row per entity: its highest-turn `position` (resolves accumulated history)."""
     columns = ["entity_id", "entity_id.alias", "position.x", "position.y", "position.z", "position.turn"]
@@ -214,17 +233,32 @@ def record_memory(registrar: Registrar, owner_alias: str, perceived_aliases: set
 
 
 def entity_descriptions(registrar: Registrar, aliases: set[str]) -> str:
-    """Return one `alias: description` line per alias in `aliases` that has a `description`."""
+    """Return one `alias: description (state: ...)` line per alias with a `description` or `state`.
+
+    Reads via `safe_view_current`, not `safe_view`: both `description` and
+    `state` are time_dimension'd (see manifest/builtins.yaml and iacs's own
+    `description` component), so this shows an entity's current description/
+    state -- not every historical restatement of it.
+    """
     if not aliases:
-        return ""
-    df = safe_view(registrar, "description.value")
-    if df is None:
         return ""
     entity_ids = {
         entity_id for alias in aliases if (entity_id := registrar.get_entity_id(alias)) is not None
     }
-    df = df[df["entity_id"].isin(entity_ids)]
-    return "\n".join(f"{row['entity_id.alias']}: {row['description.value']}" for _, row in df.iterrows())
+    if not entity_ids:
+        return ""
+
+    parts_by_alias: dict[str, list[str]] = {}
+    desc_df = safe_view_current(registrar, "description.value")
+    if desc_df is not None:
+        for _, row in desc_df[desc_df["entity_id"].isin(entity_ids)].iterrows():
+            parts_by_alias.setdefault(row["entity_id.alias"], []).append(str(row["description.value"]))
+    state_df = safe_view_current(registrar, "state.value")
+    if state_df is not None:
+        for _, row in state_df[state_df["entity_id"].isin(entity_ids)].iterrows():
+            parts_by_alias.setdefault(row["entity_id.alias"], []).append(f"(state: {row['state.value']})")
+
+    return "\n".join(f"{alias}: {' '.join(parts)}" for alias, parts in sorted(parts_by_alias.items()))
 
 
 def active_aliases(registrar: Registrar) -> set[str]:

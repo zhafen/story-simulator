@@ -88,3 +88,29 @@ they don't need to know any of this happened.
 Keep the save's `save_dir` (and `scenario_dir`) in mind for exactly this
 reason — the whole recovery path depends on being able to reopen the same
 save without asking the player to repeat it.
+
+## Define a component type's schema before improvising one through gameplay YAML
+
+iacs doesn't require pre-registering a component type — `update_registry`
+will happily accept a component name nobody ever declared, typing its
+fields from whatever the YAML shorthand implies. That's how `state` (a
+door's open/closed status) ended up undefined for most of a playtest
+session: real, working gameplay data with no `description`, no field
+types, and critically no `time_dimension` flag, so it silently
+accumulated an ever-growing, undifferentiable history instead of
+resolving to one current value the way `position`/`description` do.
+
+If a turn's narration needs a component type that isn't already in
+`manifest/builtins.yaml` (check there and in `iacs/iacs/builtins/
+components.yaml` first — most needs are already covered, e.g. `state` for
+a short current-status word/phrase, `description`/`appearance` for
+current-look text, `size` for perceptibility), define it properly in
+`manifest/builtins.yaml` before using it: a top-level entry with its own
+`description` explaining what it's for, a `component_type` tag, and a
+`field:` block declaring each field's name/type/description — and, if it's
+a "current value" kind of fact rather than an accumulating log, a nullable
+`turn` field flagged `time_dimension: true`, matching `position.turn`'s/
+`state.turn`'s pattern. This only applies when you actually have write
+access to the repo (a Claude Code session like this one); a narrator
+connected only through the MCP tool surface has no way to act on it and
+should just use what's already defined.

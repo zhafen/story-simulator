@@ -15,6 +15,23 @@ last turn. The save's original seed (`scenario.yaml`, or wherever
 if you're reading a save's YAML for current state, read `world.yaml`, not
 the seed file.
 
+**`data/living_world` is no longer a pristine `scenario_dir` template.**
+It now holds both `scenario.yaml` (the original turn-zero seed) and
+`world.yaml` (a real playthrough's accumulated state, committed
+deliberately so that progress wasn't only living in this session's
+ephemeral Postgres). To **continue** that playthrough, open
+`data/living_world` as `save_dir` itself, with no separate `scenario_dir`.
+Do **not** pass it as `scenario_dir` to seed a different, new `save_dir`
+anymore — `_seed_save_dir` would copy both files into the new location,
+and `start_world`'s first-open loader concatenates every `*.yaml` file's
+raw text into one document before parsing, so the new "fresh" save would
+silently start with this playthrough's full history already merged in
+(YAML's last-key-wins on the resulting duplicate top-level keys happens to
+make this non-destructive today only because `world.yaml` sorts after
+`scenario.yaml` and is already a superset of it — not a guaranteed
+invariant, just how it currently shakes out). A genuinely fresh living-world
+playthrough needs a different, currently-nonexistent pristine source.
+
 ## Reloading `story-simulator-mcp` after editing its code
 
 `.mcp.json` spawns `story-simulator-mcp` once, as a long-lived stdio

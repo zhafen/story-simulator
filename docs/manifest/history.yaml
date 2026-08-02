@@ -12,8 +12,11 @@ project_history:
     data:
         - description: >
               Non-actionable historical record of how the project reached its
-              current shape. See RESET_LOG.md for the pre-history repo reset
-              itself (commit 69a94c3, 2024-04-28).
+              current shape. Before this history begins, the repository was
+              reset to a clean slate to start fresh at commit 69a94c3
+              ("Formatted simulation.py with black", 2024-04-28), while
+              preserving its full git history — see RESET_LOG.md;
+              `git checkout 69a94c3` shows the repo as it stood at that point.
     turn_pipeline_removed:
         - description: >
               Commit acb2956 ("Remove the turn-pipeline/REPL apparatus") deleted

@@ -41,12 +41,10 @@ DEFAULT_WORLD_DIR = Path(__file__).parent.parent / "data" / "default"
 
 
 # Registry backend: any ibis.connect-resolvable URL works (Registry is
-# backend-agnostic); Postgres is the default and verified one, since it lets
-# multiple processes hold their own concurrent connection to the same schema,
-# unlike a single-file embedded database. Matches GitHub Actions' `postgres:`
-# service container, so CI needs no override; local dev needs a matching
-# database server (or STORY_SIM_DATABASE_DSN pointed elsewhere). See
-# docs/manifest/story-simulator.yaml: story_simulator_mission.concurrent_readable_registry.
+# backend-agnostic); Postgres is the default and verified one. Matches GitHub
+# Actions' `postgres:` service container, so CI needs no override; local dev
+# needs a matching database server (or STORY_SIM_DATABASE_DSN pointed
+# elsewhere). See registry_url's docstring for why Postgres specifically.
 DEFAULT_DATABASE_DSN = "postgresql://postgres:postgres@localhost:5432/postgres"
 
 
@@ -88,7 +86,14 @@ def registry_url(save_dir: Path) -> str:
     path (typically `public`) instead of failing loudly. Callers must
     create it first (see mcp_server._ensure_postgres_schema); a different
     backend may need a different equivalent.
+
+    Postgres specifically (not the DuckDB this registry used before) because
+    a live MCP session needs its connection to stay open for the session's
+    whole lifetime while other processes still read/write concurrently --
+    DuckDB's file-based storage locks out every other connection for as long
+    as one process holds it open, which any client/server backend avoids.
     """
+    __iacs__ = {"solution of": "story_simulator_mission.concurrent_readable_registry"}
     dsn = resolve_database_dsn()
     schema = registry_schema_name(save_dir)
     separator = "&" if urllib.parse.urlparse(dsn).query else "?"

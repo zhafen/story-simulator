@@ -12,12 +12,15 @@ file_info:
           story_simulator.config.MANIFEST_DIR): that directory is passed as
           input_dirs to every registrar.update() call, so anything under it
           is merged as data into every live game world's registry, not just
-          used for schema. Load this file explicitly with the iacs MCP
-          server's own load_manifest(["docs/manifest"]) (or set
-          IACS_MANIFEST) when you want to query or audit it — it's
-          independent of any save's registry. History that isn't itself a
-          requirement lives in history.yaml, kept separate so it isn't
-          scanned in as part of assessing requirements.
+          used for schema. History that isn't itself a requirement lives in
+          history.yaml, kept separate so it isn't scanned in as part of
+          assessing requirements.
+
+          Most solutions live as `__iacs__ = {"solution of": ...}` metadata in
+          the docstring of the code that solves them, not as entities here —
+          load_manifest(["docs/manifest", "story_simulator"]) picks up both
+          this requirement tree and every Python-embedded solution. Loading
+          this directory alone under-reports coverage.
     - file_info
 
 # ---------------------------------------------------------------------------
@@ -363,82 +366,16 @@ story_simulator_mission:
         - work_state: new
 
 # ---------------------------------------------------------------------------
-# What satisfies each done (or partially done) requirement.
+# What satisfies each done (or partially done) requirement. Most solutions
+# now live as `__iacs__ = {"solution of": ...}` metadata right in the Python
+# docstring of the code that solves them (mcp_server.py, spatial.py,
+# config.py) rather than described here at a distance — load
+# load_manifest(["docs/manifest", "story_simulator"]) to see the full,
+# solved requirement tree. Only what has no Python home stays here.
 # ---------------------------------------------------------------------------
 
-mcp_server_solutions:
-    data:
-        - description: story_simulator/mcp_server.py — the FastMCP server exposing every tool above.
-        - solution of: story_simulator_mission.stateless_client
-    start_world_impl:
-        - description: >
-              Seeds save_dir from settings_dir/DEFAULT_WORLD_DIR only when the
-              schema's registry has no component types yet; merges seed YAML
-              under WORLD_FILE_ID (not per-file paths) so seeded and later-written
-              aliases share one entity_id space.
-        - solution of: story_simulator_mission.tool_catalog.start_world
-    view_registry_impl:
-        - solution of: story_simulator_mission.tool_catalog.view_registry
-    view_entity_impl:
-        - solution of: story_simulator_mission.tool_catalog.view_entity
-    update_registry_impl:
-        - solution of: story_simulator_mission.tool_catalog.update_registry
-    perceive_impl:
-        - solution of: story_simulator_mission.tool_catalog.perceive
-    generate_terrain_impl:
-        - solution of: story_simulator_mission.tool_catalog.generate_terrain
-    resolve_physics_impl:
-        - solution of: story_simulator_mission.tool_catalog.resolve_physics
-    advance_npc_turn_impl:
-        - description: >
-              Nests its own generate_terrain/resolve_physics/update_registry
-              calls via agents.run_tool_loop; decide step (npc.yaml) is
-              tool-free and perceive-scoped, but the resolve+record step
-              (npc_resolver.yaml) is handed update_registry directly, so it
-              currently carries the same unrestricted write authority as a full
-              narrator — the gap npc_authority_separation names.
-        - solution of: story_simulator_mission.tool_catalog.advance_npc_turn
-    shared_world_file_id:
-        - description: config.WORLD_FILE_ID is the one literal source key every registrar.update() call across the project agrees to merge under.
-        - solution of: story_simulator_mission.single_shared_source_key
-    postgres_auto_start_impl:
-        - description: >
-              _ensure_postgres_running tries a local service start only when
-              resolve_database_dsn() points at localhost and the connection was
-              refused outright; on a brand-new cluster with no password set yet,
-              falls back to setting the documented dev password via a
-              peer-authenticated psql call. Any other failure (including a
-              reachable server just rejecting these credentials) surfaces
-              through _ensure_postgres_schema's own connect instead of being
-              papered over here.
-        - solution of: story_simulator_mission.dev_db_bootstrap
-
-spatial_solutions:
-    - description: >
-          story_simulator/spatial.py — position/distance/perception helpers,
-          ported from the old per-turn MapSystem into on-demand functions any
-          tool can call, since there's no more automatic per-turn pass.
-    - solution of: story_simulator_mission.tool_catalog.perceive
-
-registry_backend_solution:
-    - description: >
-          Registry lives in Postgres by default (any ibis-connectable
-          client/server backend works), one schema per save_dir
-          (config.registry_schema_name hashes the resolved save_dir path),
-          replacing an earlier DuckDB-backed design that locked out concurrent
-          connections.
-    - solution of: story_simulator_mission.concurrent_readable_registry
-
-npc_authority_solution:
-    - description: >
-          Partial: the decide step (npc.yaml) is already correctly scoped
-          (no tools, perceive-limited view). The resolve+record step
-          (npc_resolver.yaml via run_tool_loop) is not — still needs a
-          redesign that keeps those two steps' authority separate, and a
-          decision on whether resolve+record belongs in advance_npc_turn at
-          all versus being handed to whichever narrator already holds that
-          authority.
-    - solution of: story_simulator_mission.npc_authority_separation
+shared_world_file_id:
+    - solution of: story_simulator_mission.single_shared_source_key
 
 architecture_manifest_solution:
     - description: >

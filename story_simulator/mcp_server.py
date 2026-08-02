@@ -19,6 +19,8 @@ up automatically once the session ends), plain `@server.tool()` functions,
 
 from __future__ import annotations
 
+__iacs__ = {"solution of": "story_simulator_mission.stateless_client"}
+
 import asyncio
 import shutil
 import subprocess
@@ -199,6 +201,7 @@ def _ensure_postgres_running() -> None:
     `_ensure_postgres_schema`'s own connection attempt rather than papered
     over here.
     """
+    __iacs__ = {"solution of": "story_simulator_mission.dev_db_bootstrap"}
     dsn = resolve_database_dsn()
     if not _is_local_dsn(dsn):
         return
@@ -276,6 +279,13 @@ server = FastMCP(
 def start_world(save_dir: str, ctx: Context, settings_dir: str | None = None) -> str:
     """Open a world save for this session, seeding it from `settings_dir` if it's empty.
 
+    The loose seed *.yaml under save_dir is only ever merged into the
+    registry the first time this save_dir is opened (a brand-new schema has
+    no component types yet) — a resumed save's accumulated state already
+    lives in the persisted registry, so reloading the seed YAML again on
+    every start_world call would re-merge the same starting entities
+    repeatedly.
+
     Args:
         save_dir: Directory holding (or to hold) this world's save data.
         settings_dir: Starting scenario to seed a brand-new save_dir from
@@ -283,6 +293,7 @@ def start_world(save_dir: str, ctx: Context, settings_dir: str | None = None) ->
             story-simulator's plain default world (a player, a door, an
             empty expanse). Ignored if save_dir already has any save data.
     """
+    __iacs__ = {"solution of": "story_simulator_mission.tool_catalog.start_world"}
     save_dir_path = Path(save_dir)
     settings_path = Path(settings_dir) if settings_dir else DEFAULT_WORLD_DIR
     save_dir_path.mkdir(parents=True, exist_ok=True)
@@ -291,11 +302,6 @@ def start_world(save_dir: str, ctx: Context, settings_dir: str | None = None) ->
     _ensure_postgres_running()
     _ensure_postgres_schema(save_dir_path)
     registrar = Registrar.load(registry_url(save_dir_path))
-    # Only load the seed EC files into the registry the first time this
-    # save_dir is ever opened (a brand-new schema has no component types
-    # yet) — a resumed save's accumulated state already lives in the
-    # persisted registry, so reloading the loose seed YAML again on every
-    # start_world call would re-merge the same starting entities repeatedly.
     if not registrar.registry.component_types:
         found = sorted(
             f for pattern in ("*.yaml", "*.yml") for f in save_dir_path.rglob(pattern)
@@ -303,7 +309,7 @@ def start_world(save_dir: str, ctx: Context, settings_dir: str | None = None) ->
         if found:
             # Merged as one WORLD_FILE_ID-keyed string, not passed as
             # input_dirs (which would key each file by its own path instead)
-            # -- see WORLD_FILE_ID's docstring for why every write must share
+            # -- see WORLD_FILE_ID's comment for why every write must share
             # one source key.
             seed_text = "\n".join(f.read_text() for f in found)
             registrar.update(
@@ -325,6 +331,7 @@ def view_registry(component_type: str, ctx: Context) -> str:
     Covers both the starting scenario and everything recorded since, since
     it reads straight from the registry.
     """
+    __iacs__ = {"solution of": "story_simulator_mission.tool_catalog.view_registry"}
     registrar = _get_registrar(ctx)
     return registrar.view_df(component_type).to_csv()
 
@@ -337,6 +344,7 @@ def view_entity(entity_id: str, ctx: Context) -> str:
         entity_id: Entity hash, alias, or unambiguous path fragment (e.g.
             "player", "desk", or "journaling_desk.desk").
     """
+    __iacs__ = {"solution of": "story_simulator_mission.tool_catalog.view_entity"}
     registrar = _get_registrar(ctx)
     resolved_id = registrar.get_entity_id(entity_id)
     if resolved_id is None:
@@ -362,6 +370,7 @@ def update_registry(yaml_string: str, ctx: Context) -> str:
     Args:
         yaml_string: Entity-first YAML content to merge in.
     """
+    __iacs__ = {"solution of": "story_simulator_mission.tool_catalog.update_registry"}
     registrar = _get_registrar(ctx)
     registrar.update(
         input_dirs=[str(MANIFEST_DIR)],
@@ -380,6 +389,7 @@ def perceive(reference_alias: str, ctx: Context, radius: float = spatial.DEFAULT
     `memory`, the same way the old per-turn MapSystem did — just on demand
     instead of automatically every turn.
     """
+    __iacs__ = {"solution of": "story_simulator_mission.tool_catalog.perceive"}
     registrar = _get_registrar(ctx)
     nearby = spatial.entities_within(registrar, reference_alias, radius)
     spatial.sync_active_tags(registrar, nearby)
@@ -402,6 +412,7 @@ def generate_terrain(description: str) -> str:
             nearby entities, how the character got there) to generate
             terrain consistent with.
     """
+    __iacs__ = {"solution of": "story_simulator_mission.tool_catalog.generate_terrain"}
     return _terrain_agent.generate(description)
 
 
@@ -416,6 +427,7 @@ def resolve_physics(scenario: str) -> str:
         scenario: The attempted action and whatever entity state (sizes,
             distances, positions) bears on whether/how it succeeds.
     """
+    __iacs__ = {"solution of": "story_simulator_mission.tool_catalog.resolve_physics"}
     return _physics_agent.resolve(scenario)
 
 
@@ -427,11 +439,25 @@ def advance_npc_turn(npc_alias: str, ctx: Context) -> str:
         npc_alias: The NPC's own alias (its `character.interaction_type`
             should be "npc").
     """
+    __iacs__ = {"solution of": "story_simulator_mission.tool_catalog.advance_npc_turn"}
     registrar = _get_registrar(ctx)
     return asyncio.run(_advance_npc_turn_async(registrar, npc_alias))
 
 
 async def _advance_npc_turn_async(registrar: Registrar, npc_alias: str) -> str:
+    """Run one NPC's whole turn: perceive, decide (no tools), then narrate+record.
+
+    The decide step (`_build_npc_decision_prompt` + `complete()`) is
+    correctly scoped: perceive-limited view, no tools at all. The narrate+
+    record step below is not — it's handed `update_registry` directly via
+    `run_tool_loop`, so it carries the same unrestricted write authority as a
+    full narrator, unlike a human player's input (which never itself writes
+    anything). Still needs a redesign that keeps those two authority levels
+    separate, and a decision on whether narrate+record belongs here at all
+    versus being handed to whichever narrator already holds that authority —
+    reserving full autonomy for when genuinely nobody is watching.
+    """
+    __iacs__ = {"solution of": "story_simulator_mission.npc_authority_separation"}
     # Step 1: perceive — same effect as the perceive tool, called in-process.
     nearby = spatial.entities_within(registrar, npc_alias, spatial.DEFAULT_PERCEPTION_RADIUS)
     spatial.sync_active_tags(registrar, nearby)

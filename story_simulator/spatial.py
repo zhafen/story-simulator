@@ -11,6 +11,8 @@ every function here takes its reference character explicitly.
 
 from __future__ import annotations
 
+__iacs__ = {"solution of": "story_simulator_mission.tool_catalog.perceive"}
+
 import math
 
 import pandas as pd

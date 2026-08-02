@@ -23,18 +23,18 @@ WORLD_FILE_ID = "world"
 # definitions for them and passes their data through unvalidated/untyped.
 MANIFEST_DIR = Path(__file__).parent.parent / "manifest"
 
-# The tracked, ever-growing "living world" save data — a `settings_dir` a
+# The tracked, ever-growing "living world" save data — a `scenario_dir` a
 # caller can pass to `start_world` instead of the plain default. Its
-# setting.yaml carries a door mechanic that teleports the player forward in
+# scenario.yaml carries a door mechanic that teleports the player forward in
 # time and further from the origin each time they walk through it (see
-# data/living_world/setting.yaml), and its own directory accumulates history
+# data/living_world/scenario.yaml), and its own directory accumulates history
 # turn over turn as it's played, unlike a fresh save_dir seeded from
 # DEFAULT_WORLD_DIR.
 LIVING_WORLD_DIR = Path(__file__).parent.parent / "data" / "living_world"
 
 # A plain, hand-authored starting scenario (the player, a door, an empty
 # expanse) with none of the living world's teleport/history mechanic. This is
-# what `start_world` seeds a save_dir from when no `settings_dir` is given,
+# what `start_world` seeds a save_dir from when no `scenario_dir` is given,
 # so an ordinary throwaway save always starts from the same simple premise
 # rather than wherever the living world currently stands.
 DEFAULT_WORLD_DIR = Path(__file__).parent.parent / "data" / "default"

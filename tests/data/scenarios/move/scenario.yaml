@@ -4,7 +4,7 @@ file_info:
         entity tracking that comes with it: a player, a door, an empty
         expanse, and a journaling desk 500m away. Deliberately doesn't
         include the living world's door-teleport mechanic (see
-        data/living_world/setting.yaml) -- this test moves the player past
+        data/living_world/scenario.yaml) -- this test moves the player past
         the door, never through it, so that mechanic would only add an
         ambiguity risk with nothing to test.
 

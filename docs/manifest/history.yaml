@@ -75,7 +75,7 @@ project_history:
         - description: >
               Playtesting produced narration claiming a 2m-tall door was
               visible from ~2km away. The living world's own journaling_desk
-              placement note (data/living_world/setting.yaml) had already
+              placement note (data/living_world/scenario.yaml) had already
               worked out a visibility threshold for this — an object
               subtending <=1% of a 60°-wide field of view blends into the
               background, ~200m for a 2m door — and checking that against
@@ -88,3 +88,14 @@ project_history:
               already in the right ballpark. The actual bug was that perceive
               applied no distance limit tied to entity size at all during
               play — see story-simulator.yaml: tool_catalog.perceive.
+    min_radius_floor_tried_and_dropped:
+        - description: >
+              The first version of the size-based visibility fix added a
+              min_radius floor (guaranteeing anything at least this close
+              stays perceptible regardless of size), reasoning a coin at your
+              feet should still be perceptible. Dropped on review: the
+              formula already gives a 0.02m object ~1.9m of visibility
+              distance on its own, so the floor was solving a problem that
+              didn't exist and reintroducing exactly the kind of unjustified
+              flat constant the fix was meant to eliminate. perceive() no
+              longer takes a radius parameter at all.

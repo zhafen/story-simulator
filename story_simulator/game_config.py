@@ -15,7 +15,7 @@ __iacs__ = {"solution of": "story_simulator_mission.tool_catalog.perceive"}
 # Perception/visibility geometry: an object subtending less than this
 # fraction of the observer's field of view blends into the background
 # rather than staying perceptible. The same heuristic used to place the
-# living world's journaling desk (data/living_world/setting.yaml) at a
+# living world's journaling desk (data/living_world/scenario.yaml) at a
 # distance the original door would no longer be visible from -- and checked
 # against real-world visual-acuity/recognition-distance figures (see
 # docs/manifest/history.yaml: project_history.door_visibility_bug_found_playtesting):

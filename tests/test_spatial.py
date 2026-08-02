@@ -10,7 +10,6 @@ from story_simulator.spatial import (
     entities_within,
     entity_descriptions,
     entity_position,
-    entity_sizes,
     latest_positions,
     memory_aliases,
     merge_yaml_string,
@@ -137,7 +136,16 @@ observer:
         x: 0.0
         y: 0.0
 
-tiny_coin:
+nearby_tiny_coin:
+    - object:
+        type: coin
+    - position:
+        x: 1.0
+        y: 0.0
+    - size:
+        value: 0.02
+
+distant_tiny_coin:
     - object:
         type: coin
     - position:
@@ -187,19 +195,7 @@ def test_visibility_distance_matches_fov_formula():
     assert visibility_distance(2.0) == 2.0 / math.tan(threshold_angle)
 
 
-def test_entity_sizes_returns_recorded_sizes():
-    registrar = _registrar_from_yaml(_SIZED_WORLD_YAML)
-    sizes = entity_sizes(registrar)
-    assert sizes[registrar.get_entity_id("tiny_coin")] == 0.02
-
-
-def test_entity_sizes_omits_entities_with_no_size():
-    registrar = _registrar_from_yaml(_SIZED_WORLD_YAML)
-    sizes = entity_sizes(registrar)
-    assert registrar.get_entity_id("no_size_far") not in sizes
-
-
-def test_perceptible_entities_includes_object_well_beyond_the_default_radius():
+def test_perceptible_entities_includes_object_well_beyond_the_old_flat_radius():
     registrar = _registrar_from_yaml(_SIZED_WORLD_YAML)
     # 150m away, far past the old flat 20m default -- but a 2m-sized object's
     # own visibility distance (~191m) still reaches it.
@@ -212,18 +208,25 @@ def test_perceptible_entities_excludes_object_past_its_own_visibility_distance()
     assert "far_door_sized" not in perceptible_entities(registrar, "observer")
 
 
-def test_perceptible_entities_includes_large_object_far_beyond_default_radius():
+def test_perceptible_entities_includes_large_object_far_beyond_old_flat_radius():
     registrar = _registrar_from_yaml(_SIZED_WORLD_YAML)
     # 5000m away, but a 1000m-tall object's own visibility distance reaches
     # far past that.
     assert "distant_mountain" in perceptible_entities(registrar, "observer")
 
 
-def test_perceptible_entities_min_radius_is_a_floor_for_tiny_objects():
+def test_perceptible_entities_includes_tiny_object_within_its_own_visibility_distance():
     registrar = _registrar_from_yaml(_SIZED_WORLD_YAML)
-    # 5m away; a 0.02m object's own visibility distance is under a meter,
-    # but the default min_radius floor (20m) still covers it.
-    assert "tiny_coin" in perceptible_entities(registrar, "observer")
+    # 1m away; a 0.02m object's own visibility distance (~1.9m) still
+    # reaches it -- no artificial floor needed for something this close.
+    assert "nearby_tiny_coin" in perceptible_entities(registrar, "observer")
+
+
+def test_perceptible_entities_excludes_tiny_object_beyond_its_own_visibility_distance():
+    registrar = _registrar_from_yaml(_SIZED_WORLD_YAML)
+    # 5m away, past a 0.02m object's own ~1.9m visibility distance -- there
+    # is no min_radius floor to rescue it.
+    assert "distant_tiny_coin" not in perceptible_entities(registrar, "observer")
 
 
 def test_perceptible_entities_falls_back_to_default_size_when_missing():

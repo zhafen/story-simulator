@@ -1,6 +1,6 @@
 world:
     - description: >
-        The world in this setting is designed to iteratively build history.
+        The world in this scenario is designed to iteratively build history.
         
         The core gimmick is that there is a door, and every time the player walks
         through the door they find themselves walking through a new door one year in the

@@ -132,7 +132,7 @@ story_simulator_mission:
         start_world:
             - description: >
                   Opens or seeds a save_dir'd world, remembered for the session.
-                  Must seed only an empty save from settings_dir/DEFAULT_WORLD_DIR
+                  Must seed only an empty save from scenario_dir/DEFAULT_WORLD_DIR
                   once — a resumed save's accumulated registry state must never
                   be re-merged with the starting scenario on reconnect.
             - requirement
@@ -171,10 +171,14 @@ story_simulator_mission:
                   grows; active is a live snapshot). Each candidate's own
                   visibility distance is computed from its size component
                   (falling back to game_config.DEFAULT_ENTITY_SIZE), not a
-                  single flat cutoff for every entity — min_radius is a floor,
-                  not a cap, so a mountain stays perceptible far beyond it while
-                  a dropped coin does not once past its own, much shorter,
-                  visibility distance. Fixes a playtesting bug (see
+                  single flat cutoff for every entity — a mountain stays
+                  perceptible far beyond a dropped coin, with no artificial
+                  floor keeping small objects perceptible regardless of range
+                  (a floor was tried and dropped on review: the formula already
+                  gives even a 0.02m object ~1.9m of visibility distance on its
+                  own). Computed as one relational query (a left join between
+                  positions and sizes, then a filter) via ibis, not a Python
+                  loop over rows. Fixes a playtesting bug (see
                   project_history.door_visibility_bug_found_playtesting) where
                   a 2m door was narrated as visible from ~2km away.
             - requirement
@@ -234,7 +238,7 @@ story_simulator_mission:
               An agent that reads a save's YAML directly should see current
               registry state, or at least be clearly warned it can't —
               update_registry used to write only to the registry database,
-              never back to any file, so the seed YAML (data/*/setting.yaml
+              never back to any file, so the seed YAML (data/*/scenario.yaml
               or its copy in save_dir) stayed frozen at turn-zero while
               Postgres held the real current state (confirmed happening in
               practice: a coding agent defaulting to grepping/reading it

@@ -41,8 +41,8 @@ from story_simulator.config import registry_schema_name, registry_url, resolve_d
 from story_simulator.spatial import distance
 
 REPO_ROOT = Path(__file__).parent.parent
-NPC_SETTINGS_DIR = REPO_ROOT / "tests" / "data" / "settings" / "npc"
-MOVE_SETTINGS_DIR = REPO_ROOT / "tests" / "data" / "settings" / "move"
+NPC_SCENARIO_DIR = REPO_ROOT / "tests" / "data" / "scenarios" / "npc"
+MOVE_SCENARIO_DIR = REPO_ROOT / "tests" / "data" / "scenarios" / "move"
 
 # Cheapest available model. Kept deliberately weak rather than swapped for a
 # stronger one: story-simulator's tools need to hold up under a bad model's
@@ -279,10 +279,10 @@ def test_move(tmp_path):
     that movement actually worked, stay meaningful regardless of the exact
     narrated distance.
 
-    Uses a dedicated fixture (tests/data/settings/move), not the living
+    Uses a dedicated fixture (tests/data/scenarios/move), not the living
     world: the living world's core mechanic is that walking *through* the
     door always teleports the player further away (a new door, a year
-    later, another km south; see data/living_world/setting.yaml), which has
+    later, another km south; see data/living_world/scenario.yaml), which has
     nothing to do with what this test checks and only adds an ambiguity
     risk -- a weak model reading "go out the door" has been observed
     triggering the teleport instead of an ordinary move. The dedicated
@@ -314,7 +314,7 @@ def test_move(tmp_path):
         # TURN 0: Startup + baseline look
 
         narration = session.send_turn(
-            f"Use start_world with save_dir={save_dir} and settings_dir={MOVE_SETTINGS_DIR} "
+            f"Use start_world with save_dir={save_dir} and scenario_dir={MOVE_SCENARIO_DIR} "
             "to open a story-simulator world. Then, as the player: I look around. What do I see?"
         )
 
@@ -411,7 +411,7 @@ def test_npc(tmp_path):
         # TURN 0: Startup only -- establishes the pre-advance baseline
 
         narration = session.send_turn(
-            f"Use start_world with save_dir={save_dir} and settings_dir={NPC_SETTINGS_DIR} "
+            f"Use start_world with save_dir={save_dir} and scenario_dir={NPC_SCENARIO_DIR} "
             "to open a story-simulator world. Don't call any other tools yet."
         )
 

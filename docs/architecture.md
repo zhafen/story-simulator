@@ -37,7 +37,7 @@ own `load_manifest` only re-reads static files).
 | `view_registry(component_type)` | yes | CSV dump of every recorded instance of a component type. |
 | `view_entity(entity_id)` | yes | Every recorded component instance for one entity. |
 | `update_registry(yaml_string)` | yes | Merge entity-first YAML into the registry. |
-| `perceive(reference_alias, radius=20.0)` | yes | Nearby entities for `reference_alias`, tagging them `active` and merging them into its permanent `memory` — same computation the old per-turn `MapSystem` did, now on demand (`story_simulator/spatial.py`). |
+| `perceive(reference_alias, min_radius=20.0)` | yes | Nearby entities for `reference_alias`, tagging them `active` and merging them into its permanent `memory` — same computation the old per-turn `MapSystem` did, now on demand (`story_simulator/spatial.py`). Each entity's own visibility distance is computed from its `size` component (falling back to `game_config.DEFAULT_ENTITY_SIZE`) via the same field-of-view heuristic `data/living_world/setting.yaml`'s journaling desk placement uses, not a single flat cutoff for everyone; `min_radius` is a floor guaranteeing anything at least this close is always perceptible regardless of size. |
 | `generate_terrain(description)` | no | `TerrainAgent` — one LiteLLM call, its own held credentials/model. |
 | `resolve_physics(scenario)` | no | `PhysicsAgent` — same shape. |
 | `advance_npc_turn(npc_alias)` | yes | Decides, narrates, and records one NPC's turn end-to-end — the one case with nobody chatting to drive it. |
@@ -199,6 +199,31 @@ Things this rebuild surfaced or left open, not addressed here:
   own `instructions` string in `story_simulator/mcp_server.py`, which
   reaches any connected MCP client, not just Claude Code. Needs a pass to
   sort which entries are which and move the game-level ones over.
+
+- **Door-visibility follow-up: fixed.** Playtesting produced narration
+  claiming the player could see a 2m-tall door from ~2km away — not
+  supportable. The living world's own `journaling_desk` placement note
+  (`data/living_world/setting.yaml`) already worked out a visibility
+  threshold for this (an object subtending ≤1% of a 60°-wide field of view
+  blends into the background — ~200m for a 2m door, hence the 500m desk
+  placement); checking that against real-world visual-acuity/recognition-
+  distance research (a person/door-sized object is recognizable up to "a
+  few hundred meters" under ideal conditions, with ~300m commonly cited as
+  the practical unaided-eye upper limit — Earth's curvature isn't the
+  limiting factor at these ranges, its own horizon distance for a person's
+  eye height is ~9-10km) confirmed the 200m/500m figures were already in
+  the right ballpark. The actual bug was applying no distance limit at all
+  during play. Fixed by making `perceive` compute each entity's own
+  visibility distance from a new `size` component (meters) via this same
+  formula, rather than using one flat radius for every entity regardless
+  of size — see `story_simulator.spatial.perceptible_entities`/
+  `visibility_distance` and `story_simulator/game_config.py` (a new module
+  for tunable gameplay constants, distinct from `config.py`'s
+  paths/credentials scope: `FOV_DEGREES`, `PERCEPTIBLE_FOV_FRACTION`,
+  `DEFAULT_ENTITY_SIZE` for entities with no `size` of their own). A
+  mountain now stays perceptible far beyond the old flat 20m default; a
+  dropped coin does not, unless already within `perceive`'s `min_radius`
+  floor.
 
 - **Evaluate a "world time" distinct from system time.** `_next_turn_stamp()`
   (`int(time.time())`) is a narrow technical fix — a monotonic ordering value

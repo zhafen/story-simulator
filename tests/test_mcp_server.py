@@ -155,13 +155,13 @@ class TestPerceive:
     def test_reports_nearby_entities(self, tmp_path):
         ctx = _make_ctx()
         start_world(str(tmp_path / "save"), ctx)
-        result = perceive("player", ctx, radius=5.0)
+        result = perceive("player", ctx, min_radius=5.0)
         assert "door" in result
 
     def test_records_active_and_memory_tags(self, tmp_path):
         ctx = _make_ctx()
         start_world(str(tmp_path / "save"), ctx)
-        perceive("player", ctx, radius=5.0)
+        perceive("player", ctx, min_radius=5.0)
         registrar = _registrars[ctx.request_context.session]
         active = registrar.view("active").execute()
         assert "door" in active["entity_id.alias"].values

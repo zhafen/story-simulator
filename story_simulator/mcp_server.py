@@ -413,8 +413,17 @@ def update_registry(yaml_string: str, ctx: Context) -> str:
 
 
 @server.tool()
-def perceive(reference_alias: str, ctx: Context, radius: float = spatial.DEFAULT_PERCEPTION_RADIUS) -> str:
-    """Return what `reference_alias` can currently perceive within `radius` meters, and record it.
+def perceive(
+    reference_alias: str, ctx: Context, min_radius: float = spatial.DEFAULT_PERCEPTION_RADIUS
+) -> str:
+    """Return what `reference_alias` can currently perceive, and record it.
+
+    Each nearby entity's own visibility distance is computed from its
+    `size` component (meters), not a single flat cutoff for everyone -- a
+    mountain stays perceptible from far further away than a dropped coin.
+    `min_radius` is a floor guaranteeing anything at least this close is
+    always perceptible, regardless of size (see
+    `story_simulator.spatial.perceptible_entities`/`game_config`).
 
     Tags each perceived entity `active` (replacing whatever was previously
     tagged active) and merges them into `reference_alias`'s permanent
@@ -422,11 +431,11 @@ def perceive(reference_alias: str, ctx: Context, radius: float = spatial.DEFAULT
     instead of automatically every turn.
     """
     registrar = _get_registrar(ctx)
-    nearby = spatial.entities_within(registrar, reference_alias, radius)
+    nearby = spatial.perceptible_entities(registrar, reference_alias, min_radius)
     spatial.sync_active_tags(registrar, nearby)
     spatial.record_memory(registrar, reference_alias, nearby)
     if not nearby:
-        return f"Nothing else is within {radius} meters of {reference_alias}."
+        return f"Nothing else is within perceptible range of {reference_alias}."
     details = spatial.entity_descriptions(registrar, nearby)
     parts = [f"Entities near {reference_alias}: {', '.join(sorted(nearby))}"]
     if details:
@@ -475,7 +484,7 @@ def advance_npc_turn(npc_alias: str, ctx: Context) -> str:
 
 async def _advance_npc_turn_async(registrar: Registrar, save_dir: Path, npc_alias: str) -> str:
     # Step 1: perceive — same effect as the perceive tool, called in-process.
-    nearby = spatial.entities_within(registrar, npc_alias, spatial.DEFAULT_PERCEPTION_RADIUS)
+    nearby = spatial.perceptible_entities(registrar, npc_alias)
     spatial.sync_active_tags(registrar, nearby)
     spatial.record_memory(registrar, npc_alias, nearby)
 

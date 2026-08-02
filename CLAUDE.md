@@ -15,6 +15,14 @@ last turn. The save's original seed (`scenario.yaml`, or wherever
 if you're reading a save's YAML for current state, read `world.yaml`, not
 the seed file.
 
+## Conversation conventions
+
+The player prefixes their in-world actions/dialogue with `> player:`. Mirror
+that: prefix every in-world narration reply with `> narrator:`, so the two
+voices stay visually distinct from each other and from ordinary
+out-of-character discussion (dev work, tool-call commentary, etc., which
+carries no prefix).
+
 ## Reloading `story-simulator-mcp` after editing its code
 
 `.mcp.json` spawns `story-simulator-mcp` once, as a long-lived stdio

@@ -37,7 +37,7 @@ own `load_manifest` only re-reads static files).
 | `view_registry(component_type)` | yes | CSV dump of every recorded instance of a component type. |
 | `view_entity(entity_id)` | yes | Every recorded component instance for one entity. |
 | `update_registry(yaml_string)` | yes | Merge entity-first YAML into the registry. |
-| `perceive(reference_alias, radius=20.0)` | yes | Nearby entities for `reference_alias`, tagging them `active` and merging them into its permanent `memory` — same computation the old per-turn `MapSystem` did, now on demand (`story_simulator/spatial.py`). |
+| `perceive(reference_alias)` | yes | Nearby entities for `reference_alias`, tagging them `active` and merging them into its permanent `memory` — same computation the old per-turn `MapSystem` did, now on demand (`story_simulator/spatial.py`). Each entity's own visibility distance is computed from its `size` component (falling back to `game_config.DEFAULT_ENTITY_SIZE`) via the same field-of-view heuristic `data/living_world/setting.yaml`'s journaling desk placement uses, not a single flat cutoff for everyone — computed as one relational query (join + filter) via ibis, not a Python loop over rows. |
 | `generate_terrain(description)` | no | `TerrainAgent` — one LiteLLM call, its own held credentials/model. |
 | `resolve_physics(scenario)` | no | `PhysicsAgent` — same shape. |
 | `advance_npc_turn(npc_alias)` | yes | Decides, narrates, and records one NPC's turn end-to-end — the one case with nobody chatting to drive it. |
@@ -146,6 +146,90 @@ Things this rebuild surfaced or left open, not addressed here:
   reconsiders whether the latter belongs in `advance_npc_turn` at all versus
   being handed to whichever narrator already holds that authority — reserving
   full autonomy for the case where genuinely nobody is watching.
+
+- **Agents default to reading the seed YAML instead of the live registry.**
+  **Root-cause fix implemented.** Coding agents (and probably most agents)
+  are optimized for text-file development, so left to their own defaults
+  they'll grep/read `data/*/setting.yaml` when asked about world state —
+  but that file is only ever a save's *starting* seed (`_seed_save_dir`
+  copies it once, on a brand-new `save_dir`), frozen from then on (verified
+  directly: after several `update_registry` calls that changed a door's
+  recorded description, the seed was still byte-identical to the original,
+  untouched mtime and all).
+
+  Fixed by making the registry sync itself back out to disk instead of
+  relying on an agent to remember it's not the source of truth:
+  `update_registry` (and the NPC turn's own internal registry write, via
+  the shared `_update_registry_and_sync` helper) now calls
+  `Registrar.export_manifest(output_dir=save_dir)` after every merge,
+  re-exporting the full current registry to `save_dir/world.yaml` —
+  the same `save_dir/world.yaml` filename the old, since-removed
+  `IacsArchivist` design used, but built the opposite direction. That
+  design had an agent *author* YAML into the registry from a growing
+  `world.yaml`; here the registry stays the single source of truth and
+  `world.yaml` is a generated, read-only mirror of it, rewritten in full
+  each turn (not incrementally). `export_manifest` also round-trips this
+  project's own field-schema manifest (merged into every registry via
+  `input_dirs=[MANIFEST_DIR]`) into a `builtins.yaml` alongside it; since
+  that's just static schema, not game state, `_export_world_yaml` deletes
+  it rather than let it accumulate in `save_dir`. The original seed YAML
+  itself (`setting.yaml`/wherever `settings_dir` pointed) is still never
+  touched — only the new `world.yaml` mirror is written.
+
+  Not fully closed: an agent could still default to grepping `setting.yaml`
+  specifically (the seed, still frozen) instead of the now-live
+  `world.yaml`, or not know `world.yaml` exists at all. Remaining candidate
+  fixes to point agents at it: a repo-root `CLAUDE.md` (read automatically
+  by Claude Code sessions in this repo — already exists, could mention
+  `world.yaml`), a line added to the MCP server's own `instructions` string
+  in `story_simulator/mcp_server.py` (read automatically by any connected
+  MCP client, not just Claude Code), and/or a comment at the top of each
+  seed YAML under `data/` pointing at the live mirror.
+
+- **Review `CLAUDE.md` periodically and extract what's MCP-appropriate.**
+  `CLAUDE.md` has accumulated real operational knowledge from dev/playtest
+  sessions — the `story-simulator-mcp` reload trick, the `world.yaml` sync
+  note above, silent recovery from an idle-triggered mid-play disconnect —
+  but it only ever reaches Claude Code sessions in this repo, which is a
+  narrower audience than "whoever is narrating a story-simulator world."
+  Anything that's true of the *game* rather than of *this specific dev
+  environment* (the `world.yaml`-is-current note is the clear example; the
+  reload trick and disconnect recovery are more Claude-Code/session-specific
+  and may belong staying put) is a candidate to fold into the MCP server's
+  own `instructions` string in `story_simulator/mcp_server.py`, which
+  reaches any connected MCP client, not just Claude Code. Needs a pass to
+  sort which entries are which and move the game-level ones over.
+
+- **Door-visibility follow-up: fixed.** Playtesting produced narration
+  claiming the player could see a 2m-tall door from ~2km away — not
+  supportable. The living world's own `journaling_desk` placement note
+  (`data/living_world/setting.yaml`) already worked out a visibility
+  threshold for this (an object subtending ≤1% of a 60°-wide field of view
+  blends into the background — ~200m for a 2m door, hence the 500m desk
+  placement); checking that against real-world visual-acuity/recognition-
+  distance research (a person/door-sized object is recognizable up to "a
+  few hundred meters" under ideal conditions, with ~300m commonly cited as
+  the practical unaided-eye upper limit — Earth's curvature isn't the
+  limiting factor at these ranges, its own horizon distance for a person's
+  eye height is ~9-10km) confirmed the 200m/500m figures were already in
+  the right ballpark. The actual bug was applying no distance limit at all
+  during play. Fixed by making `perceive` compute each entity's own
+  visibility distance from a new `size` component (meters) via this same
+  formula, rather than using one flat radius for every entity regardless
+  of size — see `story_simulator.spatial.perceptible_entities`/
+  `visibility_distance` and `story_simulator/game_config.py` (a new module
+  for tunable gameplay constants, distinct from `config.py`'s
+  paths/credentials scope: `FOV_DEGREES`, `PERCEPTIBLE_FOV_FRACTION`,
+  `DEFAULT_ENTITY_SIZE` for entities with no `size` of their own). Computed
+  as a single relational query (a left join between positions and sizes,
+  then a filter) via ibis, not a Python loop over rows, per review feedback
+  on the first version of this fix. A mountain now stays perceptible far
+  beyond the old flat 20m default; a dropped coin does not, once it's more
+  than its own (much shorter) visibility distance away — there's no
+  artificial floor keeping small objects perceptible regardless of range
+  (also review feedback: the first version's `min_radius` floor turned out
+  to have no real justification once checked against the formula's own
+  numbers for a plausibly-sized small object).
 
 - **Evaluate a "world time" distinct from system time.** `_next_turn_stamp()`
   (`int(time.time())`) is a narrow technical fix — a monotonic ordering value

@@ -21,7 +21,9 @@ from __future__ import annotations
 
 import asyncio
 import shutil
+import subprocess
 import time
+import urllib.parse
 import weakref
 from pathlib import Path
 
@@ -128,6 +130,98 @@ def _seed_save_dir(save_dir: Path, scenario_dir: Path) -> None:
     shutil.copytree(scenario_dir, save_dir, dirs_exist_ok=True)
 
 
+def _is_local_dsn(dsn: str) -> bool:
+    """True if `dsn` points at this machine, where auto-starting a server is safe."""
+    return urllib.parse.urlparse(dsn).hostname in ("localhost", "127.0.0.1", "::1", None)
+
+
+def _can_connect(dsn: str) -> str | None:
+    """Try connecting to `dsn`; return None on success or the error text on failure."""
+    try:
+        with psycopg.connect(dsn, connect_timeout=3):
+            return None
+    except psycopg.OperationalError as exc:
+        return str(exc)
+
+
+def _start_local_postgres() -> None:
+    """Best-effort start of a local `postgresql` service, for dev convenience.
+
+    Only ever called on a localhost DSN that just failed with a
+    connection-refused error (see `_ensure_postgres_running`) -- never
+    manages a remote server. Tries whichever service-control command this
+    install actually has; silently no-ops if neither is found; either way,
+    the caller's own follow-up connection attempt is what determines success.
+    """
+    for cmd in (["service", "postgresql", "start"], ["pg_ctlcluster", "16", "main", "start"]):
+        if shutil.which(cmd[0]) is None:
+            continue
+        try:
+            subprocess.run(cmd, check=True, capture_output=True, timeout=30)
+            return
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+            continue
+
+
+def _ensure_default_dev_password() -> None:
+    """Set the local `postgres` role's password to match the documented default DSN.
+
+    Only reached from `_ensure_postgres_running` after *this call* just
+    started a previously-unreachable local server and it's rejecting the
+    default DSN's password -- i.e. a brand-new cluster whose `postgres` role
+    has no password set yet, not a pre-existing, deliberately configured
+    server. Runs the ALTER as the `postgres` OS/DB user over the Unix
+    socket (peer-authenticated, so no password needed for this step itself),
+    the same way a human operator would from the shell.
+    """
+    alter_sql = "ALTER USER postgres WITH PASSWORD 'postgres';"
+    for cmd in (
+        ["sudo", "-u", "postgres", "psql", "-c", alter_sql],
+        ["su", "postgres", "-c", f"psql -c \"{alter_sql}\""],
+    ):
+        if shutil.which(cmd[0]) is None:
+            continue
+        try:
+            subprocess.run(cmd, check=True, capture_output=True, timeout=15)
+            return
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+            continue
+
+
+def _ensure_postgres_running() -> None:
+    """Make sure the registry database is reachable, starting a local one if not.
+
+    Dev convenience only: intervenes solely for a localhost DSN whose server
+    isn't listening at all (connection refused), which is the "nobody has
+    started Postgres in this environment yet" case. Any other failure --
+    including a *reachable* server rejecting these credentials, which could
+    mean a deliberately different local password -- is left to surface via
+    `_ensure_postgres_schema`'s own connection attempt rather than papered
+    over here.
+    """
+    dsn = resolve_database_dsn()
+    if not _is_local_dsn(dsn):
+        return
+
+    error = _can_connect(dsn)
+    if error is None or "refused" not in error:
+        return
+
+    _start_local_postgres()
+    for _ in range(10):
+        time.sleep(1)
+        error = _can_connect(dsn)
+        if error is None:
+            return
+        if "password authentication failed" in error:
+            _ensure_default_dev_password()
+            if _can_connect(dsn) is None:
+                return
+            break
+    # Give up quietly; _ensure_postgres_schema's own connect will raise a
+    # clear error if the server still isn't usable.
+
+
 def _ensure_postgres_schema(save_dir: Path) -> None:
     """Create `save_dir`'s registry schema if it doesn't exist yet.
 
@@ -194,6 +288,7 @@ def start_world(save_dir: str, ctx: Context, scenario_dir: str | None = None) ->
     save_dir_path.mkdir(parents=True, exist_ok=True)
     _seed_save_dir(save_dir_path, scenario_path)
 
+    _ensure_postgres_running()
     _ensure_postgres_schema(save_dir_path)
     registrar = Registrar.load(registry_url(save_dir_path))
     # Only load the seed EC files into the registry the first time this
@@ -271,6 +366,39 @@ def view_entity(entity_id: str, ctx: Context) -> str:
     return f"# {entity_id}\n" + "\n".join(lines)
 
 
+def _export_world_yaml(registrar: Registrar, save_dir: Path) -> None:
+    """Re-export the registry's current state to `save_dir`'s `world.yaml`.
+
+    A straight, mechanical round-trip (`Registrar.export_manifest`) -- not
+    the old `IacsArchivist`'s LLM-driven read/write loop, removed along with
+    `EnsembleWorld`/`Interpreter` in the MCP rebuild (see
+    docs/architecture.md). Runs after every registry write so a save's own
+    YAML stops being frozen turn-zero seed data and instead reads as a live
+    mirror of the registry, which stays the actual source of truth.
+
+    `export_manifest` also re-exports this project's own field-schema
+    manifest (merged into every registry via `input_dirs=[MANIFEST_DIR]`)
+    to its own `builtins.yaml` alongside `world.yaml` -- that's just a
+    normalized round-trip of `manifest/builtins.yaml`'s static content, not
+    game state, so it's deleted rather than left to accumulate confusingly
+    in `save_dir`.
+    """
+    world_yaml = save_dir / f"{WORLD_FILE_ID}.yaml"
+    for path in registrar.export_manifest(output_dir=str(save_dir)):
+        if Path(path) != world_yaml:
+            Path(path).unlink(missing_ok=True)
+
+
+def _update_registry_and_sync(registrar: Registrar, save_dir: Path, yaml_string: str) -> None:
+    """Merge `yaml_string` into the registry, then sync `save_dir`'s YAML to match."""
+    registrar.update(
+        input_dirs=[str(MANIFEST_DIR)],
+        yaml_strings={WORLD_FILE_ID: yaml_string},
+        time=_next_turn_stamp(),
+    )
+    _export_world_yaml(registrar, save_dir)
+
+
 @server.tool()
 def update_registry(yaml_string: str, ctx: Context) -> str:
     """Merge entity-first YAML into the world registry, run through the same ETL as save files.
@@ -279,17 +407,19 @@ def update_registry(yaml_string: str, ctx: Context) -> str:
         yaml_string: Entity-first YAML content to merge in.
     """
     registrar = _get_registrar(ctx)
-    registrar.update(
-        input_dirs=[str(MANIFEST_DIR)],
-        yaml_strings={WORLD_FILE_ID: yaml_string},
-        time=_next_turn_stamp(),
-    )
-    return "Merged into the registry."
+    save_dir = _get_save_dir(ctx)
+    _update_registry_and_sync(registrar, save_dir, yaml_string)
+    return "Merged into the registry and synced to save_dir/world.yaml."
 
 
 @server.tool()
-def perceive(reference_alias: str, ctx: Context, radius: float = spatial.DEFAULT_PERCEPTION_RADIUS) -> str:
-    """Return what `reference_alias` can currently perceive within `radius` meters, and record it.
+def perceive(reference_alias: str, ctx: Context) -> str:
+    """Return what `reference_alias` can currently perceive, and record it.
+
+    Each nearby entity's own visibility distance is computed from its
+    `size` component (meters), not a single flat cutoff for everyone -- a
+    mountain stays perceptible from far further away than a dropped coin
+    (see `story_simulator.spatial.perceptible_entities`/`game_config`).
 
     Tags each perceived entity `active` (replacing whatever was previously
     tagged active) and merges them into `reference_alias`'s permanent
@@ -297,11 +427,11 @@ def perceive(reference_alias: str, ctx: Context, radius: float = spatial.DEFAULT
     instead of automatically every turn.
     """
     registrar = _get_registrar(ctx)
-    nearby = spatial.entities_within(registrar, reference_alias, radius)
+    nearby = spatial.perceptible_entities(registrar, reference_alias)
     spatial.sync_active_tags(registrar, nearby)
     spatial.record_memory(registrar, reference_alias, nearby)
     if not nearby:
-        return f"Nothing else is within {radius} meters of {reference_alias}."
+        return f"Nothing else is within perceptible range of {reference_alias}."
     details = spatial.entity_descriptions(registrar, nearby)
     parts = [f"Entities near {reference_alias}: {', '.join(sorted(nearby))}"]
     if details:
@@ -344,12 +474,13 @@ def advance_npc_turn(npc_alias: str, ctx: Context) -> str:
             should be "npc").
     """
     registrar = _get_registrar(ctx)
-    return asyncio.run(_advance_npc_turn_async(registrar, npc_alias))
+    save_dir = _get_save_dir(ctx)
+    return asyncio.run(_advance_npc_turn_async(registrar, save_dir, npc_alias))
 
 
-async def _advance_npc_turn_async(registrar: Registrar, npc_alias: str) -> str:
+async def _advance_npc_turn_async(registrar: Registrar, save_dir: Path, npc_alias: str) -> str:
     # Step 1: perceive — same effect as the perceive tool, called in-process.
-    nearby = spatial.entities_within(registrar, npc_alias, spatial.DEFAULT_PERCEPTION_RADIUS)
+    nearby = spatial.perceptible_entities(registrar, npc_alias)
     spatial.sync_active_tags(registrar, nearby)
     spatial.record_memory(registrar, npc_alias, nearby)
 
@@ -373,11 +504,7 @@ async def _advance_npc_turn_async(registrar: Registrar, npc_alias: str) -> str:
             if name == "resolve_physics":
                 return _physics_agent.resolve(arguments["scenario"])
             if name == "update_registry":
-                registrar.update(
-                    input_dirs=[str(MANIFEST_DIR)],
-                    yaml_strings={WORLD_FILE_ID: arguments["yaml_string"]},
-                    time=_next_turn_stamp(),
-                )
+                _update_registry_and_sync(registrar, save_dir, arguments["yaml_string"])
                 return "Merged into the registry."
             return f"Error: unknown tool {name!r}"
         except Exception as e:

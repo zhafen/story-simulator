@@ -24,6 +24,7 @@ __iacs__ = {"solution of": "story_simulator_mission.stateless_client"}
 import asyncio
 import shutil
 import subprocess
+import tempfile
 import time
 import urllib.parse
 import weakref
@@ -368,8 +369,11 @@ def view_entity(entity_id: str, ctx: Context) -> str:
     return f"# {entity_id}\n" + "\n".join(lines)
 
 
+WORLD_HISTORY_FILENAME = "world_history.yaml"
+
+
 def _export_world_yaml(registrar: Registrar, save_dir: Path) -> None:
-    """Re-export the registry's current state to `save_dir`'s `world.yaml`.
+    """Re-export the registry's state to `save_dir`'s `world.yaml`/`world_history.yaml`.
 
     A straight, mechanical round-trip (`Registrar.export_manifest`) -- not
     the old `IacsArchivist`'s LLM-driven read/write loop, removed along with
@@ -379,6 +383,18 @@ def _export_world_yaml(registrar: Registrar, save_dir: Path) -> None:
     registry write so a save's own YAML stops being frozen turn-zero seed
     data and instead reads as a live mirror of the registry, which stays the
     actual source of truth.
+
+    Writes two files, not one:
+    - `world.yaml`: current state (the default, collapsed export -- a
+      time_dimension'd component type like `description`/`state`/`position`
+      shows only its current row per entity, not every historical
+      restatement).
+    - `world_history.yaml`: the same content, uncollapsed -- every row ever
+      recorded, full change history. Kept because the registry itself still
+      accumulates full history forever (nothing here is deleted, only what
+      the *collapsed* export shows), but that history would otherwise only
+      ever exist in this process's own database connection -- worth having
+      committed alongside the save, not just inferable from it.
 
     `export_manifest` also re-exports this project's own field-schema
     manifest (merged into every registry via `input_dirs=[MANIFEST_DIR]`)
@@ -392,6 +408,13 @@ def _export_world_yaml(registrar: Registrar, save_dir: Path) -> None:
     for path in registrar.export_manifest(output_dir=str(save_dir)):
         if Path(path) != world_yaml:
             Path(path).unlink(missing_ok=True)
+
+    world_history_yaml = save_dir / WORLD_HISTORY_FILENAME
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        exported = registrar.export_manifest(output_dir=tmp_dir, collapse_time_dimension=False)
+        source = next((Path(p) for p in exported if Path(p).stem == WORLD_FILE_ID), None)
+        if source is not None:
+            shutil.copyfile(source, world_history_yaml)
 
 
 def _update_registry_and_sync(registrar: Registrar, save_dir: Path, yaml_string: str) -> None:

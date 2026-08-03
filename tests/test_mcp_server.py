@@ -122,6 +122,21 @@ class TestRegistryTools:
         registrar = _registrars[ctx.request_context.session]
         assert registrar.get("origin").count().execute() == 2
 
+    def test_update_registry_writes_collapsed_and_full_history_yaml(self, tmp_path):
+        ctx = _make_ctx()
+        save_dir = tmp_path / "save"
+        start_world(str(save_dir), ctx)
+        update_registry("door:\n    - description: first\n", ctx)
+        update_registry("door:\n    - description: second\n", ctx)
+
+        world_text = (save_dir / "world.yaml").read_text()
+        assert "second" in world_text
+        assert "first" not in world_text
+
+        history_text = (save_dir / "world_history.yaml").read_text()
+        assert "second" in history_text
+        assert "first" in history_text
+
     def test_view_entity_returns_known_component_data(self, tmp_path):
         ctx = _make_ctx()
         start_world(str(tmp_path / "save"), ctx)

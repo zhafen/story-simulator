@@ -8,28 +8,42 @@ in a Postgres-backed `iacs` registry, not in this project's own process
 memory — see `docs/architecture.md` for the full picture.
 
 Every `update_registry` call (including the NPC turn's own internal one)
-re-exports the registry's current state to `save_dir/world.yaml` — a
-generated, read-only mirror, not the source of truth, but current as of the
-last turn. The save's original seed (`scenario.yaml`, or wherever
-`scenario_dir` pointed) is still frozen turn-zero data and never updated —
-if you're reading a save's YAML for current state, read `world.yaml`, not
-the seed file.
+re-exports the registry's state to two files, not the source of truth but
+both current as of the last turn:
+- `save_dir/world.yaml`: current state, collapsed — a time_dimension'd
+  component type (`description`, `state`, `position`) shows only its
+  current row per entity, not every historical restatement of it.
+- `save_dir/world_history.yaml`: the same content, uncollapsed — every row
+  ever recorded for every entity, full change history. The registry itself
+  always keeps full history regardless (nothing is ever deleted, only what
+  the collapsed export shows), but that history would otherwise only exist
+  in Postgres; this is what makes it survive in the repo too.
+
+The save's original seed (`scenario.yaml`, or wherever `scenario_dir`
+pointed) is still frozen turn-zero data and never updated by either export
+— if you're reading a save's YAML for current state, read `world.yaml`, not
+the seed file (and not `world_history.yaml`, unless you actually want the
+full change log rather than what's current).
 
 **`data/living_world` is no longer a pristine `scenario_dir` template.**
-It now holds both `scenario.yaml` (the original turn-zero seed) and
-`world.yaml` (a real playthrough's accumulated state, committed
-deliberately so that progress wasn't only living in this session's
-ephemeral Postgres). To **continue** that playthrough, open
+It now holds `scenario.yaml` (the original turn-zero seed) plus
+`world.yaml`/`world_history.yaml` (a real playthrough's accumulated state,
+committed deliberately so that progress wasn't only living in this
+session's ephemeral Postgres). To **continue** that playthrough, open
 `data/living_world` as `save_dir` itself, with no separate `scenario_dir`.
 Do **not** pass it as `scenario_dir` to seed a different, new `save_dir`
-anymore — `_seed_save_dir` would copy both files into the new location,
-and `start_world`'s first-open loader concatenates every `*.yaml` file's
-raw text into one document before parsing, so the new "fresh" save would
-silently start with this playthrough's full history already merged in
-(YAML's last-key-wins on the resulting duplicate top-level keys happens to
-make this non-destructive today only because `world.yaml` sorts after
-`scenario.yaml` and is already a superset of it — not a guaranteed
-invariant, just how it currently shakes out). A genuinely fresh living-world
+anymore — `_seed_save_dir` would copy all three files into the new
+location, and `start_world`'s first-open loader concatenates every
+`*.yaml` file's raw text into one document before parsing, so the new
+"fresh" save would silently start with this playthrough's full history
+already merged in. YAML's last-key-wins on the resulting duplicate
+top-level keys means whichever file sorts last alphabetically wins each
+entity outright (not a union) — today that's `world_history.yaml`
+(`scenario.yaml` < `world.yaml` < `world_history.yaml`), so the fresh
+"seed" would actually end up with the *fuller* history, which happens to
+be harmless (the same `time_dimension` schema still collapses it on
+read/export either way) but is not a guaranteed invariant, just how the
+alphabetical sort currently shakes out. A genuinely fresh living-world
 playthrough needs a different, currently-nonexistent pristine source.
 
 ## Reloading `story-simulator-mcp` after editing its code

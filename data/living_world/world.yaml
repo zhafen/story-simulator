@@ -1,25 +1,33 @@
 door:
-- description: A plain door of unfinished wood, pale and slightly rough-grained. Its
-    surface is cool and dry to the touch, faintly gritty in places. It has a plain
-    round wooden knob, set at about waist height, that turns freely. What's on its
-    far side isn't visible yet.
+- description:
+    time: 1785803711.0
+    value: A plain door of unfinished wood, pale and slightly rough-grained. Its surface
+      is cool and dry to the touch, faintly gritty in places. It has a plain round
+      wooden knob, set at about waist height, that turns freely. It has swung shut
+      again behind the player.
+- state:
+    turn: 1785803711
+    value: closed
 - object:
     type: door
 - position:
     x: 0.0
     y: 2.0
     z: 0.0
-- state: open
 door_2:
+- description:
+    time: 1785803743.0
+    value: A second plain door, standing alone in a cracked, sunbaked field. It matches
+      the first door's plain, pale, rough-grained wood on both sides. Nothing holds
+      it up but its own frame -- no wall, no structure. Its hinges are visible from
+      the back, and it has a matching plain round wooden knob on this side too, set
+      at about waist height, that turns freely.
+- state:
+    turn: 1785803711
+    value: closed
 - object:
     type: door
-- state: closed
 - active
-- description: A second plain door, standing alone in a cracked, sunbaked field. It
-    matches the first door's plain, pale, rough-grained wood on both sides. Nothing
-    holds it up but its own frame -- no wall, no structure. Its hinges are visible
-    from the back, and it has a matching plain round wooden knob on this side too,
-    set at about waist height, that turns freely.
 - position:
     turn: 1785605558.0
     x: 0.0
@@ -74,8 +82,11 @@ journaling_desk:
 player:
 - character:
     interaction_type: player
-- description: A traveler standing at the edge of a quiet, empty expanse, having just
-    looked around and taken in the door and the surrounding space.
+- description:
+    time: 1785803711.0
+    value: A traveler who has just walked through the door and emerged a year later,
+      one kilometer south, standing on cracked, sunbaked ground beside a second plain
+      door.
 - position:
     turn: 1785630245.0
     x: 0.0

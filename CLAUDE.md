@@ -25,25 +25,33 @@ pointed) is still frozen turn-zero data and never updated by either export
 the seed file (and not `world_history.yaml`, unless you actually want the
 full change log rather than what's current).
 
-**`data/living_world` is no longer a pristine `scenario_dir` template.**
-It now holds `scenario.yaml` (the original turn-zero seed) plus
-`world.yaml`/`world_history.yaml` (a real playthrough's accumulated state,
-committed deliberately so that progress wasn't only living in this
-session's ephemeral Postgres). To **continue** that playthrough, open
-`data/living_world` as `save_dir` itself, with no separate `scenario_dir`.
-Do **not** pass it as `scenario_dir` to seed a different, new `save_dir`
-anymore — `_seed_save_dir` would copy all three files into the new
-location, and `start_world`'s first-open loader concatenates every
-`*.yaml` file's raw text into one document before parsing, so the new
-"fresh" save would silently start with this playthrough's full history
-already merged in. YAML's last-key-wins on the resulting duplicate
-top-level keys means whichever file sorts last alphabetically wins each
-entity outright (not a union) — today that's `world_history.yaml`
-(`scenario.yaml` < `world.yaml` < `world_history.yaml`), so the fresh
-"seed" would actually end up with the *fuller* history, which happens to
-be harmless (the same `time_dimension` schema still collapses it on
-read/export either way) but is not a guaranteed invariant, just how the
-alphabetical sort currently shakes out. A genuinely fresh living-world
+`start_world`'s first-open loader used to glob every `*.yaml`/`*.yml` file
+under `save_dir` and concatenate them into one document, which meant that
+when both `world.yaml` and `world_history.yaml` were present it relied on
+`world_history.yaml` sorting alphabetically last (so YAML's last-key-wins
+on the resulting duplicate top-level keys happened to pick the fuller
+file) rather than any real guarantee — a different, differently-sorting
+filename could have silently discarded data instead. **Fixed**: the loader
+now picks exactly one of `world_history.yaml` / `world.yaml` / a plain
+glob, in that explicit preference order, rather than combining whatever it
+finds — `world_history.yaml` is a strict superset of `world.yaml`'s rows,
+which are in turn a strict superset of the original seed's own content
+(still present as each entity's earliest historical row), so preferring
+the fullest file loses nothing.
+
+**`data/living_world` is still no longer a pristine `scenario_dir`
+template**, even with that fix. It holds `scenario.yaml` (the original
+turn-zero seed) plus `world.yaml`/`world_history.yaml` (a real
+playthrough's accumulated state, committed deliberately so that progress
+wasn't only living in this session's ephemeral Postgres). To **continue**
+that playthrough, open `data/living_world` as `save_dir` itself, with no
+separate `scenario_dir`. Do **not** pass it as `scenario_dir` to seed a
+different, new `save_dir` — `_seed_save_dir` would copy all three files
+into the new location, and the loader would then deterministically pick
+`world_history.yaml` there too, so the new "fresh" save would still start
+with this playthrough's full history already merged in (no longer by
+alphabetical accident, but the outcome for this specific use — wanting a
+genuinely blank slate — is unchanged). A genuinely fresh living-world
 playthrough needs a different, currently-nonexistent pristine source.
 
 ## Reloading `story-simulator-mcp` after editing its code

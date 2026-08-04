@@ -1,4 +1,10 @@
 door:
+- description:
+    time: 1785803711.0
+    value: A plain door of unfinished wood, pale and slightly rough-grained. Its surface
+      is cool and dry to the touch, faintly gritty in places. It has a plain round
+      wooden knob, set at about waist height, that turns freely. It has swung shut
+      again behind the player.
 - description: A plain door of unfinished wood, pale and slightly rough-grained. Its
     surface is cool and dry to the touch, faintly gritty in places, with a plain round
     wooden knob. What's on its far side isn't visible yet.
@@ -6,6 +12,9 @@ door:
     surface is cool and dry to the touch, faintly gritty in places. It has a plain
     round wooden knob, set at about waist height, that turns freely. It has swung
     shut again behind the player.
+- state:
+    turn: 1785803711.0
+    value: closed
 - description: A plain door of unfinished wood, pale and slightly rough-grained. Its
     surface is cool and dry to the touch, faintly gritty in places. It has a plain
     round wooden knob, set at about waist height, that turns freely. It now stands
@@ -24,6 +33,20 @@ door:
 - state: closed
 - description: A plain door; what's on its far side isn't visible yet.
 door_2:
+- description:
+    time: 1785803743.0
+    value: A second plain door, standing alone in a cracked, sunbaked field. It matches
+      the first door's plain, pale, rough-grained wood on both sides. Nothing holds
+      it up but its own frame -- no wall, no structure. Its hinges are visible from
+      the back, and it has a matching plain round wooden knob on this side too, set
+      at about waist height, that turns freely.
+- description:
+    time: 1785803711.0
+    value: A second plain door, standing alone in a cracked, sunbaked field. It matches
+      the first door'''s plain, pale, rough-grained wood on both sides. Nothing holds
+      it up but its own frame -- no wall, no structure. Its hinges are visible from
+      the back, and it has a matching plain round wooden knob on this side too, set
+      at about waist height, that turns freely.
 - description: A second plain door, standing alone in a cracked, sunbaked field. It
     matches the first door's plain, pale, rough-grained wood on both sides. Nothing
     holds it up but its own frame -- no wall, no structure. Its hinges are visible
@@ -34,6 +57,9 @@ door_2:
     holds it up but its own frame -- no wall, no structure. Its hinges are visible
     from the back, and it has a matching plain round wooden knob on this side too,
     set at about waist height.
+- state:
+    turn: 1785803711.0
+    value: closed
 - description: A second plain door, standing alone in a cracked, sunbaked field. It
     matches the first door's plain, pale, rough-grained wood on both sides. Nothing
     holds it up but its own frame -- no wall, no structure -- and its hinges are visible
@@ -110,6 +136,11 @@ journaling_desk:
 player:
 - character:
     interaction_type: player
+- description:
+    time: 1785803711.0
+    value: A traveler who has just walked through the door and emerged a year later,
+      one kilometer south, standing on cracked, sunbaked ground beside a second plain
+      door.
 - description: A traveler standing at the edge of a quiet, empty expanse, having just
     looked around and taken in the door and the surrounding space.
 - position:

@@ -51,6 +51,7 @@ from story_simulator.specialists import PhysicsAgent, TerrainAgent
 PROD_NPC_CONFIG_PATH = Path(__file__).parent / "npc.yaml"
 PROD_NPC_RESOLVER_CONFIG_PATH = Path(__file__).parent / "npc_resolver.yaml"
 MAX_NPC_TURN_TOOL_TURNS = 8
+WORLD_HISTORY_FILENAME = "world_history.yaml"
 
 _registrars: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
 _save_dirs: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
@@ -309,9 +310,29 @@ def start_world(save_dir: str, ctx: Context, scenario_dir: str | None = None) ->
     _ensure_postgres_schema(save_dir_path)
     registrar = Registrar.load(registry_url(save_dir_path))
     if not registrar.registry.component_types:
-        found = sorted(
-            f for pattern in ("*.yaml", "*.yml") for f in save_dir_path.rglob(pattern)
-        )
+        # world_history.yaml and world.yaml are both _export_world_yaml's own
+        # output, derived from (and redundant with) each other and with the
+        # original seed -- world_history.yaml is a strict superset of
+        # world.yaml's rows, which are in turn a strict superset of the seed's
+        # own content (still present as each entity's earliest historical
+        # row). Load exactly one, in that preference order, rather than
+        # every *.yaml file found: the previous glob-everything approach
+        # concatenated all of them into one YAML document, and relied on
+        # world_history.yaml happening to sort alphabetically last (so its
+        # duplicate top-level keys silently won over world.yaml's and the
+        # seed's) to avoid quietly discarding data -- an accident of sort
+        # order, not a real guarantee, and not a union either way (YAML's
+        # last-key-wins replaces, it doesn't merge).
+        history_yaml = save_dir_path / WORLD_HISTORY_FILENAME
+        world_yaml = save_dir_path / f"{WORLD_FILE_ID}.yaml"
+        if history_yaml.exists():
+            found = [history_yaml]
+        elif world_yaml.exists():
+            found = [world_yaml]
+        else:
+            found = sorted(
+                f for pattern in ("*.yaml", "*.yml") for f in save_dir_path.rglob(pattern)
+            )
         if found:
             # Merged as one WORLD_FILE_ID-keyed string, not passed as
             # input_dirs (which would key each file by its own path instead)
@@ -367,9 +388,6 @@ def view_entity(entity_id: str, ctx: Context) -> str:
     if not lines:
         return f"No data found for {entity_id!r}."
     return f"# {entity_id}\n" + "\n".join(lines)
-
-
-WORLD_HISTORY_FILENAME = "world_history.yaml"
 
 
 def _export_world_yaml(registrar: Registrar, save_dir: Path) -> None:

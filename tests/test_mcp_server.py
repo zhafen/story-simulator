@@ -96,6 +96,37 @@ class TestStartWorld:
         registrar = _registrars[ctx2.request_context.session]
         assert registrar.get("origin").count().execute() == 2  # world's + custom_entity's
 
+    def test_first_open_loads_only_world_history_when_present(self, tmp_path):
+        """world_history.yaml, world.yaml, and the seed are all redundant with
+        each other -- loading more than one at once risks silently discarding
+        data (YAML's last-key-wins on duplicate top-level keys) rather than
+        merging it. world_history.yaml is the fullest, so it wins alone.
+        """
+        save_dir = tmp_path / "save"
+        save_dir.mkdir()
+        (save_dir / "scenario.yaml").write_text("seed_only:\n    - origin\n")
+        (save_dir / "world.yaml").write_text("world_only:\n    - origin\n")
+        (save_dir / "world_history.yaml").write_text("history_only:\n    - origin\n")
+
+        ctx = _make_ctx()
+        start_world(str(save_dir), ctx)
+        registrar = _registrars[ctx.request_context.session]
+        assert registrar.get_entity_id("history_only") is not None
+        assert registrar.get_entity_id("world_only") is None
+        assert registrar.get_entity_id("seed_only") is None
+
+    def test_first_open_loads_only_world_when_no_history_file(self, tmp_path):
+        save_dir = tmp_path / "save"
+        save_dir.mkdir()
+        (save_dir / "scenario.yaml").write_text("seed_only:\n    - origin\n")
+        (save_dir / "world.yaml").write_text("world_only:\n    - origin\n")
+
+        ctx = _make_ctx()
+        start_world(str(save_dir), ctx)
+        registrar = _registrars[ctx.request_context.session]
+        assert registrar.get_entity_id("world_only") is not None
+        assert registrar.get_entity_id("seed_only") is None
+
 
 # ---------------------------------------------------------------------------
 # view_registry / view_entity / update_registry

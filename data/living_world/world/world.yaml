@@ -29,10 +29,10 @@ door_2:
     type: door
 - active
 - position:
-    turn: 1785605558.0
     x: 0.0
     y: -998.0
     z: 0.0
+    turn: 1785605558.0
 expanse:
 - object:
     type: expanse
@@ -88,10 +88,10 @@ player:
       one kilometer south, standing on cracked, sunbaked ground beside a second plain
       door.
 - position:
-    turn: 1785630245.0
     x: 0.0
     y: -1000.0
     z: 0.0
+    turn: 1785630245.0
 - memory: door_2
 - memory: door
 - memory: expanse
@@ -106,10 +106,10 @@ southern_field:
     type: field
 - active
 - position:
-    turn: 1785605558.0
     x: 0.0
     y: -1000.0
     z: 0.0
+    turn: 1785605558.0
 - description: Packed dirt cracked in a spiderweb pattern from drought. Sparse, yellowed
     grass tufts push up through the gaps, and the air smells of dust and something
     organic long since dried out. The land is flat and featureless in every direction,

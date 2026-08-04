@@ -80,10 +80,10 @@ door_2:
     from the back, and it has a matching plain round wooden knob on this side too,
     set at about waist height, that turns freely.
 - position:
-    turn: 1785605558.0
     x: 0.0
     y: -998.0
     z: 0.0
+    turn: 1785605558.0
 - state: open
 - description: A second plain door, standing alone in a cracked, sunbaked field. It
     matches the first door's plain, pale, rough-grained wood.
@@ -144,25 +144,25 @@ player:
 - description: A traveler standing at the edge of a quiet, empty expanse, having just
     looked around and taken in the door and the surrounding space.
 - position:
-    turn: 1785605341.0
     x: 0.0
     y: 2.0
     z: 0.0
+    turn: 1785605341.0
 - position:
-    turn: 1785605558.0
     x: 0.0
     y: -1000.0
     z: 0.0
+    turn: 1785605558.0
 - position:
-    turn: 1785627805.0
     x: 0.0
     y: -996.0
     z: 0.0
+    turn: 1785627805.0
 - position:
-    turn: 1785630245.0
     x: 0.0
     y: -1000.0
     z: 0.0
+    turn: 1785630245.0
 - description: A traveler who has just walked through the door and emerged a year
     later, one kilometer south, standing on cracked, sunbaked ground beside a second
     plain door.
@@ -185,10 +185,10 @@ southern_field:
     type: field
 - active
 - position:
-    turn: 1785605558.0
     x: 0.0
     y: -1000.0
     z: 0.0
+    turn: 1785605558.0
 - description: Packed dirt cracked in a spiderweb pattern from drought. Sparse, yellowed
     grass tufts push up through the gaps, and the air smells of dust and something
     organic long since dried out. The land is flat and featureless in every direction,

@@ -96,36 +96,63 @@ class TestStartWorld:
         registrar = _registrars[ctx2.request_context.session]
         assert registrar.get("origin").count().execute() == 2  # world's + custom_entity's
 
-    def test_first_open_loads_only_world_history_when_present(self, tmp_path):
-        """world_history.yaml, world.yaml, and the seed are all redundant with
-        each other -- loading more than one at once risks silently discarding
-        data (YAML's last-key-wins on duplicate top-level keys) rather than
-        merging it. world_history.yaml is the fullest, so it wins alone.
+    def test_first_open_loads_only_world_history_dir_when_present(self, tmp_path):
+        """world_history/, world/, and the seed are all redundant with each
+        other -- loading more than one at once risks silently discarding data
+        (YAML's last-key-wins on duplicate top-level keys) rather than
+        merging it. world_history/ is the fullest, so it wins alone. Each
+        directory can hold more than one yaml file (a save's author is free
+        to split it up), so the loader must recurse into whichever it picks.
         """
         save_dir = tmp_path / "save"
         save_dir.mkdir()
         (save_dir / "scenario.yaml").write_text("seed_only:\n    - origin\n")
-        (save_dir / "world.yaml").write_text("world_only:\n    - origin\n")
-        (save_dir / "world_history.yaml").write_text("history_only:\n    - origin\n")
+        (save_dir / "world").mkdir()
+        (save_dir / "world" / "world.yaml").write_text("world_only:\n    - origin\n")
+        (save_dir / "world_history").mkdir()
+        (save_dir / "world_history" / "a.yaml").write_text("history_a:\n    - origin\n")
+        (save_dir / "world_history" / "nested").mkdir()
+        (save_dir / "world_history" / "nested" / "b.yaml").write_text(
+            "history_b:\n    - origin\n"
+        )
 
         ctx = _make_ctx()
         start_world(str(save_dir), ctx)
         registrar = _registrars[ctx.request_context.session]
-        assert registrar.get_entity_id("history_only") is not None
+        assert registrar.get_entity_id("history_a") is not None
+        assert registrar.get_entity_id("history_b") is not None
         assert registrar.get_entity_id("world_only") is None
         assert registrar.get_entity_id("seed_only") is None
 
-    def test_first_open_loads_only_world_when_no_history_file(self, tmp_path):
+    def test_first_open_loads_only_world_dir_when_no_history_dir(self, tmp_path):
         save_dir = tmp_path / "save"
         save_dir.mkdir()
         (save_dir / "scenario.yaml").write_text("seed_only:\n    - origin\n")
-        (save_dir / "world.yaml").write_text("world_only:\n    - origin\n")
+        (save_dir / "world").mkdir()
+        (save_dir / "world" / "world.yaml").write_text("world_only:\n    - origin\n")
 
         ctx = _make_ctx()
         start_world(str(save_dir), ctx)
         registrar = _registrars[ctx.request_context.session]
         assert registrar.get_entity_id("world_only") is not None
         assert registrar.get_entity_id("seed_only") is None
+
+    def test_first_open_falls_back_to_recursive_glob_when_neither_dir_exists(self, tmp_path):
+        """A pristine, never-yet-exported scenario_dir may be organized across
+        several files at arbitrary depth -- with no world/ or world_history/
+        subdirectory yet, everything under save_dir should still load.
+        """
+        save_dir = tmp_path / "save"
+        save_dir.mkdir()
+        (save_dir / "scenario.yaml").write_text("seed_a:\n    - origin\n")
+        (save_dir / "locations").mkdir()
+        (save_dir / "locations" / "field.yaml").write_text("seed_b:\n    - origin\n")
+
+        ctx = _make_ctx()
+        start_world(str(save_dir), ctx)
+        registrar = _registrars[ctx.request_context.session]
+        assert registrar.get_entity_id("seed_a") is not None
+        assert registrar.get_entity_id("seed_b") is not None
 
 
 # ---------------------------------------------------------------------------
@@ -160,11 +187,11 @@ class TestRegistryTools:
         update_registry("door:\n    - description: first\n", ctx)
         update_registry("door:\n    - description: second\n", ctx)
 
-        world_text = (save_dir / "world.yaml").read_text()
+        world_text = (save_dir / "world" / "world.yaml").read_text()
         assert "second" in world_text
         assert "first" not in world_text
 
-        history_text = (save_dir / "world_history.yaml").read_text()
+        history_text = (save_dir / "world_history" / "world.yaml").read_text()
         assert "second" in history_text
         assert "first" in history_text
 

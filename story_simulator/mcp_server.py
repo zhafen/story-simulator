@@ -24,7 +24,6 @@ __iacs__ = {"solution of": "story_simulator_mission.stateless_client"}
 import asyncio
 import shutil
 import subprocess
-import tempfile
 import time
 import urllib.parse
 import weakref
@@ -51,7 +50,15 @@ from story_simulator.specialists import PhysicsAgent, TerrainAgent
 PROD_NPC_CONFIG_PATH = Path(__file__).parent / "npc.yaml"
 PROD_NPC_RESOLVER_CONFIG_PATH = Path(__file__).parent / "npc_resolver.yaml"
 MAX_NPC_TURN_TOOL_TURNS = 8
-WORLD_HISTORY_FILENAME = "world_history.yaml"
+# save_dir's two export subdirectories, each holding one EC yaml file per
+# original source (currently always one, since every registrar.update() call
+# shares WORLD_FILE_ID as its source key -- see that constant's comment) --
+# directories, not fixed filenames, so a save can be split across as many
+# files as its author wants, matching iacs's own entity-file organization
+# freedom, and the loader (see start_world) just recurses into whichever one
+# it picks rather than assuming a single file.
+WORLD_DIRNAME = WORLD_FILE_ID
+WORLD_HISTORY_DIRNAME = "world_history"
 
 _registrars: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
 _save_dirs: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
@@ -123,6 +130,11 @@ def _next_turn_stamp() -> int:
     `Registry.view_current` needs to resolve accumulated position history.
     """
     return int(time.time())
+
+
+def _yaml_files(directory: Path) -> list[Path]:
+    """All *.yaml/*.yml files under `directory`, recursed into, sorted for determinism."""
+    return sorted(f for pattern in ("*.yaml", "*.yml") for f in directory.rglob(pattern))
 
 
 def _seed_save_dir(save_dir: Path, scenario_dir: Path) -> None:
@@ -310,29 +322,30 @@ def start_world(save_dir: str, ctx: Context, scenario_dir: str | None = None) ->
     _ensure_postgres_schema(save_dir_path)
     registrar = Registrar.load(registry_url(save_dir_path))
     if not registrar.registry.component_types:
-        # world_history.yaml and world.yaml are both _export_world_yaml's own
-        # output, derived from (and redundant with) each other and with the
-        # original seed -- world_history.yaml is a strict superset of
-        # world.yaml's rows, which are in turn a strict superset of the seed's
-        # own content (still present as each entity's earliest historical
-        # row). Load exactly one, in that preference order, rather than
-        # every *.yaml file found: the previous glob-everything approach
-        # concatenated all of them into one YAML document, and relied on
-        # world_history.yaml happening to sort alphabetically last (so its
-        # duplicate top-level keys silently won over world.yaml's and the
-        # seed's) to avoid quietly discarding data -- an accident of sort
-        # order, not a real guarantee, and not a union either way (YAML's
-        # last-key-wins replaces, it doesn't merge).
-        history_yaml = save_dir_path / WORLD_HISTORY_FILENAME
-        world_yaml = save_dir_path / f"{WORLD_FILE_ID}.yaml"
-        if history_yaml.exists():
-            found = [history_yaml]
-        elif world_yaml.exists():
-            found = [world_yaml]
-        else:
-            found = sorted(
-                f for pattern in ("*.yaml", "*.yml") for f in save_dir_path.rglob(pattern)
-            )
+        # WORLD_HISTORY_DIRNAME and WORLD_DIRNAME are both _export_world_yaml's
+        # own output, derived from (and redundant with) each other and with
+        # the original seed -- WORLD_HISTORY_DIRNAME's content is a strict
+        # superset of WORLD_DIRNAME's rows, which are in turn a strict
+        # superset of the seed's own content (still present as each entity's
+        # earliest historical row). Load exactly one, in that preference
+        # order, rather than every *.yaml file under save_dir: concatenating
+        # all of them (including both subdirectories at once) would rely on
+        # whichever one's rows happened to sort last to win the resulting
+        # duplicate top-level keys -- an accident of sort order, not a real
+        # guarantee, and not a union either way (YAML's last-key-wins
+        # replaces, it doesn't merge). Recursing into the *chosen* directory
+        # (rather than requiring one fixed filename) still lets a save's
+        # author split it across as many files as they like -- only the
+        # top-level choice between "history", "current", or "neither yet
+        # exported, fall back to everything under save_dir" needs to be
+        # exclusive.
+        history_dir = save_dir_path / WORLD_HISTORY_DIRNAME
+        world_dir = save_dir_path / WORLD_DIRNAME
+        found = (
+            (_yaml_files(history_dir) if history_dir.is_dir() else [])
+            or (_yaml_files(world_dir) if world_dir.is_dir() else [])
+            or _yaml_files(save_dir_path)
+        )
         if found:
             # Merged as one WORLD_FILE_ID-keyed string, not passed as
             # input_dirs (which would key each file by its own path instead)
@@ -391,7 +404,7 @@ def view_entity(entity_id: str, ctx: Context) -> str:
 
 
 def _export_world_yaml(registrar: Registrar, save_dir: Path) -> None:
-    """Re-export the registry's state to `save_dir`'s `world.yaml`/`world_history.yaml`.
+    """Re-export the registry's state to `save_dir`'s `world/`/`world_history/` dirs.
 
     A straight, mechanical round-trip (`Registrar.export_manifest`) -- not
     the old `IacsArchivist`'s LLM-driven read/write loop, removed along with
@@ -402,37 +415,49 @@ def _export_world_yaml(registrar: Registrar, save_dir: Path) -> None:
     data and instead reads as a live mirror of the registry, which stays the
     actual source of truth.
 
-    Writes two files, not one:
-    - `world.yaml`: current state (the default, collapsed export -- a
+    Writes to two directories, not one:
+    - `world/`: current state (the default, collapsed export -- a
       time_dimension'd component type like `description`/`state`/`position`
       shows only its current row per entity, not every historical
       restatement).
-    - `world_history.yaml`: the same content, uncollapsed -- every row ever
+    - `world_history/`: the same content, uncollapsed -- every row ever
       recorded, full change history. Kept because the registry itself still
       accumulates full history forever (nothing here is deleted, only what
       the *collapsed* export shows), but that history would otherwise only
       ever exist in this process's own database connection -- worth having
       committed alongside the save, not just inferable from it.
 
+    Each is a directory, not a single fixed filename, because
+    `export_manifest` writes one EC file per original source filepath --
+    today that's always exactly one file (every registrar.update() call
+    across this project shares `WORLD_FILE_ID` as its source key), but the
+    directory is what leaves room for a save to be split across more files
+    later without a format change, matching iacs's own principle of letting
+    an EC source be organized across as many files as its author wants.
+    `start_world`'s loader recurses into whichever directory it picks rather
+    than assuming one file lives there.
+
     `export_manifest` also re-exports this project's own field-schema
     manifest (merged into every registry via `input_dirs=[MANIFEST_DIR]`)
     to its own `builtins.yaml` alongside `world.yaml` -- that's just a
     normalized round-trip of `manifest/builtins.yaml`'s static content, not
     game state, so it's deleted rather than left to accumulate confusingly
-    in `save_dir`.
+    in each export directory.
     """
     __iacs__ = {"solution of": "story_simulator_mission.seed_yaml_reflects_live_state"}
-    world_yaml = save_dir / f"{WORLD_FILE_ID}.yaml"
-    for path in registrar.export_manifest(output_dir=str(save_dir)):
+    world_dir = save_dir / WORLD_DIRNAME
+    world_yaml = world_dir / f"{WORLD_FILE_ID}.yaml"
+    for path in registrar.export_manifest(output_dir=str(world_dir)):
         if Path(path) != world_yaml:
             Path(path).unlink(missing_ok=True)
 
-    world_history_yaml = save_dir / WORLD_HISTORY_FILENAME
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        exported = registrar.export_manifest(output_dir=tmp_dir, collapse_time_dimension=False)
-        source = next((Path(p) for p in exported if Path(p).stem == WORLD_FILE_ID), None)
-        if source is not None:
-            shutil.copyfile(source, world_history_yaml)
+    world_history_dir = save_dir / WORLD_HISTORY_DIRNAME
+    world_history_yaml = world_history_dir / f"{WORLD_FILE_ID}.yaml"
+    for path in registrar.export_manifest(
+        output_dir=str(world_history_dir), collapse_time_dimension=False
+    ):
+        if Path(path) != world_history_yaml:
+            Path(path).unlink(missing_ok=True)
 
 
 def _update_registry_and_sync(registrar: Registrar, save_dir: Path, yaml_string: str) -> None:

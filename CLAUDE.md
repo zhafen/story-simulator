@@ -8,51 +8,70 @@ in a Postgres-backed `iacs` registry, not in this project's own process
 memory — see `docs/architecture.md` for the full picture.
 
 Every `update_registry` call (including the NPC turn's own internal one)
-re-exports the registry's state to two files, not the source of truth but
-both current as of the last turn:
-- `save_dir/world.yaml`: current state, collapsed — a time_dimension'd
+re-exports the registry's state to two directories, not the source of truth
+but both current as of the last turn:
+- `save_dir/world/`: current state, collapsed — a time_dimension'd
   component type (`description`, `state`, `position`) shows only its
   current row per entity, not every historical restatement of it.
-- `save_dir/world_history.yaml`: the same content, uncollapsed — every row
+- `save_dir/world_history/`: the same content, uncollapsed — every row
   ever recorded for every entity, full change history. The registry itself
   always keeps full history regardless (nothing is ever deleted, only what
   the collapsed export shows), but that history would otherwise only exist
   in Postgres; this is what makes it survive in the repo too.
 
+These are directories, not fixed filenames, because `export_manifest`
+writes one EC yaml file per original source filepath — currently that's
+always exactly one file per directory (every `registrar.update()` call
+across this project shares `WORLD_FILE_ID` as its source key), but nothing
+about the save format assumes that stays true. A save can be split across
+as many files as its author wants (nested however, e.g. one per location),
+matching iacs's own principle of letting an EC source be organized however
+you wish rather than one monolithic file — `start_world`'s loader recurses
+into whichever directory it picks (see below) rather than assuming a
+single file lives there.
+
 The save's original seed (`scenario.yaml`, or wherever `scenario_dir`
 pointed) is still frozen turn-zero data and never updated by either export
-— if you're reading a save's YAML for current state, read `world.yaml`, not
-the seed file (and not `world_history.yaml`, unless you actually want the
-full change log rather than what's current).
+— if you're reading a save's current state, read `save_dir/world/`, not
+the seed file (and not `save_dir/world_history/`, unless you actually want
+the full change log rather than what's current).
 
-`start_world`'s first-open loader used to glob every `*.yaml`/`*.yml` file
-under `save_dir` and concatenate them into one document, which meant that
-when both `world.yaml` and `world_history.yaml` were present it relied on
-`world_history.yaml` sorting alphabetically last (so YAML's last-key-wins
-on the resulting duplicate top-level keys happened to pick the fuller
-file) rather than any real guarantee — a different, differently-sorting
-filename could have silently discarded data instead. **Fixed**: the loader
-now picks exactly one of `world_history.yaml` / `world.yaml` / a plain
-glob, in that explicit preference order, rather than combining whatever it
-finds — `world_history.yaml` is a strict superset of `world.yaml`'s rows,
-which are in turn a strict superset of the original seed's own content
-(still present as each entity's earliest historical row), so preferring
-the fullest file loses nothing.
+`start_world`'s first-open loader picks exactly one of `world_history/` /
+`world/` / a recursive glob of everything under `save_dir`, in that
+explicit preference order, rather than combining more than one at once:
+concatenating redundant sources risks silently discarding data (YAML's
+last-key-wins on the resulting duplicate top-level keys picks whichever
+row happened to sort last, replacing rather than merging). `world_history/`
+is a strict superset of `world/`'s rows, which are in turn a strict
+superset of the original seed's own content (still present as each
+entity's earliest historical row), so preferring the fullest one loses
+nothing. The final fallback — recursing the whole `save_dir` when neither
+export directory exists yet — is what still lets a pristine,
+never-yet-opened `scenario_dir` be organized across multiple files at
+arbitrary depth (not just one flat `scenario.yaml`), same as before this
+directory-based redesign.
 
-**`data/living_world` is still no longer a pristine `scenario_dir`
-template**, even with that fix. It holds `scenario.yaml` (the original
-turn-zero seed) plus `world.yaml`/`world_history.yaml` (a real
-playthrough's accumulated state, committed deliberately so that progress
-wasn't only living in this session's ephemeral Postgres). To **continue**
-that playthrough, open `data/living_world` as `save_dir` itself, with no
-separate `scenario_dir`. Do **not** pass it as `scenario_dir` to seed a
-different, new `save_dir` — `_seed_save_dir` would copy all three files
+(Earlier revision of this same fix used single fixed filenames,
+`world.yaml`/`world_history.yaml`, instead of directories — replaced
+because a fixed filename can't be split across multiple files, which
+defeated the point of a save being freely organizable EC data in the first
+place, and because a genuinely multi-file `scenario_dir` would have lost
+that freedom the moment it was first opened and re-exported back to a
+single file.)
+
+**`data/living_world` is still not a pristine `scenario_dir` template.**
+It holds `scenario.yaml` (the original turn-zero seed) plus
+`world/`/`world_history/` (a real playthrough's accumulated state,
+committed deliberately so that progress wasn't only living in this
+session's ephemeral Postgres). To **continue** that playthrough, open
+`data/living_world` as `save_dir` itself, with no separate `scenario_dir`.
+Do **not** pass it as `scenario_dir` to seed a different, new `save_dir` —
+`_seed_save_dir` would copy `scenario.yaml` and both export directories
 into the new location, and the loader would then deterministically pick
-`world_history.yaml` there too, so the new "fresh" save would still start
-with this playthrough's full history already merged in (no longer by
-alphabetical accident, but the outcome for this specific use — wanting a
-genuinely blank slate — is unchanged). A genuinely fresh living-world
-playthrough needs a different, currently-nonexistent pristine source.
+`world_history/` there too, so the new "fresh" save would still start with
+this playthrough's full history already merged in. A genuinely fresh
+living-world playthrough needs a different, currently-nonexistent pristine
+source.
 
 ## Reloading `story-simulator-mcp` after editing its code
 

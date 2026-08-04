@@ -25,6 +25,26 @@ appearance:
             description: A description of the appearance.
             type: str
 
+state:
+    - description: The entity's current state, as a single freeform word or short
+        phrase (e.g. a door being "open" or "closed"). Exactly one value counts
+        as current per entity -- see `turn`.
+    - component_type
+    - field:
+        value:
+            description: The current state, e.g. "open" or "closed".
+            type: str
+        turn:
+            description: Ordering stamp backfilled on merge (see
+                story_simulator.spatial.merge_yaml_string), not authored
+                directly, so it stays nullable for hand-authored rows.
+                Entities can accumulate multiple state rows over time;
+                flagged time_dimension so Registry.view_current resolves
+                the row with the highest turn as the current state.
+            type: int
+            nullable: true
+            time_dimension: true
+
 physics_components:
     position:
         - description: Component containing the position of an entity.

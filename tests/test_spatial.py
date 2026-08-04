@@ -128,6 +128,28 @@ def test_entity_descriptions_empty_for_no_aliases():
     assert entity_descriptions(registrar, set()) == ""
 
 
+def test_entity_descriptions_shows_only_current_description():
+    registrar = _registrar_from_yaml("door:\n    - description: first\n    - position: {x: 0, y: 0}\n")
+    merge_yaml_string(registrar, "door:\n    - description: second\n", turn=2)
+    result = entity_descriptions(registrar, {"door"})
+    assert result == "door: second"
+
+
+def test_entity_descriptions_includes_current_state():
+    registrar = _registrar_from_yaml(
+        "door:\n    - description: A plain door.\n    - state: open\n    - position: {x: 0, y: 0}\n"
+    )
+    result = entity_descriptions(registrar, {"door"})
+    assert result == "door: A plain door. (state: open)"
+
+
+def test_entity_descriptions_shows_only_current_state():
+    registrar = _registrar_from_yaml("door:\n    - state: open\n    - position: {x: 0, y: 0}\n")
+    merge_yaml_string(registrar, "door:\n    - state: closed\n", turn=2)
+    result = entity_descriptions(registrar, {"door"})
+    assert result == "door: (state: closed)"
+
+
 _SIZED_WORLD_YAML = """
 observer:
     - character:

@@ -25,6 +25,10 @@ jobs:
         with:
           submodules: recursive
 
+      - name: Check submodule pointers
+        if: github.event_name == 'pull_request'
+        run: scripts/check-submodule-pointers.sh "${{ github.event.pull_request.base.sha }}" "${{ github.event.pull_request.head.sha }}"
+
       - name: Install uv
         uses: astral-sh/setup-uv@v4
         with:

@@ -172,7 +172,18 @@ def perceptible_entities(registrar: Registrar, center: "str | tuple[float, float
     cx, cy = _resolve_point(registrar, center)
 
     positions = registrar.view_current(["position.x", "position.y"])
-    sizes = registrar.get("size").group_by("entity_id").aggregate(size=lambda t: t["value"].max())
+    # Cast to the manifest-declared `size.value: float` type explicitly rather than
+    # trusting whatever dtype `registrar.get` infers: when no entity anywhere in the
+    # save has ever had a `size` component, reopening the save (a plain DB reconnect,
+    # not a manifest re-merge) leaves that schema undeclared, so `get` falls back to
+    # a generic `value: string` empty table -- and `.max()` over a string column
+    # produces a string `size` column that then fails to coalesce with the float
+    # `DEFAULT_ENTITY_SIZE` fallback below.
+    sizes = (
+        registrar.get("size")
+        .group_by("entity_id")
+        .aggregate(size=lambda t: t["value"].cast("float64").max())
+    )
     joined = positions.left_join(sizes, positions["entity_id"] == sizes["entity_id"])
 
     size_col = joined["size"].fill_null(game_config.DEFAULT_ENTITY_SIZE)

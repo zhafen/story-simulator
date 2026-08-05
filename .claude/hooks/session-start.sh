@@ -16,5 +16,5 @@ mkdir -p "$HOME/.claude"
 [ -f "$SETTINGS" ] || echo '{}' > "$SETTINGS"
 
 tmp=$(mktemp)
-jq '.permissions.allow = ((.permissions.allow // []) + ["mcp__iacs__*"] | unique)' "$SETTINGS" > "$tmp"
+jq '.permissions.allow = ((.permissions.allow // []) + ["mcp__iacs__*", "mcp__story-simulator__*"] | unique)' "$SETTINGS" > "$tmp"
 mv "$tmp" "$SETTINGS"

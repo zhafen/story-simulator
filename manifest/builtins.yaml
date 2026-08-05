@@ -45,6 +45,30 @@ state:
             nullable: true
             time_dimension: true
 
+next_due:
+    - description: The next in-world time this entity should be processed by
+        the event loop (see story_simulator.spatial.next_due_entity). No row
+        yet means due immediately -- a brand-new entity always goes before
+        anything already scheduled into the future. Exactly one value counts
+        as current per entity -- see `turn`.
+    - component_type
+    - field:
+        value:
+            description: The next due time, on the same placeholder ordering
+                scale as position.turn, until a real time/distance model
+                exists to derive it from in-world speed/distance.
+            type: float
+        turn:
+            description: Ordering stamp backfilled on merge (see
+                story_simulator.spatial.merge_yaml_string), not authored
+                directly, so it stays nullable for hand-authored rows.
+                Entities can accumulate multiple next_due rows over time;
+                flagged time_dimension so Registry.view_current resolves
+                the row with the highest turn as the current one.
+            type: int
+            nullable: true
+            time_dimension: true
+
 physics_components:
     position:
         - description: Component containing the position of an entity.

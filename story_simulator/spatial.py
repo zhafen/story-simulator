@@ -278,3 +278,170 @@ def active_aliases(registrar: Registrar) -> set[str]:
     if df is None:
         return set()
     return set(df["entity_id.alias"])
+
+
+def character_interaction_type(registrar: Registrar, alias: str) -> str | None:
+    """Return `alias`'s `character.interaction_type` ("player"/"npc"), or None if unset.
+
+    Used by `get_character_input`/`resolve_event` (mcp_server.py) to branch
+    between the player-voiced path (tier 3 -- only a real human can answer)
+    and the NPC path (tier 1 -- nobody real is behind it).
+    """
+    entity_id = registrar.get_entity_id(alias)
+    if entity_id is None:
+        return None
+    df = safe_view(registrar, "character.interaction_type")
+    if df is None:
+        return None
+    match = df[df["entity_id"] == entity_id]
+    return None if match.empty else str(match.iloc[0]["character.interaction_type"])
+
+
+# ---------------------------------------------------------------------------
+# Event-driven simulation loop -- one function per box in the turn-anatomy
+# diagram (see docs/architecture.md and the published turn-flow artifact).
+# Modeled on Sedgewick & Wayne's individual-timestep event-driven
+# simulation, but with the schedule itself living as registry data (a
+# `next_due` component) rather than an in-memory priority queue -- see
+# next_due_entity's docstring for why that's what makes resuming a paused
+# turn safe (see story_simulator.resolve).
+# ---------------------------------------------------------------------------
+
+
+def _next_due_by_entity(registrar: Registrar) -> pd.DataFrame:
+    """One row per entity with a next_due of its own: `entity_id`, `due` (float).
+
+    Casts explicitly to the manifest-declared `next_due.value: float` type,
+    for the same reason `perceptible_entities` casts `size`: a save with
+    zero `next_due` rows anywhere leaves the schema undeclared on a plain
+    `Registrar.load()` reconnect (`declare_schema` only runs during the
+    ETL/validation pipeline a real `update` merge goes through, not a bare
+    reconnect), so `get` falls back to a generic `value: string` table and
+    `.max()` over it can't be compared against a float fallback.
+    """
+    return (
+        registrar.get("next_due")
+        .group_by("entity_id")
+        .aggregate(due=lambda t: t["value"].cast("float64").max())
+        .execute()
+    )
+
+
+def next_due_entity(registrar: Registrar) -> str | None:
+    """Return the alias of whichever character is due soonest, or None if there are none.
+
+    A character with no `next_due` row yet sorts as due immediately
+    (-inf), so a brand-new character always goes before anything already
+    scheduled into the future. Only characters are scheduled -- non-character
+    entities (objects, terrain) don't take turns. A plain read, not a
+    destructive dequeue: `story_simulator.resolve`'s replay-from-the-top
+    mechanism depends on this being safe to call again and again and get
+    the same answer for the same registry state.
+    """
+    if "character" not in registrar.registry.component_types:
+        return None
+    characters = registrar.view_current(["character.interaction_type"]).execute()
+    if characters.empty:
+        return None
+    due_df = _next_due_by_entity(registrar)
+    merged = characters.merge(due_df, on="entity_id", how="left")
+    merged["due"] = merged["due"].fillna(float("-inf"))
+    return merged.sort_values("due").iloc[0]["entity_id.alias"]
+
+
+def pop_event(registrar: Registrar) -> str | None:
+    """Pop event box: identify (not destructively dequeue) whichever character is due next."""
+    return next_due_entity(registrar)
+
+
+def is_event_valid(registrar: Registrar, alias: str) -> bool:
+    """Valid? box: is `alias` still a real, eligible character.
+
+    Always true today by construction -- `pop_event` always re-reads
+    current state fresh rather than pre-computing events into a queue, so
+    the classic "has this entity changed since it was scheduled" staleness
+    problem (Sedgewick & Wayne's own reason for this check) doesn't arise
+    yet. This is the seam a future lookahead/precomputed-event design
+    would extend, the same way `CollisionSystem.Event.isValid()` compares
+    a captured collision count against the current one.
+    """
+    return registrar.get_entity_id(alias) is not None
+
+
+def advance_clock(registrar: Registrar, alias: str) -> float:
+    """Advance clock box: the popped entity's own `next_due` becomes "now" for this turn.
+
+    No separate persisted global clock yet -- the popped event's own
+    timestamp is the only notion of "current time" anything downstream
+    needs today. A shared clock entity would only become necessary if
+    something other than "whichever event was just popped" ever needed to
+    read "now" independently.
+    """
+    entity_id = registrar.get_entity_id(alias)
+    if entity_id is None:
+        return 0.0
+    due_df = _next_due_by_entity(registrar)
+    match = due_df[due_df["entity_id"] == entity_id]
+    return float(match.iloc[0]["due"]) if not match.empty else 0.0
+
+
+def predict_event(registrar: Registrar, alias: str, next_due_in: float) -> float:
+    """Predict events / Predict next box: compute when `alias` should next be due.
+
+    One function serving both call sites, per the diagram's own "same
+    function as" edge -- the initial per-entity setup and the
+    post-`Process event` reschedule are the identical computation, just
+    invoked for a different set of entities at different points in the
+    loop. Pure: doesn't write anything itself (see `push_event`).
+    """
+    now = advance_clock(registrar, alias)
+    return now + next_due_in
+
+
+def push_event(registrar: Registrar, alias: str, due_at: float, turn: int | None = None) -> None:
+    """Push to queue / Push events box: commit `alias`'s next_due to the registry.
+
+    One function serving both call sites, matching `predict_event`.
+    Writing `next_due` IS "pushing to the queue" here -- there's no
+    separate in-memory priority queue; `next_due_entity`'s live registry
+    read *is* the queue. `turn` should be given the same monotonic stamp
+    every other time_dimension'd write in this project uses (see
+    `mcp_server._next_turn_stamp`) -- `next_due.turn` is time_dimension'd
+    exactly like `position.turn`/`state.turn`, so an entity rescheduled
+    more than once needs it to resolve which row is current.
+    """
+    data = {f"{alias}_next_due": [{"same_as": {"value": alias}}, {"next_due": {"value": due_at}}]}
+    merge_yaml_string(registrar, yaml.safe_dump(data, sort_keys=False), turn=turn)
+
+
+def select_character(registrar: Registrar, alias: str) -> str:
+    """Select character box: resolve/validate the alias `process_event` was already handed.
+
+    Not a "pick among many" step -- `pop_event` already chose which entity
+    is due. This just confirms `alias` still resolves to a real entity.
+    """
+    if registrar.get_entity_id(alias) is None:
+        raise ValueError(f"No such character: {alias!r}")
+    return alias
+
+
+def narrate_to_character(registrar: Registrar, alias: str) -> str:
+    """Narrate to character box: what `alias` can currently perceive, and record it.
+
+    Tags each perceived entity `active` (replacing whatever was previously
+    tagged active) and merges them into `alias`'s permanent `memory`, the
+    same way the old per-turn MapSystem did -- just on demand instead of
+    automatically every turn. This is the `perceive` tool's own body,
+    factored out here so `character_communication` (mcp_server.py) can
+    call it directly instead of going through a second MCP round-trip.
+    """
+    nearby = perceptible_entities(registrar, alias)
+    sync_active_tags(registrar, nearby)
+    record_memory(registrar, alias, nearby)
+    if not nearby:
+        return f"Nothing else is within perceptible range of {alias}."
+    details = entity_descriptions(registrar, nearby)
+    parts = [f"Entities near {alias}: {', '.join(sorted(nearby))}"]
+    if details:
+        parts.append(details)
+    return "\n".join(parts)

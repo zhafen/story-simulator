@@ -1,3 +1,4 @@
+import asyncio
 from unittest.mock import MagicMock
 
 import pytest
@@ -312,7 +313,7 @@ class TestAdvanceNpcTurn:
         mock_completion = MagicMock(side_effect=[decide_response, narrate_response])
         monkeypatch.setattr("story_simulator.agents.litellm.completion", mock_completion)
 
-        result = advance_npc_turn("traveler", ctx)
+        result = asyncio.run(advance_npc_turn("traveler", ctx))
 
         assert "I look around." in result
         assert "traveler" in result

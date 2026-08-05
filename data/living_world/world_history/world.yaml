@@ -151,10 +151,19 @@ player:
 - character:
     interaction_type: player
 - position:
+    turn: 1785894168.0
+    x: 0.0
+    y: -900.0
+    z: 0.0
+- position:
     turn: 1785894049.0
     x: 0.0
     y: -960.0
     z: 0.0
+- description:
+    time: 1785894168.0
+    value: A traveler walking north across the cracked, sunbaked field, the second
+      door now distant behind them.
 - description:
     time: 1785803711.0
     value: A traveler who has just walked through the door and emerged a year later,

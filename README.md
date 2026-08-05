@@ -1,5 +1,10 @@
 # story-simulator
 
+An MCP for event-driven simulations powered by the LLM and informed by physics.
+
+*Event-driven simulation approach credited to Sedgewick & Wayne's
+[6.1 Event-Driven Simulation](https://algs4.cs.princeton.edu/61event/) (*Algorithms, 4th Edition*).*
+
 story-simulator is an MCP server for a text simulation whose world state lives in a structured
 entity/component registry ([`iacs`](iacs)), not in whatever AI narrates it. There's no built-in
 agent loop — you play by connecting an MCP-aware chat client (Claude Code, Claude Desktop, or

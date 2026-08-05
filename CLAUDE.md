@@ -73,6 +73,14 @@ this playthrough's full history already merged in. A genuinely fresh
 living-world playthrough needs a different, currently-nonexistent pristine
 source.
 
+## Prefix in-world narration with `> narrator:`
+
+When narrating a turn's outcome directly to the player (step 3 of the
+per-action loop below), prefix that in-world text with `> narrator:` so
+it's visually distinguishable from ordinary conversational replies. This
+applies only to the actual narration text, not to out-of-character asides
+or status updates.
+
 ## Reloading `story-simulator-mcp` after editing its code
 
 `.mcp.json` spawns `story-simulator-mcp` once, as a long-lived stdio

@@ -490,23 +490,113 @@ story_simulator_mission:
                       vocabulary as everything else in this manifest so
                       resolved_impact_cost can help rank them, but every
                       entry here stays work_state: new until one is picked.
+            considerations:
+                - description: >
+                      Named pro/con dimensions used to score the candidate
+                      solutions below, via each solution's own
+                      consideration_rating components -- weight is how much
+                      a dimension matters when comparing solutions,
+                      independent of any one solution's rating on it;
+                      rating is signed, positive for a pro and negative for
+                      a con.
+                - consideration:
+                      zero_further_engineering_cost:
+                          description: No additional engineering work is
+                              needed to ship this.
+                          weight: 0.3
+                      reduces_target_duplication:
+                          description: >
+                              Meaningfully reduces the copy-pasted schema
+                              blocks, duplicated naming, or duplicated
+                              meta-column lists this review flagged as
+                              bloat -- rather than leaving them as-is or
+                              adding to them.
+                          weight: 0.8
+                      explicit_self_contained_schema:
+                          description: >
+                              Every component's schema stays fully explicit
+                              and self-contained, nothing implied or left
+                              to convention.
+                          weight: 0.3
+                      cross_repo_iacs_change:
+                          description: >
+                              Requires editing iacs itself, not just
+                              story-simulator -- blocked on the open
+                              submodule-push question, and carries
+                              shared-infrastructure regression risk.
+                          weight: 0.5
+                      needs_data_migration:
+                          description: >
+                              Existing fields or data need to be migrated
+                              or reconciled to adopt the change, rather
+                              than a drop-in fix.
+                          weight: 0.4
+                      loses_directness_or_history:
+                          description: >
+                              Loses either a directly-readable authoritative
+                              value, or the historical change trail the SCD
+                              approach otherwise preserves.
+                          weight: 0.5
+                      trivial_low_risk_change:
+                          description: >
+                              Zero or near-zero code change, no cross-repo
+                              dependency, trivial to implement and low
+                              risk.
+                          weight: 0.3
+                      standardized_naming:
+                          description: >
+                              The turn/time naming split becomes
+                              standardized by construction rather than
+                              left to convention.
+                          weight: 0.4
+                      fewer_runtime_objects:
+                          description: >
+                              Removes a component type or entity from
+                              every save, rather than adding one.
+                          weight: 0.4
+                      second_current_value_idiom:
+                          description: >
+                              Introduces a second way to read "current
+                              value of X" alongside the SCD idiom the rest
+                              of the schema already uses.
+                          weight: 0.3
+                      superficial_fix:
+                          description: >
+                              Addresses surface-level copy-paste text
+                              without reducing the underlying number of
+                              runtime concepts/objects.
+                          weight: 0.3
+                      directly_fixes_hit_pain:
+                          description: >
+                              Directly fixes the exact
+                              duplication/inconsistency pain actually hit
+                              this session, not a hypothetical one.
+                          weight: 0.4
             keep_current_design:
                 - description: >
                       Do nothing further -- ship this session's `_seq` fix
                       as-is and leave the rest.
-
-                      PROS: already implemented and fully tested (367 iacs +
-                      55 story-simulator tests green); zero further
-                      engineering cost; every component's schema stays
-                      fully self-contained and explicit, nothing "magic".
-
-                      CONS: the duplication that prompted this review is
-                      still there -- four near-copy-pasted turn blocks, two
-                      names for one concept, two meta-column lists, one
-                      misleadingly-named function; doesn't reduce the bloat
-                      this review was asked to address, and `clock` adds a
-                      fifth SCD-shaped object rather than fewer.
                 - solution of: story_simulator_mission.scd_time_data
+                - consideration_rating:
+                      zero_further_engineering_cost:
+                          rating: 0.9
+                          note: >
+                              Already implemented and fully tested (367
+                              iacs + 55 story-simulator tests green); zero
+                              further cost.
+                      explicit_self_contained_schema:
+                          rating: 0.8
+                          note: Every component's schema stays fully
+                              self-contained and explicit, nothing "magic".
+                      reduces_target_duplication:
+                          rating: -0.7
+                          note: >
+                              Doesn't reduce the bloat this review flagged
+                              -- four near-copy-pasted turn blocks, two
+                              names for one concept, two meta-column
+                              lists, one misleadingly-named function all
+                              remain; `clock` adds a fifth SCD-shaped
+                              object rather than fewer.
                 - impact:
                       type: developer_experience
                       value: 0.1
@@ -521,19 +611,30 @@ story_simulator_mission:
                       int/nullable/time_dimension:true boilerplate plus a
                       standard name, so a component author writes one line
                       instead of six.
-
-                      PROS: kills the duplication at its root, in one place
-                      that benefits every iacs consumer, not just
-                      story-simulator; naming (turn vs time) becomes
-                      standardized by construction, not convention.
-
-                      CONS: an iacs schema-language change, not just a
-                      Python fix -- cross-repo, blocked on the open
-                      submodule-push question, higher regression risk;
-                      standardizing the field name would need a migration
-                      for position/state/next_due's existing `turn` fields
-                      unless the shorthand allows renaming.
                 - solution of: story_simulator_mission.scd_time_data.single_ordering_vocabulary
+                - consideration_rating:
+                      reduces_target_duplication:
+                          rating: 0.9
+                          note: >
+                              Kills the duplication at its root, in one
+                              place that benefits every iacs consumer, not
+                              just story-simulator.
+                      standardized_naming:
+                          rating: 0.6
+                          note: Naming (turn vs time) becomes standardized
+                              by construction, not convention.
+                      cross_repo_iacs_change:
+                          rating: -0.7
+                          note: An iacs schema-language change, not just a
+                              Python fix -- higher regression risk than a
+                              story-simulator-only change.
+                      needs_data_migration:
+                          rating: -0.5
+                          note: >
+                              Standardizing the field name would need a
+                              migration for position/state/next_due's
+                              existing `turn` fields, unless the shorthand
+                              allows renaming.
                 - impact:
                       - type: architecture_clarity
                         value: 0.7
@@ -553,18 +654,24 @@ story_simulator_mission:
                       split advance_clock into two honestly-named
                       functions) instead of persisting a separate
                       world_clock entity.
-
-                      PROS: one fewer component type/entity per save;
-                      directly removes the clock/next_due duplication this
-                      review flagged.
-
-                      CONS: deriving "now" by scanning next_due's full
-                      history is less direct than reading one authoritative
-                      value, and "highest next_due already resolved" isn't
-                      quite the same guarantee as an explicit clock once
-                      several entities interleave; doesn't touch the
-                      turn/time naming or iacs meta-column duplication.
                 - solution of: story_simulator_mission.scd_time_data
+                - consideration_rating:
+                      fewer_runtime_objects:
+                          rating: 0.5
+                          note: One fewer component type/entity per save.
+                      reduces_target_duplication:
+                          rating: 0.6
+                          note: Directly removes the clock/next_due
+                              duplication this review flagged.
+                      loses_directness_or_history:
+                          rating: -0.6
+                          note: >
+                              Deriving "now" by scanning next_due's full
+                              history is less direct than reading one
+                              authoritative value, and "highest next_due
+                              already resolved" isn't quite the same
+                              guarantee as an explicit clock once several
+                              entities interleave.
                 - impact:
                       type: architecture_clarity
                       value: 0.4
@@ -582,17 +689,27 @@ story_simulator_mission:
                       them as an ordinary overwritten value (like `active`
                       already is, via Registrar.overwrite) instead of a
                       time_dimension'd component.
-
-                      PROS: removes next_due/clock from the SCD machinery
-                      entirely -- no turn field, no view_current dependency,
-                      no _seq concern for these two components specifically.
-
-                      CONS: loses the historical trail of how an entity's
-                      schedule changed over time (available today via plain
-                      view); introduces a second "how do I read current X"
-                      idiom alongside the SCD one the rest of the schema
-                      uses -- arguably more confusing, not less.
                 - solution of: story_simulator_mission.scd_time_data
+                - consideration_rating:
+                      reduces_target_duplication:
+                          rating: 0.7
+                          note: >
+                              Removes next_due/clock from the SCD machinery
+                              entirely -- no turn field, no view_current
+                              dependency, no _seq concern for these two
+                              components specifically.
+                      loses_directness_or_history:
+                          rating: -0.5
+                          note: Loses the historical trail of how an
+                              entity's schedule changed over time
+                              (available today via plain view).
+                      second_current_value_idiom:
+                          rating: -0.4
+                          note: >
+                              Introduces a second "how do I read current X"
+                              idiom alongside the SCD one the rest of the
+                              schema uses -- arguably more confusing, not
+                              less.
                 - impact:
                       type: architecture_clarity
                       value: 0.2
@@ -606,16 +723,24 @@ story_simulator_mission:
                       declaration once as a YAML anchor in
                       manifest/builtins.yaml and reference it three more
                       times, rather than four independent copies.
-
-                      PROS: zero code changes, no cross-repo dependency,
-                      trivial and low-risk, directly kills the
-                      copy-paste-drift complaint immediately.
-
-                      CONS: cosmetic only -- doesn't reduce the runtime
-                      concept count (still four separate schemas), doesn't
-                      touch the turn/time naming split or iacs's
-                      meta-column duplication.
                 - solution of: story_simulator_mission.scd_time_data.single_ordering_vocabulary
+                - consideration_rating:
+                      trivial_low_risk_change:
+                          rating: 0.8
+                          note: Zero code changes, no cross-repo
+                              dependency, trivial and low-risk.
+                      reduces_target_duplication:
+                          rating: 0.3
+                          note: Directly kills the copy-paste-drift
+                              complaint immediately, but only within
+                              manifest/builtins.yaml's four turn blocks.
+                      superficial_fix:
+                          rating: -0.5
+                          note: >
+                              Cosmetic only -- doesn't reduce the runtime
+                              concept count (still four separate schemas),
+                              doesn't touch the turn/time naming split or
+                              iacs's meta-column duplication.
                 - impact:
                       type: architecture_clarity
                       value: 0.2
@@ -629,17 +754,26 @@ story_simulator_mission:
                       once (in registry.py) and have export_manifest.py
                       reuse it instead of maintaining _METADATA_COLS
                       independently.
-
-                      PROS: directly fixes the exact two-lists-out-of-sync
-                      pain hit this session; small, low-risk, no schema or
-                      behavior change.
-
-                      CONS: export_manifest.py's list has one entry
-                      (is_primary) registry.py's doesn't -- needs a small
-                      reconciliation, not a pure rename; still a cross-repo
-                      iacs change, blocked on the same submodule-push
-                      question as reusable_time_dimension_field_type.
                 - solution of: story_simulator_mission.scd_time_data.no_duplicated_meta_columns
+                - consideration_rating:
+                      directly_fixes_hit_pain:
+                          rating: 0.7
+                          note: Directly fixes the exact
+                              two-lists-out-of-sync pain hit this session.
+                      trivial_low_risk_change:
+                          rating: 0.6
+                          note: Small, low-risk, no schema or behavior
+                              change.
+                      needs_data_migration:
+                          rating: -0.3
+                          note: export_manifest.py's list has one entry
+                              (is_primary) registry.py's doesn't -- needs a
+                              small reconciliation, not a pure rename.
+                      cross_repo_iacs_change:
+                          rating: -0.4
+                          note: Still a cross-repo iacs change, blocked on
+                              the same submodule-push question as
+                              reusable_time_dimension_field_type.
                 - impact:
                       type: architecture_clarity
                       value: 0.3

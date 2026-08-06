@@ -54,9 +54,11 @@ next_due:
     - component_type
     - field:
         value:
-            description: The next due time, on the same placeholder ordering
-                scale as position.turn, until a real time/distance model
-                exists to derive it from in-world speed/distance.
+            description: The next due time. Not calibrated to any real unit
+                yet (no seconds, no meters-per-second) -- values only mean
+                something relative to each other, for ordering which entity
+                goes next. A real time/distance model will eventually derive
+                this from in-world speed and distance.
             type: float
         turn:
             description: Ordering stamp backfilled on merge (see

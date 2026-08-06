@@ -1,6 +1,6 @@
 # story-simulator
 
-An MCP for event-driven simulations powered by the LLM and informed by physics.
+An MCP for event-driven simulations powered by LLMs.
 
 *For a reliable reference example of event-driven simulation, see Sedgewick & Wayne's
 [6.1 Event-Driven Simulation](https://algs4.cs.princeton.edu/61event/) (Algorithms, 4th Edition).*

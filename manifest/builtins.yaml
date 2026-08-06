@@ -45,6 +45,57 @@ state:
             nullable: true
             time_dimension: true
 
+clock:
+    - description: The simulation's own world time, persisted on a single
+        entity aliased `world_clock` so every other time_dimension'd write
+        (position.turn, state.turn, next_due.turn, description.time) can
+        stamp against real in-world time instead of wall-clock. Written
+        once per turn by story_simulator.spatial.advance_clock. Exactly
+        one value counts as current -- see `turn`.
+    - component_type
+    - field:
+        value:
+            description: The current world time -- the same value next_due
+                schedules entities against. See next_due.value for what its
+                units do and don't mean yet.
+            type: float
+        turn:
+            description: Ordering stamp for the clock entity's OWN row
+                history only -- deliberately kept separate from `value`,
+                which is what every other component's turn/time field
+                should treat as authoritative world time. This field is
+                pure infrastructure for resolving which clock row is
+                newest, not itself meaningful data.
+            type: int
+            nullable: true
+            time_dimension: true
+
+next_due:
+    - description: The next in-world time this entity should be processed by
+        the event loop (see story_simulator.spatial.next_due_entity). No row
+        yet means due immediately -- a brand-new entity always goes before
+        anything already scheduled into the future. Exactly one value counts
+        as current per entity -- see `turn`.
+    - component_type
+    - field:
+        value:
+            description: The next due time. Not calibrated to any real unit
+                yet (no seconds, no meters-per-second) -- values only mean
+                something relative to each other, for ordering which entity
+                goes next. A real time/distance model will eventually derive
+                this from in-world speed and distance.
+            type: float
+        turn:
+            description: Ordering stamp backfilled on merge (see
+                story_simulator.spatial.merge_yaml_string), not authored
+                directly, so it stays nullable for hand-authored rows.
+                Entities can accumulate multiple next_due rows over time;
+                flagged time_dimension so Registry.view_current resolves
+                the row with the highest turn as the current one.
+            type: int
+            nullable: true
+            time_dimension: true
+
 physics_components:
     position:
         - description: Component containing the position of an entity.

@@ -1,0 +1,142 @@
+diff --git a/iacs/dataflows/etl/export_manifest.py b/iacs/dataflows/etl/export_manifest.py
+index da1b2da..6f2be15 100644
+--- a/iacs/dataflows/etl/export_manifest.py
++++ b/iacs/dataflows/etl/export_manifest.py
+@@ -100,7 +100,7 @@ def components(registry: Registry, collapse_time_dimension: bool = True) -> dict
+     return result
+ 
+ 
+-_METADATA_COLS = {"entity_id", "component_index", "modifier", "is_primary"}
++_METADATA_COLS = {"entity_id", "component_index", "modifier", "is_primary", "_seq"}
+ 
+ 
+ def _derived_comp_types(components: dict) -> set[str]:
+diff --git a/iacs/registry.py b/iacs/registry.py
+index d009fb9..052cd3a 100644
+--- a/iacs/registry.py
++++ b/iacs/registry.py
+@@ -8,7 +8,7 @@ import pandas as pd
+ 
+ from .utils import candidate_entity_ids
+ 
+-_TABLE_META_COLS = {"entity_id", "component_index", "modifier"}
++_TABLE_META_COLS = {"entity_id", "component_index", "modifier", "_seq"}
+ 
+ 
+ class Registry:
+@@ -92,9 +92,11 @@ class Registry:
+                 incoming = self._con.table(tmp)
+ 
+                 # Add NULL columns for any fields present in one table but not the other
+-                # so that ibis union can operate on matching schemas.
+-                existing_cols = set(existing.columns)
+-                incoming_cols = set(incoming.columns)
++                # so that ibis set operations can operate on matching schemas.
++                # Excludes `_seq` itself (added below) -- it's not part of
++                # either table's "real" data yet at this point.
++                existing_cols = set(existing.columns) - {"_seq"}
++                incoming_cols = set(incoming.columns) - {"_seq"}
+                 existing_schema = existing.schema()
+                 incoming_schema = incoming.schema()
+                 for col in incoming_cols - existing_cols:
+@@ -105,15 +107,42 @@ class Registry:
+                     incoming = incoming.mutate(
+                         ibis.null().cast(existing_schema[col]).name(col)
+                     )
++                all_cols = sorted(existing_cols | incoming_cols)
++
++                # Only rows genuinely new to this component type (not already
++                # present, compared on every column except `_seq`) get a
++                # freshly minted write sequence -- see _current_table, which
++                # uses `_seq` purely to break ties when two rows share the
++                # same time_dimension value (e.g. two separate writes
++                # landing in the same in-world "turn", which the
++                # time_dimension field alone can't order). Assigning a fresh
++                # `_seq` to *every* incoming row, before deduplicating,
++                # would make two otherwise-identical rows compare unequal
++                # and silently defeat the `distinct=True` below.
++                new_rows = incoming.select(all_cols).difference(
++                    existing.select(all_cols), distinct=True
++                )
+ 
+-                all_cols = sorted(existing.columns)
+-                merged = existing.select(all_cols).union(
+-                    incoming.select(all_cols), distinct=True
++                if "_seq" in existing.columns:
++                    max_existing_seq = existing["_seq"].max().execute()
++                else:
++                    max_existing_seq = None
++                    existing = existing.mutate(_seq=ibis.null().cast("int64"))
++                base_seq = -1 if max_existing_seq is None or pd.isna(max_existing_seq) else int(max_existing_seq)
++                new_rows = new_rows.mutate(_seq=base_seq + 1 + ibis.row_number())
++
++                all_cols_with_seq = all_cols + ["_seq"]
++                merged = existing.select(all_cols_with_seq).union(
++                    new_rows.select(all_cols_with_seq), distinct=True
+                 )
+                 self.update({comp_type: merged})
+                 self._con.drop_table(tmp)
+             else:
+-                self.update({comp_type: arrow_data})
++                tmp = f"_merge_{comp_type}"
++                self._con.create_table(tmp, arrow_data, overwrite=True)
++                incoming = self._con.table(tmp).mutate(_seq=ibis.row_number())
++                self.update({comp_type: incoming})
++                self._con.drop_table(tmp)
+ 
+         # Carry forward any of other's declared-but-dataless schemas (see
+         # declare_schema) too, not just its physical tables, so a component
+@@ -316,10 +345,17 @@ class Registry:
+         if time_field is None or time_field not in t.columns:
+             return t
+ 
++        # `_seq` (see `merge`) breaks ties when two rows share the same
++        # time_dimension value -- two writes landing in the same in-world
++        # "turn", say -- by preferring whichever was merged in more
++        # recently. Falls back to time_field alone if `_seq` isn't present
++        # (a declared-but-dataless schema, or a table that predates this
++        # column and was never merged into since).
++        order_by = [t[time_field].desc(nulls_first=False)]
++        if "_seq" in t.columns:
++            order_by.append(t["_seq"].desc(nulls_first=False))
+         ranked = t.mutate(
+-            _scd_rank=ibis.row_number().over(
+-                group_by="entity_id", order_by=t[time_field].desc(nulls_first=False)
+-            )
++            _scd_rank=ibis.row_number().over(group_by="entity_id", order_by=order_by)
+         )
+         return ranked.filter(ranked["_scd_rank"] == 0).drop("_scd_rank")
+ 
+diff --git a/tests/test_dataflows/test_registrar.py b/tests/test_dataflows/test_registrar.py
+index 2921a0e..13954dd 100644
+--- a/tests/test_dataflows/test_registrar.py
++++ b/tests/test_dataflows/test_registrar.py
+@@ -319,8 +319,13 @@ class TestLoadManifest:
+         assert set(a_all.registry.component_types) == set(a_inc.registry.component_types)
+ 
+         for comp_type in a_all.registry.component_types:
+-            df_all = a_all.registry.get(comp_type).execute()
+-            df_inc = a_inc.registry.get(comp_type).execute()
++            # _seq (merge write-order, see Registry.merge) legitimately
++            # differs between one whole-directory load and several
++            # incremental per-file loads -- drop it before comparing, the
++            # same way component_index is excluded elsewhere for the same
++            # not-stable-across-independent-merges reason.
++            df_all = a_all.registry.get(comp_type).execute().drop(columns=["_seq"], errors="ignore")
++            df_inc = a_inc.registry.get(comp_type).execute().drop(columns=["_seq"], errors="ignore")
+             sort_by = sorted(df_all.columns)
+             pd.testing.assert_frame_equal(
+                 df_all.sort_values(sort_by, na_position="last").reset_index(drop=True),
+diff --git a/tests/test_human_validated.py b/tests/test_human_validated.py
+index dc6c6e9..b4358ca 100644
+--- a/tests/test_human_validated.py
++++ b/tests/test_human_validated.py
+@@ -224,7 +224,7 @@ def _assert_components_equal(
+     paths.
+     """
+     common_cols = sorted(
+-        (set(comp.columns) & set(loaded_comp.columns)) - {"component_index"}
++        (set(comp.columns) & set(loaded_comp.columns)) - {"component_index", "_seq"}
+     )
+     norm1 = _normalize_df(comp, eid_df, common_cols)
+     norm2 = _normalize_df(loaded_comp, reloaded_eid_df, common_cols)

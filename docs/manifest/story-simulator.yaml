@@ -395,6 +395,260 @@ story_simulator_mission:
               - type: regression_risk
                 value: 0.1
         - work_state: new
+    scd_time_data:
+        data:
+            - description: >
+                  Review of every slowly-changing-dimension/time-ordering
+                  object across iacs (the general mechanism) and
+                  story-simulator (position/state/next_due/clock), prompted
+                  by real duplication found while adding next_due/clock this
+                  session: a tie-breaking bug traced to iacs's own
+                  Registry.merge/view_current, fixed by adding a `_seq`
+                  write-sequence column -- and while fixing it, two
+                  independent hand-maintained "which columns aren't real
+                  data" lists (registry.py's _TABLE_META_COLS,
+                  export_manifest.py's _METADATA_COLS) both needed the same
+                  edit by hand, and four near-identical turn/time field
+                  blocks (position, state, next_due, clock) turned up along
+                  the way. Related to world_time_concept (a still-open
+                  sibling requirement asking for a genuine in-fiction-time
+                  axis distinct from mere row-ordering) -- next_due/clock
+                  are this session's first attempt at that axis, not a
+                  replacement for evaluating it properly.
+        deterministic_current_resolution:
+            - description: >
+                  Two rows sharing the same time_dimension value must still
+                  resolve to exactly one deterministic "current" row --
+                  Registry.view_current's row_number() window previously
+                  broke ties arbitrarily (backend-dependent), confirmed
+                  failing this session (a second update_registry call in
+                  the same in-world "turn" silently lost to the first).
+                  Fixed via `_seq`, a write-sequence column Registry.merge
+                  now assigns to genuinely-new rows only (assigning it to
+                  every incoming row before deduplicating first broke
+                  union(distinct=True) instead -- two otherwise-identical
+                  rows no longer compared equal).
+            - requirement
+            - impact:
+                  type: reliability
+                  value: 0.8
+            - work_state: done
+        single_ordering_vocabulary:
+            - description: >
+                  One name, one schema shape, for "the field that orders
+                  which row is current" -- today position.turn/state.turn/
+                  next_due.turn/clock.turn use `turn`, iacs's own
+                  description.time uses `time`, and each of the four
+                  story-simulator blocks repeats the same ~6-line
+                  description/type/nullable/time_dimension declaration
+                  almost word for word.
+            - requirement
+            - impact:
+                  type: architecture_clarity
+                  value: 0.5
+            - cost:
+                  type: engineering_hours
+                  value: 2
+            - work_state: new
+        no_duplicated_meta_columns:
+            - description: >
+                  iacs's own "which columns are infrastructure, not user
+                  data" concept is defined twice, independently:
+                  registry.py's _TABLE_META_COLS and export_manifest.py's
+                  _METADATA_COLS. Both needed the same _seq addition by hand
+                  this session -- exactly the kind of drift risk a single
+                  source of truth would prevent.
+            - requirement
+            - impact:
+                  type: architecture_clarity
+                  value: 0.4
+            - cost:
+                  - type: engineering_hours
+                    value: 1
+                  - type: regression_risk
+                    value: 0.2
+            - work_state: new
+        honest_function_responsibilities:
+            - description: >
+                  story_simulator.spatial.advance_clock reads next_due AND
+                  writes the world_clock entity under a name that only
+                  advertises reading -- a caller checking "what does this
+                  function do" from its name alone would miss the write.
+            - requirement
+            - impact:
+                  type: architecture_clarity
+                  value: 0.3
+            - cost:
+                  type: engineering_hours
+                  value: 1
+            - work_state: new
+        candidate_solutions:
+            data:
+                - description: >
+                      Design options for the requirements above, not yet
+                      chosen between -- scored with the same impact/cost
+                      vocabulary as everything else in this manifest so
+                      resolved_impact_cost can help rank them, but every
+                      entry here stays work_state: new until one is picked.
+            keep_current_design:
+                - description: >
+                      Do nothing further -- ship this session's `_seq` fix
+                      as-is and leave the rest.
+
+                      PROS: already implemented and fully tested (367 iacs +
+                      55 story-simulator tests green); zero further
+                      engineering cost; every component's schema stays
+                      fully self-contained and explicit, nothing "magic".
+
+                      CONS: the duplication that prompted this review is
+                      still there -- four near-copy-pasted turn blocks, two
+                      names for one concept, two meta-column lists, one
+                      misleadingly-named function; doesn't reduce the bloat
+                      this review was asked to address, and `clock` adds a
+                      fifth SCD-shaped object rather than fewer.
+                - solution of: story_simulator_mission.scd_time_data
+                - impact:
+                      type: developer_experience
+                      value: 0.1
+                - cost:
+                      type: engineering_hours
+                      value: 0
+                - work_state: new
+            reusable_time_dimension_field_type:
+                - description: >
+                      Give iacs a first-class shorthand field type (e.g.
+                      `type: time_dimension`) that expands to the full
+                      int/nullable/time_dimension:true boilerplate plus a
+                      standard name, so a component author writes one line
+                      instead of six.
+
+                      PROS: kills the duplication at its root, in one place
+                      that benefits every iacs consumer, not just
+                      story-simulator; naming (turn vs time) becomes
+                      standardized by construction, not convention.
+
+                      CONS: an iacs schema-language change, not just a
+                      Python fix -- cross-repo, blocked on the open
+                      submodule-push question, higher regression risk;
+                      standardizing the field name would need a migration
+                      for position/state/next_due's existing `turn` fields
+                      unless the shorthand allows renaming.
+                - solution of: story_simulator_mission.scd_time_data.single_ordering_vocabulary
+                - impact:
+                      - type: architecture_clarity
+                        value: 0.7
+                      - type: developer_experience
+                        value: 0.3
+                - cost:
+                      - type: engineering_hours
+                        value: 6
+                      - type: regression_risk
+                        value: 0.4
+                - work_state: new
+            merge_clock_into_next_due:
+                - description: >
+                      Stop treating "current world time" and "when is X next
+                      due" as two components on two entities -- derive the
+                      former from the latter's own accumulated history (or
+                      split advance_clock into two honestly-named
+                      functions) instead of persisting a separate
+                      world_clock entity.
+
+                      PROS: one fewer component type/entity per save;
+                      directly removes the clock/next_due duplication this
+                      review flagged.
+
+                      CONS: deriving "now" by scanning next_due's full
+                      history is less direct than reading one authoritative
+                      value, and "highest next_due already resolved" isn't
+                      quite the same guarantee as an explicit clock once
+                      several entities interleave; doesn't touch the
+                      turn/time naming or iacs meta-column duplication.
+                - solution of: story_simulator_mission.scd_time_data
+                - impact:
+                      type: architecture_clarity
+                      value: 0.4
+                - cost:
+                      - type: engineering_hours
+                        value: 3
+                      - type: regression_risk
+                        value: 0.3
+                - work_state: new
+            drop_scd_semantics_for_schedule_data:
+                - description: >
+                      next_due/clock don't obviously need "keep full history,
+                      collapse to latest" semantics the way position/state
+                      do -- only the latest value is ever meaningful. Store
+                      them as an ordinary overwritten value (like `active`
+                      already is, via Registrar.overwrite) instead of a
+                      time_dimension'd component.
+
+                      PROS: removes next_due/clock from the SCD machinery
+                      entirely -- no turn field, no view_current dependency,
+                      no _seq concern for these two components specifically.
+
+                      CONS: loses the historical trail of how an entity's
+                      schedule changed over time (available today via plain
+                      view); introduces a second "how do I read current X"
+                      idiom alongside the SCD one the rest of the schema
+                      uses -- arguably more confusing, not less.
+                - solution of: story_simulator_mission.scd_time_data
+                - impact:
+                      type: architecture_clarity
+                      value: 0.2
+                - cost:
+                      type: engineering_hours
+                      value: 2
+                - work_state: new
+            yaml_anchor_shared_turn_block:
+                - description: >
+                      Write position/state/next_due/clock's turn field
+                      declaration once as a YAML anchor in
+                      manifest/builtins.yaml and reference it three more
+                      times, rather than four independent copies.
+
+                      PROS: zero code changes, no cross-repo dependency,
+                      trivial and low-risk, directly kills the
+                      copy-paste-drift complaint immediately.
+
+                      CONS: cosmetic only -- doesn't reduce the runtime
+                      concept count (still four separate schemas), doesn't
+                      touch the turn/time naming split or iacs's
+                      meta-column duplication.
+                - solution of: story_simulator_mission.scd_time_data.single_ordering_vocabulary
+                - impact:
+                      type: architecture_clarity
+                      value: 0.2
+                - cost:
+                      type: engineering_hours
+                      value: 0.5
+                - work_state: new
+            unify_iacs_meta_column_lists:
+                - description: >
+                      Define iacs's "infrastructure, not data" column set
+                      once (in registry.py) and have export_manifest.py
+                      reuse it instead of maintaining _METADATA_COLS
+                      independently.
+
+                      PROS: directly fixes the exact two-lists-out-of-sync
+                      pain hit this session; small, low-risk, no schema or
+                      behavior change.
+
+                      CONS: export_manifest.py's list has one entry
+                      (is_primary) registry.py's doesn't -- needs a small
+                      reconciliation, not a pure rename; still a cross-repo
+                      iacs change, blocked on the same submodule-push
+                      question as reusable_time_dimension_field_type.
+                - solution of: story_simulator_mission.scd_time_data.no_duplicated_meta_columns
+                - impact:
+                      type: architecture_clarity
+                      value: 0.3
+                - cost:
+                      - type: engineering_hours
+                        value: 1
+                      - type: regression_risk
+                        value: 0.1
+                - work_state: new
 
 # ---------------------------------------------------------------------------
 # What satisfies each done (or partially done) requirement. Most solutions

@@ -40,6 +40,7 @@ door_2:
       it up but its own frame -- no wall, no structure. Its hinges are visible from
       the back, and it has a matching plain round wooden knob on this side too, set
       at about waist height, that turns freely.
+- active
 - description:
     time: 1785803711.0
     value: A second plain door, standing alone in a cracked, sunbaked field. It matches
@@ -73,7 +74,6 @@ door_2:
 - object:
     type: door
 - state: closed
-- active
 - description: A second plain door, standing alone in a cracked, sunbaked field. It
     matches the first door's plain, pale, rough-grained wood on both sides. Nothing
     holds it up but its own frame -- no wall, no structure. Its hinges are visible
@@ -150,13 +150,33 @@ journaling_desk:
 player:
 - character:
     interaction_type: player
+- position:
+    turn: 1785894168.0
+    x: 0.0
+    y: -900.0
+    z: 0.0
+- position:
+    turn: 1785894049.0
+    x: 0.0
+    y: -960.0
+    z: 0.0
+- description:
+    time: 1785894168.0
+    value: A traveler walking north across the cracked, sunbaked field, the second
+      door now distant behind them.
 - description:
     time: 1785803711.0
     value: A traveler who has just walked through the door and emerged a year later,
       one kilometer south, standing on cracked, sunbaked ground beside a second plain
       door.
+- description:
+    time: 1785894049.0
+    value: A traveler walking north across the cracked, sunbaked field, away from
+      the second door.
+- memory: door_2
 - description: A traveler standing at the edge of a quiet, empty expanse, having just
     looked around and taken in the door and the surrounding space.
+- memory: southern_field
 - position:
     turn: 1785605341.0
     x: 0.0
@@ -198,13 +218,13 @@ southern_field:
       organic long since dried out. The land is flat and featureless in every direction,
       with a high, harsh sun and sharp-edged shadows -- the light of late spring or
       early summer.
+- active
 - note: 'Sync verification turn: confirming update_registry now exports save_dir/world.yaml
     after the mcp_server.py reload.
 
     '
 - object:
     type: field
-- active
 - position:
     turn: 1785605558.0
     x: 0.0

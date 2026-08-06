@@ -14,6 +14,7 @@ from __future__ import annotations
 __iacs__ = {"solution of": "story_simulator_mission.tool_catalog.perceive"}
 
 import math
+import time
 
 import pandas as pd
 import yaml
@@ -369,20 +370,41 @@ def is_event_valid(registrar: Registrar, alias: str) -> bool:
 
 
 def advance_clock(registrar: Registrar, alias: str) -> float:
-    """Advance clock box: the popped entity's own `next_due` becomes "now" for this turn.
-
-    No separate persisted global clock yet -- the popped event's own
-    timestamp is the only notion of "current time" anything downstream
-    needs today. A shared clock entity would only become necessary if
-    something other than "whichever event was just popped" ever needed to
-    read "now" independently.
+    """Advance clock box: the popped entity's own `next_due` becomes "now" for this
+    turn, persisted to the registry's own `world_clock` entity so every other
+    time-dimensioned write (position.turn, state.turn, ...) can stamp against
+    real world time afterward -- see `current_world_time` and
+    `mcp_server._update_registry_and_sync`/`push_event`'s `turn` argument.
     """
     entity_id = registrar.get_entity_id(alias)
-    if entity_id is None:
+    now = 0.0
+    if entity_id is not None:
+        due_df = _next_due_by_entity(registrar)
+        match = due_df[due_df["entity_id"] == entity_id]
+        now = float(match.iloc[0]["due"]) if not match.empty else 0.0
+
+    # Wall-clock here disambiguates the clock entity's *own* row history
+    # only -- deliberately not what `now` (the actual world-time payload)
+    # is stamped with. See the `clock` component's own field docs.
+    data = {"world_clock": [{"clock": {"value": now}}]}
+    merge_yaml_string(registrar, yaml.safe_dump(data, sort_keys=False), turn=int(time.time()))
+    return now
+
+
+def current_world_time(registrar: Registrar) -> float:
+    """The world clock's current value -- see `advance_clock`, which is what writes it.
+
+    0.0 before the event loop has ever advanced (no `world_clock` entity
+    yet), the same starting point `advance_clock` itself falls back to for
+    a never-scheduled entity. Everything that stamps a time_dimension'd
+    write (`mcp_server._update_registry_and_sync`, `push_event`) should
+    read this rather than the real wall clock, so `position.turn`/
+    `state.turn`/etc. mean real in-world time, not when the write happened.
+    """
+    df = safe_view_current(registrar, "clock.value")
+    if df is None or df.empty:
         return 0.0
-    due_df = _next_due_by_entity(registrar)
-    match = due_df[due_df["entity_id"] == entity_id]
-    return float(match.iloc[0]["due"]) if not match.empty else 0.0
+    return float(df.iloc[-1]["clock.value"])
 
 
 def predict_event(registrar: Registrar, alias: str, next_due_in: float) -> float:

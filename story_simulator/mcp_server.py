@@ -162,18 +162,6 @@ def _get_save_dir(ctx: Context) -> Path:
     return _save_dirs[ctx.request_context.session]
 
 
-def _next_turn_stamp() -> int:
-    """A monotonically increasing stamp for `position.turn` and friends.
-
-    There's no more global per-turn counter (no per-turn pipeline drives one
-    anymore) — tool calls happen in whatever order the connected agent
-    decides, so the wall clock, truncated to whole seconds to fit the
-    schema's `int` field, replaces it as the "which write is newer" signal
-    `Registry.view_current` needs to resolve accumulated position history.
-    """
-    return int(time.time())
-
-
 def _yaml_files(directory: Path) -> list[Path]:
     """All *.yaml/*.yml files under `directory`, recursed into, sorted for determinism."""
     return sorted(f for pattern in ("*.yaml", "*.yml") for f in directory.rglob(pattern))
@@ -516,7 +504,7 @@ def _update_registry_and_sync(registrar: Registrar, save_dir: Path, yaml_string:
     registrar.update(
         input_dirs=[str(MANIFEST_DIR)],
         yaml_strings={WORLD_FILE_ID: yaml_string},
-        time=_next_turn_stamp(),
+        time=spatial.current_world_time(registrar),
     )
     _export_world_yaml(registrar, save_dir)
 
@@ -757,7 +745,7 @@ async def process_event(
     _scene, action_text = await character_communication(registrar, save_dir, alias, replay, ctx)
     narration, next_due_in = await resolve_event(registrar, save_dir, alias, action_text, replay, ctx)
     due_at = spatial.predict_event(registrar, alias, next_due_in)
-    spatial.push_event(registrar, alias, due_at, turn=_next_turn_stamp())
+    spatial.push_event(registrar, alias, due_at, turn=spatial.current_world_time(registrar))
     return narration
 
 

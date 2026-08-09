@@ -75,6 +75,22 @@ WORLD_HISTORY_DIRNAME = "world_history"
 
 _registrars: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
 _save_dirs: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
+# World time (seconds since world creation), per session -- set in
+# _run_event_loop from the popped entity's own `next_due` (see
+# spatial.advance_clock: "the popped entity's own next_due becomes 'now'
+# for this turn") and read by _next_time_stamp for every write anything
+# does while resolving that entity's turn, so "how recent is this row" and
+# "when is X next due" share one clock instead of the wall clock. Persists
+# across a paused turn (a NeedsPlayerInput yield) the same way _pending_turns
+# does, since a resumed turn's writes still belong to the "now" it paused on.
+_current_world_time: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
+# The last stamp _next_time_stamp actually handed out, per session -- lets
+# it nudge apart same-world-time writes (see _next_time_stamp) instead of
+# handing out the same value repeatedly.
+_last_time_stamp: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
+# Tie-breaking nudge for _next_time_stamp -- a whole 1, not a fraction of a
+# second; see that function's docstring for why.
+_TIE_EPSILON = 1
 # (alias, answers-so-far) for whichever turn start_simulation/submit_input
 # last paused on, per session. Losing this on a subprocess restart just
 # means the in-flight turn's judgment calls get asked again from scratch --
@@ -127,8 +143,7 @@ _NPC_RESOLVER_TOOLS = [
                     "next_due_in": {
                         "type": "number",
                         "description": (
-                            "How much in-world time (same placeholder ordering scale as "
-                            "position.turn) this action took."
+                            "How much in-world time, in seconds, this action took."
                         ),
                     },
                 },
@@ -162,16 +177,43 @@ def _get_save_dir(ctx: Context) -> Path:
     return _save_dirs[ctx.request_context.session]
 
 
-def _next_turn_stamp() -> int:
-    """A monotonically increasing stamp for `position.turn` and friends.
+def _next_time_stamp(ctx: Context) -> float:
+    """The world-time stamp for `position.time` and friends: this session's
+    current in-fiction "now" (seconds since world creation).
 
-    There's no more global per-turn counter (no per-turn pipeline drives one
-    anymore) — tool calls happen in whatever order the connected agent
-    decides, so the wall clock, truncated to whole seconds to fit the
-    schema's `int` field, replaces it as the "which write is newer" signal
-    `Registry.view_current` needs to resolve accumulated position history.
+    Reads `_current_world_time`, set in `_run_event_loop` from the popped
+    entity's own `next_due` (see `spatial.advance_clock`) -- every write made
+    while resolving one entity's turn shares that same "now", the same
+    world-time axis `next_due.value` itself uses, rather than a wall-clock
+    substitute. Falls back to 0.0 if nothing has been popped yet for this
+    session (e.g. a stray `update_registry` call before `start_simulation`
+    is ever run).
+
+    Two writes at the same world time -- several update_registry calls
+    resolving one turn, or any number of stray calls before the first event
+    is ever popped -- would otherwise tie, and Registry.view_current's tie
+    handling is presently arbitrary (iacs's own _seq write-order column,
+    zhafen/iacs#94, isn't merged into this submodule pointer yet). Nudged
+    apart here instead by _TIE_EPSILON, so a later write always gets a
+    strictly higher stamp than an earlier one at the same world time and
+    "most recent write wins" still holds -- a per-project stopgap to drop
+    once #94 merges and iacs's own tie-break can be relied on instead.
+
+    _TIE_EPSILON is a whole 1, not a fraction of a second, for two reasons
+    observed directly: `math.nextafter`'s smallest-possible step starting
+    from 0.0 lands in subnormal-float range, which the registry's
+    duckdb/ibis pipeline was seen flushing back to 0.0 -- silently re-tying
+    the very rows this is meant to keep apart; and this same stamp also
+    backfills `description.time`, an iacs builtin declared `type: int` (not
+    story-simulator's to change), which truncates any fractional nudge to
+    nothing for the same reason. A whole-integer nudge survives both.
     """
-    return int(time.time())
+    session = ctx.request_context.session
+    world_time = _current_world_time.get(session, 0.0)
+    last = _last_time_stamp.get(session)
+    stamp = world_time if last is None or world_time > last else last + _TIE_EPSILON
+    _last_time_stamp[session] = stamp
+    return stamp
 
 
 def _yaml_files(directory: Path) -> list[Path]:
@@ -511,12 +553,12 @@ def _export_world_yaml(registrar: Registrar, save_dir: Path) -> None:
             Path(path).unlink(missing_ok=True)
 
 
-def _update_registry_and_sync(registrar: Registrar, save_dir: Path, yaml_string: str) -> None:
+def _update_registry_and_sync(registrar: Registrar, save_dir: Path, yaml_string: str, ctx: Context) -> None:
     """Merge `yaml_string` into the registry, then sync `save_dir`'s YAML to match."""
     registrar.update(
         input_dirs=[str(MANIFEST_DIR)],
         yaml_strings={WORLD_FILE_ID: yaml_string},
-        time=_next_turn_stamp(),
+        time=_next_time_stamp(ctx),
     )
     _export_world_yaml(registrar, save_dir)
 
@@ -531,7 +573,7 @@ def update_registry(yaml_string: str, ctx: Context) -> str:
     __iacs__ = {"solution of": "story_simulator_mission.tool_catalog.update_registry"}
     registrar = _get_registrar(ctx)
     save_dir = _get_save_dir(ctx)
-    _update_registry_and_sync(registrar, save_dir, yaml_string)
+    _update_registry_and_sync(registrar, save_dir, yaml_string, ctx)
     return "Merged into the registry and synced to save_dir/world.yaml."
 
 
@@ -650,9 +692,9 @@ def _build_npc_decision_prompt(registrar: Registrar, alias: str) -> str:
     return "\n".join(parts)
 
 
-def update_data(registrar: Registrar, save_dir: Path, yaml_string: str) -> None:
+def update_data(registrar: Registrar, save_dir: Path, yaml_string: str, ctx: Context) -> None:
     """Update data box: merge+export, reusing the existing write path exactly."""
-    _update_registry_and_sync(registrar, save_dir, yaml_string)
+    _update_registry_and_sync(registrar, save_dir, yaml_string, ctx)
 
 
 async def get_character_input(
@@ -711,7 +753,7 @@ async def resolve_event(
                 if name == "resolve_physics":
                     return _physics_agent.resolve(arguments["scenario"])
                 if name == "update_data":
-                    update_data(registrar, save_dir, arguments["yaml_string"])
+                    update_data(registrar, save_dir, arguments["yaml_string"], ctx)
                     captured["next_due_in"] = float(arguments["next_due_in"])
                     return "Merged into the registry."
                 return f"Error: unknown tool {name!r}"
@@ -757,7 +799,7 @@ async def process_event(
     _scene, action_text = await character_communication(registrar, save_dir, alias, replay, ctx)
     narration, next_due_in = await resolve_event(registrar, save_dir, alias, action_text, replay, ctx)
     due_at = spatial.predict_event(registrar, alias, next_due_in)
-    spatial.push_event(registrar, alias, due_at, turn=_next_turn_stamp())
+    spatial.push_event(registrar, alias, due_at, time=_next_time_stamp(ctx))
     return narration
 
 
@@ -801,7 +843,7 @@ async def _run_event_loop(
             return None, None, "Nothing scheduled."
         if not spatial.is_event_valid(registrar, alias):
             continue
-        spatial.advance_clock(registrar, alias)
+        _current_world_time[ctx.request_context.session] = spatial.advance_clock(registrar, alias)
         replay = TurnReplay(answers=[])
         try:
             await process_event(registrar, save_dir, alias, replay, ctx)

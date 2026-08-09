@@ -23,15 +23,16 @@ from story_simulator import game_config
 from story_simulator.config import MANIFEST_DIR, WORLD_FILE_ID
 
 
-def merge_yaml_string(registrar: Registrar, yaml_text: str, turn: int | None = None) -> None:
+def merge_yaml_string(registrar: Registrar, yaml_text: str, time: float | None = None) -> None:
     """Run the ETL pipeline on a raw YAML string and merge the result into `registrar`.
 
     Same mechanism every write in this project uses (see the old
-    `story_simulator.systems._merge_yaml_string`): `turn`, when given, backfills
-    the `position.turn` time-dimension field so `latest_positions` can resolve
-    which of an entity's accumulated position rows is current.
+    `story_simulator.systems._merge_yaml_string`): `time`, when given, backfills
+    the `position.time` time-dimension field (world time, seconds since world
+    creation) so `latest_positions` can resolve which of an entity's
+    accumulated position rows is current.
     """
-    registrar.update(input_dirs=[str(MANIFEST_DIR)], yaml_strings={WORLD_FILE_ID: yaml_text}, time=turn)
+    registrar.update(input_dirs=[str(MANIFEST_DIR)], yaml_strings={WORLD_FILE_ID: yaml_text}, time=time)
 
 
 def safe_view(registrar: Registrar, fields: str | list[str]) -> pd.DataFrame | None:
@@ -66,11 +67,11 @@ def safe_view_current(registrar: Registrar, fields: str | list[str]) -> pd.DataF
 
 
 def latest_positions(registrar: Registrar) -> pd.DataFrame:
-    """Return one row per entity: its highest-turn `position` (resolves accumulated history)."""
-    columns = ["entity_id", "entity_id.alias", "position.x", "position.y", "position.z", "position.turn"]
+    """Return one row per entity: its highest-time `position` (resolves accumulated history)."""
+    columns = ["entity_id", "entity_id.alias", "position.x", "position.y", "position.z", "position.time"]
     if "position" not in registrar.registry.component_types:
         return pd.DataFrame(columns=columns)
-    return registrar.view_current(["position.x", "position.y", "position.z", "position.turn"]).execute()[columns]
+    return registrar.view_current(["position.x", "position.y", "position.z", "position.time"]).execute()[columns]
 
 
 def entity_position(registrar: Registrar, alias: str) -> tuple[float, float] | None:
@@ -398,20 +399,20 @@ def predict_event(registrar: Registrar, alias: str, next_due_in: float) -> float
     return now + next_due_in
 
 
-def push_event(registrar: Registrar, alias: str, due_at: float, turn: int | None = None) -> None:
+def push_event(registrar: Registrar, alias: str, due_at: float, time: float | None = None) -> None:
     """Push to queue / Push events box: commit `alias`'s next_due to the registry.
 
     One function serving both call sites, matching `predict_event`.
     Writing `next_due` IS "pushing to the queue" here -- there's no
     separate in-memory priority queue; `next_due_entity`'s live registry
-    read *is* the queue. `turn` should be given the same monotonic stamp
+    read *is* the queue. `time` should be given the same world-time stamp
     every other time_dimension'd write in this project uses (see
-    `mcp_server._next_turn_stamp`) -- `next_due.turn` is time_dimension'd
-    exactly like `position.turn`/`state.turn`, so an entity rescheduled
+    `mcp_server._next_time_stamp`) -- `next_due.time` is time_dimension'd
+    exactly like `position.time`/`state.time`, so an entity rescheduled
     more than once needs it to resolve which row is current.
     """
     data = {f"{alias}_next_due": [{"same_as": {"value": alias}}, {"next_due": {"value": due_at}}]}
-    merge_yaml_string(registrar, yaml.safe_dump(data, sort_keys=False), turn=turn)
+    merge_yaml_string(registrar, yaml.safe_dump(data, sort_keys=False), time=time)
 
 
 def select_character(registrar: Registrar, alias: str) -> str:

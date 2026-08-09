@@ -303,13 +303,19 @@ story_simulator_mission:
         - work_state: new
     world_time_concept:
         - description: >
-              The simulation has no representation of in-fiction elapsed time
+              The simulation had no representation of in-fiction elapsed time
               (day/night, how long a character has walked, the living world's
               "a year forward" door mechanic) independent of the wall-clock
-              ordering value (_next_turn_stamp) that only exists to resolve
-              which of an entity's position rows is current. Worth evaluating
-              an explicit world-time component (in-fiction elapsed time/
-              calendar) independent of that wall-clock ordering value.
+              ordering value (_next_turn_stamp) that only existed to resolve
+              which of an entity's position rows is current.
+
+              Position/state/next_due's ordering field is now `time` (in
+              seconds since world creation), sourced from `next_due`'s own
+              accumulated next_due_in history rather than the wall clock --
+              see mcp_server._current_world_time/_next_time_stamp and
+              single_ordering_vocabulary. Still no day/night cycle or
+              calendar; "how long has X been walking" is answerable from
+              `time` deltas but nothing surfaces it yet.
         - requirement
         - impact:
               type: gameplay_richness
@@ -319,7 +325,7 @@ story_simulator_mission:
                 value: 8
               - type: regression_risk
                 value: 0.2
-        - work_state: new
+        - work_state: in progress
     live_model_test_coverage:
         - description: >
               generate_terrain/resolve_physics/advance_npc_turn's actual LLM
@@ -450,12 +456,21 @@ story_simulator_mission:
         single_ordering_vocabulary:
             - description: >
                   One name, one schema shape, for "the field that orders
-                  which row is current" -- today position.turn/state.turn/
-                  next_due.turn/clock.turn use `turn`, iacs's own
-                  description.time uses `time`, and each of the four
-                  story-simulator blocks repeats the same ~6-line
-                  description/type/nullable/time_dimension declaration
-                  almost word for word.
+                  which row is current" -- position.turn/state.turn/
+                  next_due.turn used `turn`, iacs's own description.time
+                  used `time`, and each of the three story-simulator blocks
+                  repeated the same ~6-line description/type/nullable/
+                  time_dimension declaration almost word for word.
+
+                  Naming half done: position/state/next_due were renamed to
+                  `time`, matching iacs's own description.time, so it's one
+                  name everywhere now. The schema-shape half (a shorthand
+                  field type so a component author writes one line instead
+                  of six) was tried as `type: time_dimension`
+                  (zhafen/iacs#93) and abandoned -- extra schema-language
+                  complexity for a small saving, and inaccurate (hardcoded
+                  int, but time is legitimately float here). The three
+                  blocks still repeat the boilerplate by hand.
             - requirement
             - impact:
                   type: architecture_clarity
@@ -463,7 +478,7 @@ story_simulator_mission:
             - cost:
                   type: engineering_hours
                   value: 2
-            - work_state: new
+            - work_state: in progress
         no_duplicated_meta_columns:
             - description: >
                   iacs's own "which columns are infrastructure, not user

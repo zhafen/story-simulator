@@ -158,8 +158,8 @@ current-look text, `size` for perceptibility), define it properly in
 `description` explaining what it's for, a `component_type` tag, and a
 `field:` block declaring each field's name/type/description — and, if it's
 a "current value" kind of fact rather than an accumulating log, a nullable
-`turn` field flagged `time_dimension: true`, matching `position.turn`'s/
-`state.turn`'s pattern. This only applies when you actually have write
+`time` field flagged `time_dimension: true`, matching `position.time`'s/
+`state.time`'s pattern. This only applies when you actually have write
 access to the repo (a Claude Code session like this one); a narrator
 connected only through the MCP tool surface has no way to act on it and
 should just use what's already defined.

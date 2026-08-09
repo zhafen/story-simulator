@@ -13,7 +13,7 @@ door:
     round wooden knob, set at about waist height, that turns freely. It has swung
     shut again behind the player.
 - state:
-    turn: 1785803711.0
+    time: 1785803711.0
     value: closed
 - description: A plain door of unfinished wood, pale and slightly rough-grained. Its
     surface is cool and dry to the touch, faintly gritty in places. It has a plain
@@ -59,7 +59,7 @@ door_2:
     from the back, and it has a matching plain round wooden knob on this side too,
     set at about waist height.
 - state:
-    turn: 1785803711.0
+    time: 1785803711.0
     value: closed
 - description: A second plain door, standing alone in a cracked, sunbaked field. It
     matches the first door's plain, pale, rough-grained wood on both sides. Nothing
@@ -80,7 +80,7 @@ door_2:
     from the back, and it has a matching plain round wooden knob on this side too,
     set at about waist height, that turns freely.
 - position:
-    turn: 1785605558.0
+    time: 1785605558.0
     x: 0.0
     y: -998.0
     z: 0.0
@@ -151,12 +151,12 @@ player:
 - character:
     interaction_type: player
 - position:
-    turn: 1785894168.0
+    time: 1785894168.0
     x: 0.0
     y: -900.0
     z: 0.0
 - position:
-    turn: 1785894049.0
+    time: 1785894049.0
     x: 0.0
     y: -960.0
     z: 0.0
@@ -178,22 +178,22 @@ player:
     looked around and taken in the door and the surrounding space.
 - memory: southern_field
 - position:
-    turn: 1785605341.0
+    time: 1785605341.0
     x: 0.0
     y: 2.0
     z: 0.0
 - position:
-    turn: 1785605558.0
+    time: 1785605558.0
     x: 0.0
     y: -1000.0
     z: 0.0
 - position:
-    turn: 1785627805.0
+    time: 1785627805.0
     x: 0.0
     y: -996.0
     z: 0.0
 - position:
-    turn: 1785630245.0
+    time: 1785630245.0
     x: 0.0
     y: -1000.0
     z: 0.0
@@ -226,7 +226,7 @@ southern_field:
 - object:
     type: field
 - position:
-    turn: 1785605558.0
+    time: 1785605558.0
     x: 0.0
     y: -1000.0
     z: 0.0

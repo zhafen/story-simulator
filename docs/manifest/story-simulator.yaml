@@ -533,17 +533,6 @@ story_simulator_mission:
                       standardizing the field name would need a migration
                       for position/state/next_due's existing `turn` fields
                       unless the shorthand allows renaming.
-
-                      Chosen. Implemented in iacs as `type: time_dimension`
-                      (a field so typed casts as int and defaults its own
-                      `time_dimension` attribute to true unless explicitly
-                      overridden) -- see zhafen/iacs#93, which also
-                      dogfoods it on iacs's own `description.time`. Tests
-                      green in iacs (371 passed). The submodule is out of
-                      scope for a merge decision, so story-simulator's own
-                      position.turn/state.turn/next_due.turn stay on the
-                      old boilerplate until #93 merges and the submodule
-                      pointer bumps -- a follow-up change, not this one.
                 - solution of: story_simulator_mission.scd_time_data.single_ordering_vocabulary
                 - impact:
                       - type: architecture_clarity
@@ -555,7 +544,7 @@ story_simulator_mission:
                         value: 6
                       - type: regression_risk
                         value: 0.4
-                - work_state: in progress
+                - work_state: new
             merge_clock_into_next_due:
                 - description: >
                       Stop treating "current world time" and "when is X next

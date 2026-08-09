@@ -403,18 +403,15 @@ story_simulator_mission:
                   story-simulator (position/state/next_due/clock), prompted
                   by real duplication found while adding next_due/clock this
                   session: a tie-breaking bug traced to iacs's own
-                  Registry.merge/view_current, fixed by adding a `_seq`
-                  write-sequence column -- and while fixing it, two
-                  independent hand-maintained "which columns aren't real
-                  data" lists (registry.py's _TABLE_META_COLS,
-                  export_manifest.py's _METADATA_COLS) both needed the same
-                  edit by hand, and four near-identical turn/time field
-                  blocks (position, state, next_due, clock) turned up along
-                  the way. Related to world_time_concept (a still-open
-                  sibling requirement asking for a genuine in-fiction-time
-                  axis distinct from mere row-ordering) -- next_due/clock
-                  are this session's first attempt at that axis, not a
-                  replacement for evaluating it properly.
+                  Registry.merge/view_current (see
+                  deterministic_current_resolution) -- and while scoping a
+                  fix, four near-identical turn/time field blocks (position,
+                  state, next_due, clock) turned up along the way (see
+                  single_ordering_vocabulary). Related to world_time_concept
+                  (a still-open sibling requirement asking for a genuine
+                  in-fiction-time axis distinct from mere row-ordering) --
+                  next_due/clock are this session's first attempt at that
+                  axis, not a replacement for evaluating it properly.
         deterministic_current_resolution:
             - description: >
                   Two rows sharing the same time_dimension value must still
@@ -423,16 +420,33 @@ story_simulator_mission:
                   broke ties arbitrarily (backend-dependent), confirmed
                   failing this session (a second update_registry call in
                   the same in-world "turn" silently lost to the first).
-                  Fixed via `_seq`, a write-sequence column Registry.merge
-                  now assigns to genuinely-new rows only (assigning it to
-                  every incoming row before deduplicating first broke
-                  union(distinct=True) instead -- two otherwise-identical
-                  rows no longer compared equal).
+
+                  A `type: time_dimension` shorthand field type was tried
+                  first (zhafen/iacs#93) but abandoned -- extra schema-
+                  language complexity for a small boilerplate savings, and
+                  inaccurate (it hardcoded int, but some time_dimension
+                  fields are legitimately float). It also didn't even touch
+                  tie-breaking; that gap sat undiscovered in this
+                  requirement's own "done" status until directly reproduced.
+
+                  Fixed for real via zhafen/iacs#94 (open, not yet merged):
+                  a `_seq_{field}` write-order column, scoped only to
+                  component types with a time_dimension field, that
+                  Registry.merge assigns to genuinely-new rows (identified
+                  via a set difference on every other column, matching the
+                  existing union/distinct dedup) and never rewrites once
+                  assigned. Registry._current_table breaks a tie via
+                  `_seq_{field}` (most-recent-write wins) when present.
+                  Known gap, not fixed: a cold reload from an exported save
+                  reassigns fresh sequence numbers from scratch rather than
+                  truly persisting write order across a session boundary --
+                  good enough for the concrete bug (a tie within one
+                  continuous session), not a complete fix.
             - requirement
             - impact:
                   type: reliability
                   value: 0.8
-            - work_state: done
+            - work_state: in progress
         single_ordering_vocabulary:
             - description: >
                   One name, one schema shape, for "the field that orders

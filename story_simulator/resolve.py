@@ -105,17 +105,12 @@ class NeedsExternalInput(Exception):
 
 
 def _frame_for_responder(request: JudgmentRequest, responder: str) -> str:
-    """Wrap `request` with instructions for "human"/"subagent", so they
-    travel with the prompt text itself (survives an MRTR pause/resume, an
-    MCP disconnect, a different host entirely reconnecting) rather than
-    living only in `mcp_server`'s static tool descriptions, which a given
-    client may or may not still have in view by the time it matters.
-
-    "host" gets no framing at all -- the bare `request.render()` text,
-    unchanged from before "subagent" existed -- specifically so that
-    `STORY_SIM_RESPONDER`'s "host" default (see
-    `story_simulator.config.event_responder`) changes nothing about
-    what a base event's prompt looks like.
+    """Wrap `request` with instructions for whichever of "human"/"subagent"/
+    "host" is about to read it, so they travel with the prompt text itself
+    (survives an MRTR pause/resume, an MCP disconnect, a different host
+    entirely reconnecting) rather than living only in `mcp_server`'s static
+    tool descriptions, which a given client may or may not still have in
+    view by the time it matters.
     """
     body = request.render()
     if responder == "human":
@@ -148,7 +143,15 @@ def _frame_for_responder(request: JudgmentRequest, responder: str) -> str:
             "own answer.\n\n" + body
         )
     if responder == "host":
-        return body
+        # Framed as "decide it yourself" rather than naming a role (e.g.
+        # "orchestrator") this call expects but can't actually confirm --
+        # see this module's own docstring's "host" entry.
+        return (
+            "No human and no subagent is behind this -- decide the answer "
+            "yourself, standing in for whichever role this call needed "
+            "(a player's own absent character, an NPC, a base-module "
+            "entity that's come due, ...).\n\n" + body
+        )
     raise ValueError(f"unknown responder {responder!r}")
 
 

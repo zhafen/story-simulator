@@ -2,14 +2,8 @@
 and the event-loop boxes (pop/advance clock/predict/push) that don't
 depend on any optional module.
 
-Everything here has to work in a world with no character, NPC, physics
-(specialist judgment), terrain, or spatial (position/distance/perception)
-module active at all -- those are layered on top (see
-`story_simulator.spatial`, `story_simulator.specialists`,
-`mcp_server.advance_simulation`'s character branch), not baked in here.
-Modules may depend on this and on each other, but nothing here may import
-from an optional module -- that's what keeps "no modules enabled" a real,
-runnable base rather than an unreachable configuration.
+Everything here has to work in a world with no character, NPC, spatial, etc
+modules active at all -- those are layered on top as optional modules.
 """
 
 from __future__ import annotations
@@ -34,11 +28,10 @@ from story_simulator.config import MANIFEST_DIR, WORLD_FILE_ID
 def merge_yaml_string(registrar: Registrar, yaml_text: str, time: float | None = None) -> None:
     """Run the ETL pipeline on a raw YAML string and merge the result into `registrar`.
 
-    Same mechanism every write in this project uses (see the old
-    `story_simulator.systems._merge_yaml_string`): `time`, when given, backfills
-    whichever time_dimension field the merged data declares (world time,
-    seconds since world creation) so `Registry.view_current` can resolve
-    which of an entity's accumulated rows is current.
+    Same mechanism every write in this project uses.
+    `time`, when given, backfills the time_dimension field the merged data
+    declares (world time, seconds since world creation) so `Registry.view_current` can
+    resolve which of an entity's accumulated rows is current.
     """
     registrar.update(input_dirs=[str(MANIFEST_DIR)], yaml_strings={WORLD_FILE_ID: yaml_text}, time=time)
 
@@ -58,11 +51,8 @@ def safe_view(registrar: Registrar, fields: str | list[str]) -> pd.DataFrame | N
 def safe_view_current(registrar: Registrar, fields: str | list[str]) -> pd.DataFrame | None:
     """Like `safe_view`, but resolves each field's current row per entity.
 
-    Uses `registrar.view_current` (see `Registry.view_current`) instead of
-    `view` -- the right choice for anything meant to show an entity's
-    *current* state rather than its full change history. A component type
-    with no `time_dimension` field behaves exactly like `safe_view` (every
-    row is "current").
+    Uses `registrar.view_current`.  A component type with no `time_dimension` field
+    behaves exactly like `safe_view` (every row is "current").
     """
     names = [fields] if isinstance(fields, str) else fields
     tables = {name.split(".", 1)[0] for name in names}
@@ -76,23 +66,18 @@ def safe_view_current(registrar: Registrar, fields: str | list[str]) -> pd.DataF
 
 # ---------------------------------------------------------------------------
 # Event-driven simulation loop -- one function per box in the turn-anatomy
-# diagram (see docs/architecture.md and the published turn-flow artifact).
-# An individual-timestep event-driven simulation, but with the schedule
-# itself living as registry data (a `next_due` component) rather than an
-# in-memory priority queue -- see pop_event's docstring for why that's
-# what makes resuming a paused turn safe (see story_simulator.resolve).
+# diagram (see docs/architecture.md). Schedule lives as registry data (a
+# `next_due` component), not an in-memory priority queue.
 # ---------------------------------------------------------------------------
 
 
 def due_by_entity(registrar: Registrar) -> pd.DataFrame:
     """One row per entity with a next_due of its own: `entity_id`, `due` (float).
 
-    Casts explicitly to the manifest-declared `next_due.value: float` type:
-    a save with zero `next_due` rows anywhere leaves the schema undeclared
-    on a plain `Registrar.load()` reconnect (`declare_schema` only runs
-    during the ETL/validation pipeline a real `update` merge goes through,
-    not a bare reconnect), so `get` falls back to a generic `value: string`
-    table and `.max()` over it can't be compared against a float fallback.
+    Casts explicitly to `next_due.value: float`: a save with zero
+    `next_due` rows anywhere leaves the schema undeclared on a plain
+    `Registrar.load()` reconnect, so `get` falls back to a generic string
+    table that can't be compared against a float.
     """
     return (
         registrar.get("next_due")
@@ -116,9 +101,9 @@ def pop_event(registrar: Registrar) -> str | None:
     permanently done, filtered out the same way -- see
     `mcp_server.resolve_event`.
 
-    A plain read, not a destructive dequeue: `story_simulator.resolve`'s
-    replay-from-the-top mechanism depends on this being safe to call again
-    and again and get the same answer for the same registry state.
+    A plain read, not a destructive dequeue -- `story_simulator.resolve`'s
+    replay-from-the-top mechanism depends on calling this again and again
+    being safe.
     """
     if "next_due" not in registrar.registry.component_types:
         return None
@@ -132,14 +117,10 @@ def pop_event(registrar: Registrar) -> str | None:
 def is_event_valid(registrar: Registrar, alias: str) -> bool:
     """Valid? box: is `alias` still a real, eligible entity.
 
-    Always true today by construction -- `pop_event` always re-reads
-    current state fresh rather than pre-computing events into a queue, so
-    the classic "has this entity changed since it was scheduled" staleness
-    problem this check exists for doesn't arise yet. This is the seam a
-    future lookahead/precomputed-event design would extend: an event
-    captured ahead of time would need to compare some snapshot taken when
-    it was scheduled (e.g. a version or change count) against the current
-    one to detect a stale entity before acting on it.
+    Always true today by construction -- `pop_event` re-reads current
+    state fresh rather than pre-computing events into a queue, so the
+    staleness problem this check exists for doesn't arise yet. Seam for a
+    future lookahead/precomputed-event design to extend.
     """
     return registrar.get_entity_id(alias) is not None
 
@@ -147,11 +128,8 @@ def is_event_valid(registrar: Registrar, alias: str) -> bool:
 def advance_clock(registrar: Registrar, alias: str) -> float:
     """Advance clock box: the popped entity's own `next_due` becomes "now" for this turn.
 
-    No separate persisted global clock yet -- the popped event's own
-    timestamp is the only notion of "current time" anything downstream
-    needs today. A shared clock entity would only become necessary if
-    something other than "whichever event was just popped" ever needed to
-    read "now" independently.
+    No separate persisted global clock -- the popped event's own timestamp
+    is the only notion of "current time" needed today.
     """
     entity_id = registrar.get_entity_id(alias)
     if entity_id is None:
@@ -164,11 +142,9 @@ def advance_clock(registrar: Registrar, alias: str) -> float:
 def predict_event(registrar: Registrar, alias: str, next_due_in: float) -> float:
     """Predict events / Predict next box: compute when `alias` should next be due.
 
-    One function serving both call sites, per the diagram's own "same
-    function as" edge -- the initial per-entity setup and the
-    post-`Process event` reschedule are the identical computation, just
-    invoked for a different set of entities at different points in the
-    loop. Pure: doesn't write anything itself (see `push_event`).
+    Serves both call sites (initial per-entity setup and the
+    post-`Process event` reschedule) -- same computation either way.
+    Pure: doesn't write anything itself.
     """
     now = advance_clock(registrar, alias)
     return now + next_due_in
@@ -177,14 +153,11 @@ def predict_event(registrar: Registrar, alias: str, next_due_in: float) -> float
 def push_event(registrar: Registrar, alias: str, due_at: float, time: float | None = None) -> None:
     """Push to queue / Push events box: commit `alias`'s next_due to the registry.
 
-    One function serving both call sites, matching `predict_event`.
-    Writing `next_due` IS "pushing to the queue" here -- there's no
-    separate in-memory priority queue; `pop_event`'s live registry read
-    *is* the queue. `time` should be given the same world-time stamp
-    every other time_dimension'd write in this project uses (see
-    `mcp_server._next_time_stamp`) -- `next_due.time` is time_dimension'd
-    exactly like `position.time`/`state.time`, so an entity rescheduled
-    more than once needs it to resolve which row is current.
+    Writing `next_due` IS "pushing to the queue" -- there's no separate
+    in-memory priority queue; `pop_event`'s live registry read *is* the
+    queue. `time` should get the same world-time stamp every other
+    time_dimension'd write uses, since `next_due.time` needs it to resolve
+    which row is current for an entity rescheduled more than once.
     """
     data = {f"{alias}_next_due": [{"same_as": {"value": alias}}, {"next_due": {"value": due_at}}]}
     merge_yaml_string(registrar, yaml.safe_dump(data, sort_keys=False), time=time)

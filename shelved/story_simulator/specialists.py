@@ -1,9 +1,7 @@
 """Single-call specialist agents backing the `generate_terrain`/`resolve_physics` MCP tools.
 
-`TerrainAgent`/`PhysicsAgent` hold no state beyond their own `AgentSpec` and
-make one plain, tool-free completion call per invocation — there's no
-per-turn scheduling here, they only ever run when a connected agent (or
-`advance_npc_turn`'s own nested loop) actually calls the corresponding tool.
+Hold no state beyond their own `AgentSpec`; one plain, tool-free
+completion call per invocation, no per-turn scheduling.
 """
 
 from __future__ import annotations
@@ -25,8 +23,7 @@ class TerrainAgent:
 
     def generate(self, description: str) -> str:
         """Return generated terrain/environment text for the given location `description`."""
-        # A single, tool-free completion call: no prior turns to carry, no
-        # follow-up tool use, just "here's what's known, describe the terrain."
+        # Single, tool-free completion call: no prior turns, no follow-up.
         response = complete(
             self.spec,
             [{"role": "user", "content": description}],
@@ -43,8 +40,7 @@ class PhysicsAgent:
 
     def resolve(self, scenario: str) -> str:
         """Return a plausibility/outcome judgment for the given `scenario` text."""
-        # Same shape as TerrainAgent.generate: one plain completion call,
-        # no tools, no multi-turn back-and-forth.
+        # Same shape as TerrainAgent.generate.
         response = complete(
             self.spec,
             [{"role": "user", "content": scenario}],

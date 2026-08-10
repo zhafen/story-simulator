@@ -112,7 +112,11 @@ def test_multi_entity_handoff_interleaves_by_due_time(tmp_path):
     order = []
     result = asyncio.run(advance_simulation(ctx))
     while result["status"] == "input_required":
-        who = result["prompt"].split(" ", 1)[0]
+        # The prompt is now framed with responder="host" instructions
+        # ahead of the actual "{alias} is due." body (see
+        # resolve._frame_for_responder) -- pull the alias out from
+        # immediately before " is due" rather than assuming it's the first word.
+        who = result["prompt"].split(" is due")[0].rsplit("\n\n", 1)[-1]
         order.append(who)
         token = result["resume_token"]
         if who == "chain_a_ball":

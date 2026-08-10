@@ -236,18 +236,15 @@ story_simulator_mission:
     seed_yaml_reflects_live_state:
         - description: >
               An agent that reads a save's YAML directly should see current
-              registry state, or at least be clearly warned it can't —
-              update_registry used to write only to the registry database,
-              never back to any file, so the seed YAML (data/*/scenario.yaml
-              or its copy in save_dir) stayed frozen at turn-zero while
-              Postgres held the real current state (confirmed happening in
-              practice: a coding agent defaulting to grepping/reading it
-              instead of calling view_registry/view_entity). Root-cause fixed:
-              every update_registry call (including advance_npc_turn's own
-              internal one) now re-exports the registry's current state to
-              save_dir/world.yaml, a generated, read-only mirror rewritten in
-              full each turn — the original seed YAML itself is still never
-              touched. Not fully closed: an agent could still default to
+              registry state, or at least be clearly warned it can't. Fixed
+              by having every update_registry call (including
+              advance_npc_turn's own internal one) re-export the registry's
+              current state to save_dir/world.yaml, a generated, read-only
+              mirror rewritten in full each turn — the original seed YAML
+              itself is still never touched. See docs/manifest/history.yaml:
+              project_history.seed_yaml_staleness_discovered and
+              .seed_yaml_reflects_live_state_fix_landed for the bug/fix
+              history. Not fully closed: an agent could still default to
               grepping the frozen seed specifically instead of the live
               world.yaml, or not know world.yaml exists — see
               mcp_instructions_mention_world_yaml.

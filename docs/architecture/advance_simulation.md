@@ -45,7 +45,7 @@ uv run --project iacs iacs --manifest story_simulator generate-architecture-diag
 
 ```mermaid
 %%{init: {'themeVariables': {'clusterBkg': 'transparent', 'clusterBorder': '#999999'}}}%%
-flowchart LR
+flowchart TB
     subgraph sg0["core"]
         n12["due_by_entity"]
         n17["merge_yaml_string"]
@@ -56,7 +56,6 @@ flowchart LR
         n11["process_event"]
     end
     subgraph seq0["advance_simulation"]
-        direction TB
         n2["_get_registrar"]
         n1["_resolve_args"]
         n4["_run_event_loop"]
@@ -66,7 +65,6 @@ flowchart LR
         n4 -.-> n3
     end
     subgraph seq3["_run_event_loop"]
-        direction TB
         n7["_process_due_entity"]
         n10["pop_event"]
         n8["is_event_valid"]
@@ -78,7 +76,6 @@ flowchart LR
         n9 -.-> n5
     end
     subgraph seq6["process_event"]
-        direction TB
         n15["resolve_event"]
         n13["predict_event"]
         n14["push_event"]
@@ -88,7 +85,6 @@ flowchart LR
         n14 -.-> n16
     end
     subgraph seq9["resolve_event"]
-        direction TB
         n19["event_responder"]
         n18["_parse_next_due_in"]
         n19 -.-> n18
@@ -116,14 +112,29 @@ far apart once everything else pulls its own nodes into their own
 sequence boxes; a filled box that size would hide whatever's underneath
 it. Solid arrows are calls; the boxed groups are new. An entity that itself
 makes two or more calls gets those targets pulled into their own box
-(labeled with just the caller's name, always laid out top-to-bottom
-internally regardless of the overall left-right flow -- a box's own
-multi-step chain read as more cramped running the same direction as the
-outer diagram than getting its own perpendicular one) instead of
-scattered across the usual per-file ones, chained internally by dotted
+(labeled with just the caller's name), chained internally by dotted
 arrows in the order it actually calls them — e.g. `process_event`'s own
 box traces `resolve_event -.-> predict_event -.-> push_event -.->
 _next_time_stamp`, exactly its body top to bottom.
+
+The whole diagram runs top-to-bottom, including inside each box, and no
+box declares its own inner direction anymore -- both are load-bearing,
+not stylistic. An earlier version ran the outer diagram left-to-right
+with each box explicitly set to `direction TB` internally (so a box's own
+multi-step chain wouldn't get cramped running the same direction as the
+outer flow). That looked right until an edge crossing a box's boundary
+was checked pixel-by-pixel against where Mermaid actually drew it:
+Mermaid/dagre's compound layout mis-anchors a boundary-crossing edge
+whenever the box it touches declares an explicit inner `direction` at
+all -- matching the outer direction or not -- rendering it as if it
+started from an arbitrary other box member instead of the true source
+(`_process_due_entity --> process_event` above, `n7 --> n11`, was one
+such case, rendering as if it came from wherever in `_run_event_loop`'s
+box happened to align, not from `_process_due_entity` itself). Dropping
+the inner `direction` line entirely fixes it, but a box then has no
+choice but to inherit the outer diagram's own direction -- so the only
+combination that's both correct and legible is outer top-to-bottom with
+no inner override, which is what's here now.
 
 Only the *target* side of a solid arrow resolves to a box's boundary,
 not the source: `_run_event_loop` is itself one of `advance_simulation`'s

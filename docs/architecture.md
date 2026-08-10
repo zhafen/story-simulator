@@ -36,6 +36,62 @@ unmodified) stays the format/validation reference — `describe_format`/
 accumulating registry state (its own `load_manifest` only re-reads static
 files).
 
+## The event-driven turn loop
+
+Turns aren't a fixed round-robin over every character — they're scheduled,
+Sedgewick & Wayne style (*Algorithms*, 4th ed., §6.1 Event-Driven
+Simulation): every entity carries its own `next_due` time in the registry,
+and the loop only ever pops whichever entity is due soonest, discarding
+stale events rather than replaying them. `predict_event`/`push_event` is
+the same function at both call sites in the diagram below — scheduling a
+brand-new entity's first event and rescheduling after one resolves are the
+same operation, not two.
+
+`story_simulator/core.py` holds this event-loop kernel (`pop_event`,
+`is_event_valid`, `advance_clock`, `predict_event`, `push_event`).
+`story_simulator/mcp_server.py` holds the turn-processing layer that zooms
+into whichever event `core.py` just popped (`process_event`,
+`character_communication`, `resolve_event`, `update_data`), which in turn
+loops `select_character`/`narrate_to_character`
+(`story_simulator/spatial.py`) with `get_character_input`
+(`story_simulator/mcp_server.py`) until that character's due action is
+fully decided.
+
+```mermaid
+flowchart TD
+    subgraph Turn["Process event"]
+        direction TD
+        G[Character communication] --> F[Resolve event]
+        F --> D[Update data]
+    end
+
+    subgraph Comm["Character communication"]
+        direction TD
+        SC[Select character] --> NC[Narrate to character]
+        NC --> GI[Get character input]
+        GI --> SC
+    end
+
+    subgraph Event["Event-driven simulation (Sedgewick & Wayne)"]
+        direction TD
+        I1[Predict events] --> I2[Push to queue]
+        I2 -- next entity --> I1
+        I2 --> L1[Pop event]
+        L1 --> V{Valid?}
+        V -- stale --> L1
+        V -- valid --> ADV[Advance clock]
+        ADV --> PROC[Process event]
+        PROC --> PRED[Predict next]
+        PRED --> PUSH[Push events]
+        PUSH --> L1
+    end
+
+    PROC -. zooms into .-> Turn
+    G -. zooms into .-> Comm
+    PRED -. same function as .-> I1
+    PUSH -. same function as .-> I2
+```
+
 ## `advance_npc_turn`: a tool that calls other tools
 
 Nested tool calls are how an autonomous NPC turn gets resolved without a

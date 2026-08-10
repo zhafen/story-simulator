@@ -75,6 +75,27 @@ next_due:
             time_dimension: true
             units: seconds
 
+drive:
+    - description: >
+        How long a trip takes and when it starts, stated directly as
+        world-time facts (seconds since world creation) rather than as a
+        distance or speed to be traveled at some assumed pace -- working
+        out what order several drives finish in is elapsed-time
+        arithmetic (starts_at + duration), not a physics calculation.
+        Not time_dimension'd -- a drive's own facts are fixed at
+        authoring time, not restated over the course of play.
+    - component_type
+    - field:
+        starts_at:
+            description: World time (seconds since world creation) this
+                drive begins.
+            type: float
+            units: seconds
+        duration:
+            description: How long this drive takes once it starts, in seconds.
+            type: float
+            units: seconds
+
 physics_components:
     position:
         - description: Component containing the position of an entity.

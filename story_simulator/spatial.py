@@ -229,7 +229,7 @@ def character_interaction_type(registrar: Registrar, alias: str) -> str | None:
     """Return `alias`'s `character.interaction_type` ("player"/"npc"), or None if unset.
 
     Used to branch between the player-voiced path (responder="human") and
-    the NPC path (responder="subagent").
+    the NPC path (responder="keyed_subagent").
     """
     entity_id = registrar.get_entity_id(alias)
     if entity_id is None:

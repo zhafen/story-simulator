@@ -1,6 +1,5 @@
 """MCP server exposing story-simulator's world-state and narrative tools.
 
-story-simulator is *just* this server — there is no in-process agent loop
 here. `advance_simulation` runs one event-driven simulation loop (see
 `_run_event_loop`) regardless of which optional modules are active
 (`story_simulator.config.enabled_modules`): with the character module,
@@ -11,10 +10,11 @@ here. `advance_simulation` runs one event-driven simulation loop (see
 fast-forwards through anything it can resolve on its own, and pauses
 whenever a turn needs input only the connected host can supply -- the
 player-voiced character's action/resolution, an NPC's decision (if no
-subagent key is configured), or a base-module entity's own resolution --
-handing control back to whatever MCP-aware host is connected. That host
-IS the narrator: it perceives what's going on from the returned prompt,
-relays it to a human or decides it itself, calls
+keyed_subagent key is configured), or a base-module entity's own
+resolution -- handing control back to whatever MCP-aware host is
+connected. That host IS the narrator: it perceives what's going on from
+the returned prompt, relays it to a human, delegates it to its own
+isolated subagent mechanism, or decides it itself, calls
 `generate_terrain`/`resolve_physics` when it needs a specialist's
 judgment, narrates directly in its own replies, and calls
 `advance_simulation` again with its decision and the `resume_token` it
@@ -28,7 +28,9 @@ forced onto one named NPC.
 The judgment resolver behind all of this (`story_simulator.resolve`) is
 what lets `character_communication`/`resolve_event`/`resolve_base_event`
 reach a real decision from any nesting depth without every intervening
-function having to be a generator -- see that module's docstring.
+function having to be a generator -- see that module's docstring for its
+four responders (`keyed_subagent`/`subagent`/`human`/`host`) and why each
+exists.
 
 Structurally mirrors `iacs/iacs/mcp_server.py`: a session-scoped `Registrar`
 kept in a `weakref.WeakKeyDictionary` (cleaned up automatically once the
@@ -350,10 +352,14 @@ server = FastMCP(
         "advance_simulation with no arguments: it fast-forwards through any due NPCs "
         "entirely on its own, and pauses whenever it needs something only you can supply, "
         "returning {\"status\": \"input_required\", \"prompt\": ..., \"responder\": ..., "
-        "\"resume_token\": ...}. `responder` is \"human\" for the player-voiced character's "
-        "own turn -- what they perceive and what's being asked of them -- or \"host\" for an "
-        "NPC's turn when no subagent key is configured to decide it automatically; either "
-        "way, decide the answer yourself (as the player would, or as that NPC would).\n\n"
+        "\"resume_token\": ...}. `responder` is \"human\" when the prompt is meant for the "
+        "connected human player -- relay it to them verbatim and resume with their own "
+        "reply, not your own; \"subagent\" when it should be answered by a fresh, isolated "
+        "subagent call of your own (e.g. the Agent/Task tool) rather than from your "
+        "accumulated context here -- pass the prompt text as that subagent's entire input, "
+        "run it in the foreground, and resume with its result verbatim; or \"host\" "
+        "when nothing else is behind this and you should just decide the answer yourself "
+        "(e.g. as that NPC would act, standing in for a missing subagent key).\n\n"
         "Decide what happens to whatever it's asking about -- call generate_terrain if the "
         "action reaches somewhere with no established terrain yet, or resolve_physics if the "
         "outcome isn't obvious (a fall, a jump, a thrown object, a collision, structural "
@@ -660,16 +666,16 @@ async def get_character_input(
 ) -> str:
     """Get character input box.
 
-    NPC path prefers subagent (nobody real is behind an NPC) but falls
-    back to responder="host" if it fails, e.g. no subagent key configured
-    (see `TurnReplay.resolve_preferring_subagent`). Player-voiced path
-    always needs a human (responder="human") -- only the actual human's
-    message can answer this.
+    NPC path prefers keyed_subagent (nobody real is behind an NPC) but
+    falls back to responder="host" if it fails, e.g. no keyed_subagent
+    key configured (see `TurnReplay.resolve_preferring_keyed_subagent`).
+    Player-voiced path always needs a human (responder="human") -- only
+    the actual human's message can answer this.
     """
     if spatial.character_interaction_type(registrar, alias) == "npc":
         decision_prompt = _build_npc_decision_prompt(registrar, alias)
         request = JudgmentRequest(prompt=decision_prompt)
-        return await replay.resolve_preferring_subagent(request, _npc_spec)
+        return await replay.resolve_preferring_keyed_subagent(request, _npc_spec)
 
     request = JudgmentRequest(prompt=f"It's {alias}'s turn.\n\n{scene}\n\nWhat do they do?")
     return await replay.resolve(request, responder="human")
@@ -684,14 +690,15 @@ async def resolve_event(
     with the latter via predict_event/push_event, uniformly for both paths.
 
     NPC path resolves via the existing resolver tool loop (its own nested
-    generate_terrain/resolve_physics/update_data calls), responder="subagent",
-    `replay` never touched. Player-voiced path always needs a human
-    (responder="human"): the outcome has to be resolved against state as
-    of right now, and only the outer conversation should narrate to a
-    human (see CLAUDE.md). update_data is *not* called here for the
-    player-voiced path -- the connected agent already has direct access
-    to the plain `update_registry` tool and calls it itself; only the NPC
-    path needs update_data threaded through its own resolver loop.
+    generate_terrain/resolve_physics/update_data calls),
+    responder="keyed_subagent", `replay` never touched. Player-voiced path
+    always needs a human (responder="human"): the outcome has to be
+    resolved against state as of right now, and only the outer
+    conversation should narrate to a human (see CLAUDE.md). update_data is
+    *not* called here for the player-voiced path -- the connected agent
+    already has direct access to the plain `update_registry` tool and
+    calls it itself; only the NPC path needs update_data threaded through
+    its own resolver loop.
     """
     if spatial.character_interaction_type(registrar, alias) == "npc":
         # Captured from update_data's own next_due_in argument -- a typed
@@ -763,8 +770,9 @@ async def resolve_base_event(alias: str, replay: TurnReplay) -> tuple[str, float
     character module's 1-second default.
 
     Always responder="host": no player is ever behind a base event, and
-    there's no subagent persona to fall back from either -- see
-    `TurnReplay.resolve_preferring_subagent` for the module that has one.
+    there's no keyed_subagent persona to fall back from either -- see
+    `TurnReplay.resolve_preferring_keyed_subagent` for the module that has
+    one.
     """
     request = JudgmentRequest(prompt=f"{alias} is due.\n\n{_BASE_NEXT_DUE_IN_INSTRUCTION}")
     answer = await replay.resolve(request, responder="host")
@@ -811,7 +819,7 @@ async def _run_event_loop(
     Returns (alias, replay, prompt, responder): `alias`/`replay`/`responder`
     are None only when the queue is empty; otherwise `alias`/`replay` are
     what `advance_simulation` encodes into a `resume_token`, and
-    `responder` ("human" or "host") says who it's asking.
+    `responder` ("human", "subagent", or "host") says who it's asking.
     """
     character_enabled = "character" in enabled_modules()
 
@@ -843,10 +851,10 @@ async def _run_event_loop(
             return alias, replay, e.prompt, e.responder
         # No exception: this turn resolved fully -- loop back and pop
         # whatever's due next. A character turn usually completes here
-        # without pausing (responder="subagent" succeeding), but can pause
-        # like a player-voiced one on fallback to responder="host". A base
-        # event always pauses unless this exact call was already answered
-        # by a prior replay.
+        # without pausing (responder="keyed_subagent" succeeding), but can
+        # pause like a player-voiced one on fallback to responder="host".
+        # A base event always pauses unless this exact call was already
+        # answered by a prior replay.
 
 
 def _encode_token(alias: str, answers: list[str]) -> str:
@@ -896,7 +904,7 @@ async def advance_simulation(ctx: Context, resume_token: str | None = None, answ
     needs input only outside story-simulator's own process can supply.
 
     With the character module enabled (on by default): the player-voiced
-    character's action or resolution, or (if no subagent key is
+    character's action or resolution, or (if no keyed_subagent key is
     configured) an NPC's own decision. With it disabled: the base
     event-driven simulation -- every due entity resolves via
     responder="host", no character/NPC concept at all.
@@ -906,11 +914,12 @@ async def advance_simulation(ctx: Context, resume_token: str | None = None, answ
     returns either ``{"status": "done", "narration": ...}`` or
     ``{"status": "input_required", "prompt": ..., "responder": ..., "resume_token": ...}``.
     On the latter, `responder` is "human" (relay `prompt` to the actual
-    player and use their answer) or "host" (decide it yourself) -- then
-    call again with that exact `resume_token` and your `answer`. No
-    separate tool, and no server-side state to lose: `resume_token`
-    carries everything needed to resume, surviving an MCP
-    disconnect/reconnect between calls too.
+    player and use their answer), "subagent" (answer it via your own
+    isolated subagent call, e.g. the Agent/Task tool, and use its result),
+    or "host" (decide it yourself) -- then call again with that exact
+    `resume_token` and your `answer`. No separate tool, and no
+    server-side state to lose: `resume_token` carries everything needed
+    to resume, surviving an MCP disconnect/reconnect between calls too.
 
     Args:
         resume_token: The `resume_token` from this session's last

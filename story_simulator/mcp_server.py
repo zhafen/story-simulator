@@ -1,42 +1,33 @@
-"""MCP server exposing story-simulator's world-state and narrative tools.
+"""MCP server exposing story-simulator's world-state and event-loop tools.
 
 story-simulator is *just* this server — there is no in-process agent loop
 here. `advance_simulation` runs ONE event-driven simulation loop (one
-function per step -- see `_run_event_loop`) regardless of which optional
-modules are active (`story_simulator.config.enabled_modules`): with the
-character module, `process_event`/`character_communication`/
-`resolve_event` and `story_simulator.spatial`'s character-aware
-`pop_event`; with it off, `process_base_event` and
-`story_simulator.core`'s base
-`pop_event`/`predict_event`/`push_event` -- see `core.py`'s own docstring
-for what "base" guarantees with nothing layered on top. Either way, the
-loop fast-forwards through anything it can resolve on its own, and pauses
-whenever a turn needs input only the connected host can supply -- the
-player-voiced character's action/resolution, an NPC's decision (if no
-subagent key is configured -- not something every deployment can be
-assumed to have), or a base-module entity's own resolution -- handing
-control back to whatever MCP-aware host is connected (a human's chat
-agent, an automated harness, ...). That host IS the narrator: it perceives
-what's going on from the returned prompt, either relays it to the actual
-human or decides it itself (see `advance_simulation`'s own `responder`
-field), calls `generate_terrain`/`resolve_physics` when it needs a
-specialist's judgment, narrates directly in its own replies, and calls
-`advance_simulation` again with its decision (which itself records it via
-`update_data`/`update_registry`) and the `resume_token` it was given, to
-resume the loop -- Multi Round-Trip Requests (MRTR, MCP spec 2026-07-28),
-not a second dedicated tool. `perceive`/`view_registry`/`view_entity`/
-`update_registry` remain directly callable too, for anything outside that
-loop. `advance_npc_turn` is a thin wrapper over the same `process_event`
-used internally by the character module's own branch of the loop, forced
-onto one named NPC, kept for direct single-NPC use outside a full
-simulation pass.
+function per step -- see `_run_event_loop`), built entirely on
+`story_simulator.core`'s base `pop_event`/`predict_event`/`push_event` --
+see `core.py`'s own docstring for what that guarantees with nothing
+layered on top. The loop fast-forwards through anything it can resolve on
+its own, and pauses whenever a turn needs input only the connected host
+can supply -- an entity's own resolution -- handing control back to
+whatever MCP-aware host is connected (a human's chat agent, an automated
+harness, ...). That host decides what happens (see `advance_simulation`'s
+own `responder` field, always "host" today), then calls `advance_simulation`
+again with its decision (recorded via `update_registry`) and
+the `resume_token` it was given, to resume the loop -- Multi Round-Trip
+Requests (MRTR, MCP spec 2026-07-28), not a second dedicated tool.
+`view_registry`/`view_entity`/`update_registry` remain directly callable
+too, for anything outside that loop.
 
-The judgment resolver behind all of this (`story_simulator.resolve`:
-nested subagent, or -- a real human, or the connected host standing in
-for a missing subagent key -- via MRTR) is what lets
-`character_communication`/`resolve_event`/`resolve_base_event` reach a
-real decision from any nesting depth without every intervening function
-having to be a generator — see that module's docstring.
+Character/NPC/terrain/physics/spatial-perception behavior (`perceive`,
+`advance_npc_turn`, `generate_terrain`, `resolve_physics`, and the
+character-aware branch this file's `_run_event_loop` used to take) has
+been moved out to `shelved/` (see `docs/architecture.md`) pending a
+rewrite -- not deleted, and easy to pull back in piece by piece; see git
+history for exactly what those looked like at removal.
+
+The judgment resolver behind all of this (`story_simulator.resolve`) is
+what lets `resolve_base_event` reach a real decision from any nesting
+depth without every intervening function having to be a generator -- see
+that module's docstring.
 
 Structurally mirrors `iacs/iacs/mcp_server.py`: a session-scoped `Registrar`
 kept in a `weakref.WeakKeyDictionary` (so a session's world state is cleaned
@@ -62,24 +53,17 @@ import psycopg.sql
 from iacs.registrar import Registrar
 from mcp.server.fastmcp import Context, FastMCP
 
-from story_simulator import core, spatial
-from story_simulator.agents import AgentSpec, run_tool_loop
+from story_simulator import core
 from story_simulator.config import (
     DEFAULT_WORLD_DIR,
     MANIFEST_DIR,
     WORLD_FILE_ID,
-    enabled_modules,
     registry_schema_name,
     registry_url,
-    resolve_anthropic_api_key,
     resolve_database_dsn,
 )
 from story_simulator.resolve import JudgmentRequest, NeedsExternalInput, TurnReplay
-from story_simulator.specialists import PhysicsAgent, TerrainAgent
 
-PROD_NPC_CONFIG_PATH = Path(__file__).parent / "npc.yaml"
-PROD_NPC_RESOLVER_CONFIG_PATH = Path(__file__).parent / "npc_resolver.yaml"
-MAX_NPC_TURN_TOOL_TURNS = 8
 # save_dir's two export subdirectories, each holding one EC yaml file per
 # original source (currently always one, since every registrar.update() call
 # shares WORLD_FILE_ID as its source key -- see that constant's comment) --
@@ -111,77 +95,9 @@ _last_time_stamp: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
 # second; see that function's docstring for why.
 _TIE_EPSILON = 1
 
-_npc_spec = AgentSpec.from_yaml(PROD_NPC_CONFIG_PATH)
-_npc_resolver_spec = AgentSpec.from_yaml(PROD_NPC_RESOLVER_CONFIG_PATH)
-_terrain_agent = TerrainAgent()
-_physics_agent = PhysicsAgent()
-
-_NPC_RESOLVER_TOOLS = [
-    {
-        "type": "function",
-        "function": {
-            "name": "generate_terrain",
-            "description": "Invent environment/terrain details for a location with none established yet.",
-            "parameters": {
-                "type": "object",
-                "properties": {"description": {"type": "string"}},
-                "required": ["description"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "resolve_physics",
-            "description": "Work out the plausible physical outcome of an action.",
-            "parameters": {
-                "type": "object",
-                "properties": {"scenario": {"type": "string"}},
-                "required": ["scenario"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "update_data",
-            "description": (
-                "Merge entity-first YAML into the world registry, and state how much "
-                "in-world time this action took before this entity is next due."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "yaml_string": {"type": "string"},
-                    "next_due_in": {
-                        "type": "number",
-                        "description": (
-                            "How much in-world time, in seconds, this action took."
-                        ),
-                    },
-                },
-                "required": ["yaml_string", "next_due_in"],
-            },
-        },
-    },
-]
-
-# The player-voiced path only has one free-text answer channel
-# (advance_simulation's `answer` argument), unlike the NPC path's typed
-# update_data(next_due_in=...) tool parameter -- so resolve_event's ask for
-# a human asks for next_due_in as a trailing text line instead, parsed back
-# out by _parse_next_due_in. Whoever resolves a turn still supplies
-# next_due_in explicitly either way, player and NPC alike -- no separate
-# hardcoded interval for either path (see plan section 5).
-_NEXT_DUE_IN_INSTRUCTION = (
-    "End your answer with a line formatted exactly as `next_due_in: <seconds>` "
-    "stating how much in-world time this action took."
-)
-
-# Unlike the character module's instruction above, omitting the
-# next_due_in line is meaningful here -- it's how a base-module event
-# tells the loop it's done (see resolve_base_event's default=inf), not a
-# mistake to fall back from with a hardcoded interval.
+# It's how a base-module event tells the loop it's done (see
+# resolve_base_event's default=inf) when the next_due_in line is omitted,
+# not a mistake to fall back from with a hardcoded interval.
 _BASE_NEXT_DUE_IN_INSTRUCTION = (
     "If there's more to happen, end your answer with a line formatted "
     "exactly as `next_due_in: <seconds>` stating how long from now. Omit "
@@ -373,46 +289,28 @@ server = FastMCP(
     instructions=(
         "You are the game master for a story-simulator world: a text simulation whose "
         "state lives in a structured entity/component registry, not just your own context, "
-        "run as an event-driven simulation (one character due at a time, scheduled by its "
+        "run as an event-driven simulation (one entity due at a time, scheduled by its "
         "own next_due) rather than a fixed per-turn loop.\n\n"
         "Call start_world once, at the beginning, to open or seed a save. Then call "
-        "advance_simulation with no arguments: it fast-forwards through any due NPCs "
-        "entirely on its own, and pauses whenever it needs something only you can supply, "
-        "returning {\"status\": \"input_required\", \"prompt\": ..., \"responder\": ..., "
-        "\"resume_token\": ...}. `responder` is \"human\" for the player-voiced character's "
-        "own turn -- what they perceive and what's being asked of them -- or \"host\" for an "
-        "NPC's turn when no subagent key is configured to decide it automatically; either "
-        "way, decide the answer yourself (as the player would, or as that NPC would).\n\n"
-        "Decide what happens to whatever it's asking about -- call generate_terrain if the "
-        "action reaches somewhere with no established terrain yet, or resolve_physics if the "
-        "outcome isn't obvious (a fall, a jump, a thrown object, a collision, structural "
-        "collapse) -- then call advance_simulation again with that exact resume_token and "
-        "your answer to resume the loop. It will keep asking (for a \"human\" turn: first for "
-        "the player's action, then separately for how that action resolves -- state the "
-        "outcome and end that second answer with a line formatted exactly as "
-        "`next_due_in: <seconds>`) and fast-forwarding through NPCs again until either it "
-        "needs you once more (a new resume_token each time -- always use the one from the "
-        "latest result) or the schedule empties (\"status\": \"done\"). Narrate every human "
-        "turn's outcome directly to the character, one or two sentences, addressing them "
-        "directly. Stay fully in-world: never break character, mention tools, or use "
-        "metaphors or similes — describe things directly and literally.\n\n"
+        "advance_simulation with no arguments: it pauses on every due entity in turn, "
+        "returning {\"status\": \"input_required\", \"prompt\": ..., \"responder\": \"host\", "
+        "\"resume_token\": ...} -- decide what happens yourself, then call advance_simulation "
+        "again with that exact resume_token and your answer to resume the loop. State the "
+        "outcome and end your answer with a line formatted exactly as `next_due_in: <seconds>` "
+        "if this entity has more to do, or omit that line if it's finished. It will keep "
+        "asking (a new resume_token each time -- always use the one from the latest result) "
+        "until either it needs you once more or the schedule empties (\"status\": \"done\").\n\n"
         "Record what happened yourself via update_registry (new positions, new entities, "
         "changed details — reusing existing aliases; attach new data to an existing entity "
-        "via a `same_as` component rather than creating a disconnected duplicate). If the "
-        "action puts the character at the same place as an existing entity, use that "
-        "entity's exact recorded coordinates rather than recomputing a new position from an "
-        "approximate stated distance. `description` and `state` are both current-value "
-        "components: a new write becomes the entity's current one for perceive and for the "
-        "save's exported YAML (older writes stay recorded as history — view_entity still "
-        "shows all of them). Write the whole updated description each time, not a diff, and "
-        "use `state` for a short current status word or phrase (e.g. a door being \"open\") "
-        "rather than folding it into the description text.\n\n"
+        "via a `same_as` component rather than creating a disconnected duplicate). "
+        "`description` and `state` are both current-value components: a new write becomes "
+        "the entity's current one, both for view_entity and for the save's exported YAML "
+        "(older writes stay recorded as history — view_entity still shows all of them). "
+        "Write the whole updated description each time, not a diff, and use `state` for a "
+        "short current status word or phrase (e.g. a door being \"open\") rather than folding "
+        "it into the description text.\n\n"
         "Use view_registry/view_entity to look up what's already known before deciding — "
-        "don't invent entities or details nothing has established.\n\n"
-        "perceive/update_registry/advance_npc_turn remain directly callable outside the "
-        "simulation loop too (advance_npc_turn resolves one named NPC's turn on its own, "
-        "the same way the loop's own NPC fast-forwarding does) — reach for advance_simulation "
-        "as the default, and these when you need something outside that loop."
+        "don't invent entities or details nothing has established."
     ),
 )
 
@@ -607,79 +505,13 @@ def update_registry(yaml_string: str, ctx: Context) -> str:
     return "Merged into the registry and synced to save_dir/world.yaml."
 
 
-@server.tool()
-def perceive(reference_alias: str, ctx: Context) -> str:
-    """Return what `reference_alias` can currently perceive, and record it.
-
-    Each nearby entity's own visibility distance is computed from its
-    `size` component (meters), not a single flat cutoff for everyone -- a
-    mountain stays perceptible from far further away than a dropped coin
-    (see `story_simulator.spatial.perceptible_entities`/`game_config`).
-
-    Tags each perceived entity `active` (replacing whatever was previously
-    tagged active) and merges them into `reference_alias`'s permanent
-    `memory`, the same way the old per-turn MapSystem did — just on demand
-    instead of automatically every turn.
-    """
-    __iacs__ = {"solution of": "story_simulator_mission.tool_catalog.perceive"}
-    registrar = _get_registrar(ctx)
-    return spatial.narrate_to_character(registrar, reference_alias)
-
-
-@server.tool()
-def generate_terrain(description: str) -> str:
-    """Invent environment/terrain details for a location with nothing established yet.
-
-    Args:
-        description: What's already known about the location (position,
-            nearby entities, how the character got there) to generate
-            terrain consistent with.
-    """
-    __iacs__ = {"solution of": "story_simulator_mission.tool_catalog.generate_terrain"}
-    return _terrain_agent.generate(description)
-
-
-@server.tool()
-def resolve_physics(scenario: str) -> str:
-    """Work out the plausible outcome of an action whose physical result isn't obvious.
-
-    A fall, a jump, a collision, a thrown or dropped object, structural
-    collapse — anything you shouldn't just decide yourself.
-
-    Args:
-        scenario: The attempted action and whatever entity state (sizes,
-            distances, positions) bears on whether/how it succeeds.
-    """
-    __iacs__ = {"solution of": "story_simulator_mission.tool_catalog.resolve_physics"}
-    return _physics_agent.resolve(scenario)
-
-
-@server.tool()
-async def advance_npc_turn(npc_alias: str, ctx: Context) -> str:
-    """Decide, narrate, and record one NPC's turn, since nobody is chatting to drive it directly.
-
-    Args:
-        npc_alias: The NPC's own alias (its `character.interaction_type`
-            should be "npc").
-    """
-    __iacs__ = {"solution of": "story_simulator_mission.tool_catalog.advance_npc_turn"}
-    registrar = _get_registrar(ctx)
-    save_dir = _get_save_dir(ctx)
-    # Thin wrapper over process_event, forced onto npc_alias -- an NPC's
-    # whole turn never yields (nobody real is behind one), so a throwaway
-    # TurnReplay with no prior answers always runs straight through.
-    replay = TurnReplay(answers=[])
-    return await process_event(registrar, save_dir, npc_alias, replay, ctx)
-
-
 def _parse_next_due_in(answer: str, default: float = 1.0) -> tuple[str, float]:
-    """Split a resolve_event answer into (narration, next_due_in).
+    """Split a resolve_base_event answer into (narration, next_due_in).
 
     Looks for a trailing `next_due_in: <seconds>` line (see
-    `_NEXT_DUE_IN_INSTRUCTION`) and falls back to `default` rather than
-    raising if it's missing or malformed -- a model's mistake here
-    shouldn't crash the turn, same reasoning as `run_tool_loop`'s own
-    dispatch error handling.
+    `_BASE_NEXT_DUE_IN_INSTRUCTION`) and falls back to `default` rather
+    than raising if it's missing or malformed -- a model's mistake here
+    shouldn't crash the turn.
     """
     lines = answer.strip().splitlines()
     if lines and lines[-1].strip().lower().startswith("next_due_in:"):
@@ -689,149 +521,6 @@ def _parse_next_due_in(answer: str, default: float = 1.0) -> tuple[str, float]:
         except ValueError:
             pass
     return answer.strip(), default
-
-
-def _build_npc_decision_prompt(registrar: Registrar, alias: str) -> str:
-    """Assemble an NPC's decision prompt from its agenda and what it has perceived."""
-    agenda_df = core.safe_view(registrar, "agenda.value")
-    agenda_text = ""
-    alias_id = registrar.get_entity_id(alias)
-    if agenda_df is not None and alias_id is not None:
-        match = agenda_df[agenda_df["entity_id"] == alias_id]
-        if not match.empty:
-            agenda_text = match.iloc[-1]["agenda.value"]
-
-    active = spatial.active_aliases(registrar) - {alias}
-    memory = spatial.memory_aliases(registrar, alias) - {alias}
-    remembered_only = sorted(memory - active)
-    details = spatial.entity_descriptions(registrar, active | memory)
-
-    parts = []
-    if agenda_text:
-        parts.append(f"Your agenda: {agenda_text}")
-    if active:
-        parts.append(f"Entities nearby right now: {', '.join(sorted(active))}")
-    if remembered_only:
-        parts.append(f"Entities you remember but can't currently perceive: {', '.join(remembered_only)}")
-    if details:
-        parts.append(f"What you know about them:\n{details}")
-    parts.append(
-        "What do you do this turn? Respond in first person, one or two "
-        "sentences, exactly as if you were typing your action as a command."
-    )
-    return "\n".join(parts)
-
-
-def update_data(registrar: Registrar, save_dir: Path, yaml_string: str, ctx: Context) -> None:
-    """Update data box: merge+export, reusing the existing write path exactly."""
-    _update_registry_and_sync(registrar, save_dir, yaml_string, ctx)
-
-
-async def get_character_input(
-    registrar: Registrar, alias: str, scene: str, replay: TurnReplay
-) -> str:
-    """Get character input box.
-
-    NPC path prefers subagent (nobody real is behind an NPC) but falls
-    back to responder="host" if it fails -- e.g. no subagent key
-    configured, not something every deployment can be assumed to have
-    (see `TurnReplay.resolve_preferring_subagent`). Player-voiced path
-    always needs a human (responder="human"): only the actual human's
-    actual message can answer this, so there's nothing to fall back to.
-    """
-    if spatial.character_interaction_type(registrar, alias) == "npc":
-        decision_prompt = _build_npc_decision_prompt(registrar, alias)
-        request = JudgmentRequest(prompt=decision_prompt)
-        return await replay.resolve_preferring_subagent(request, _npc_spec)
-
-    request = JudgmentRequest(prompt=f"It's {alias}'s turn.\n\n{scene}\n\nWhat do they do?")
-    return await replay.resolve(request, responder="human")
-
-
-async def resolve_event(
-    registrar: Registrar, save_dir: Path, alias: str, action_text: str, replay: TurnReplay, ctx: Context
-) -> tuple[str, float]:
-    """Resolve event box: work out what happens, and how long it took.
-
-    Returns (narration, next_due_in) -- process_event schedules `alias`
-    with the latter via predict_event/push_event, uniformly for both paths.
-
-    NPC path resolves via the existing resolver tool loop (its own nested
-    generate_terrain/resolve_physics/update_data calls) --
-    responder="subagent", `replay` never touched, since nobody real is
-    behind an NPC. Player-voiced path always needs a human
-    (responder="human"): the outcome can't be precomputed, since it has
-    to be resolved against state as of right now, not whatever was true
-    when this event was scheduled -- and only the outer conversation
-    should narrate to a human (see CLAUDE.md). Update data, for the
-    player-voiced path, is *not* called from here: the connected agent
-    already has direct access to the plain `update_registry` tool and
-    calls it itself the same way it always has, outside this replay
-    mechanism entirely -- only the NPC path needs update_data threaded
-    through its own resolver loop, since nothing else could call it there.
-    """
-    if spatial.character_interaction_type(registrar, alias) == "npc":
-        # Captured from update_data's own next_due_in argument below -- a typed
-        # tool parameter the model must fill in, more robust against a weak
-        # model's mistakes than asking it to append a specific text line (the
-        # player path's only option, see _NEXT_DUE_IN_INSTRUCTION below).
-        captured: dict[str, float] = {}
-
-        async def dispatch(name: str, arguments: dict) -> str:
-            try:
-                if name == "generate_terrain":
-                    return _terrain_agent.generate(arguments["description"])
-                if name == "resolve_physics":
-                    return _physics_agent.resolve(arguments["scenario"])
-                if name == "update_data":
-                    update_data(registrar, save_dir, arguments["yaml_string"], ctx)
-                    captured["next_due_in"] = float(arguments["next_due_in"])
-                    return "Merged into the registry."
-                return f"Error: unknown tool {name!r}"
-            except Exception as e:
-                return f"Error: {e}"
-
-        resolver_prompt = f"{alias}'s action: {action_text}"
-        summary = await run_tool_loop(
-            _npc_resolver_spec,
-            [{"role": "user", "content": resolver_prompt}],
-            _NPC_RESOLVER_TOOLS,
-            dispatch,
-            max_turns=MAX_NPC_TURN_TOOL_TURNS,
-            api_key=resolve_anthropic_api_key(),
-        )
-        return f"{alias}: {action_text}\n{summary}", captured.get("next_due_in", 1.0)
-
-    request = JudgmentRequest(prompt=f"{alias} attempts: {action_text}\n\n{_NEXT_DUE_IN_INSTRUCTION}")
-    answer = await replay.resolve(request, responder="human")
-    return _parse_next_due_in(answer)
-
-
-async def character_communication(
-    registrar: Registrar, save_dir: Path, alias: str, replay: TurnReplay
-) -> tuple[str, str]:
-    """Character communication box: Select character -> Narrate to character -> Get
-    character input. Returns (scene, action_text); process_event passes action_text
-    into resolve_event.
-    """
-    alias = spatial.select_character(registrar, alias)
-    scene = spatial.narrate_to_character(registrar, alias)
-    action_text = await get_character_input(registrar, alias, scene, replay)
-    return scene, action_text
-
-
-async def process_event(
-    registrar: Registrar, save_dir: Path, alias: str, replay: TurnReplay, ctx: Context
-) -> str:
-    """Process event box: Character communication -> Resolve event -> (Update data,
-    NPC path only, see resolve_event) -> Predict event -> Push event -- this
-    function is PROC's zoom-in target in the turn-flow diagram.
-    """
-    _scene, action_text = await character_communication(registrar, save_dir, alias, replay)
-    narration, next_due_in = await resolve_event(registrar, save_dir, alias, action_text, replay, ctx)
-    due_at = core.predict_event(registrar, alias, next_due_in)
-    core.push_event(registrar, alias, due_at, time=_next_time_stamp(ctx))
-    return narration
 
 
 async def resolve_base_event(alias: str, replay: TurnReplay) -> tuple[str, float]:
@@ -854,9 +543,8 @@ async def resolve_base_event(alias: str, replay: TurnReplay) -> tuple[str, float
 
 async def process_base_event(registrar: Registrar, alias: str, replay: TurnReplay, ctx: Context) -> str:
     """Base module's process event box: Resolve event -> Predict event ->
-    Push event -- no character-communication step first, unlike
-    `process_event`: a base event has no agency to ask "what do you do" of,
-    it just resolves.
+    Push event -- no character-communication step first: a base event has
+    no agency to ask "what do you do" of, it just resolves.
     """
     narration, next_due_in = await resolve_base_event(alias, replay)
     due_at = core.predict_event(registrar, alias, next_due_in)
@@ -876,16 +564,16 @@ async def _run_event_loop(
     clock -> Process event, looping until either a NeedsExternalInput pauses it
     (returned to the caller, not raised further) or the queue empties.
 
-    Branches once, up front, on whether the character module is active
-    (see `story_simulator.config.enabled_modules`) -- `spatial.pop_event`/
-    `process_event` (the character-aware pair) when it is,
-    `core.pop_event`/`process_base_event` (no notion of character at all,
-    what `core.py`'s own docstring promises works with nothing layered on
-    top) when it isn't. One loop either way: this is what makes
-    `advance_simulation` a single tool rather than a character-ful one and
-    a separate base one.
+    Always the base path today (`core.pop_event`/`process_base_event`, no
+    notion of character at all, what `core.py`'s own docstring promises
+    works with nothing layered on top) -- `_process_due_entity` used to
+    also branch to a character-aware pair (`spatial.pop_event`/
+    `process_event`) depending on `story_simulator.config.enabled_modules`,
+    moved out to `shelved/` (see `docs/architecture.md`) pending a rewrite.
+    `_process_due_entity` is kept as its own step (rather than inlined
+    here) specifically as the seam that branching returns to.
 
-    `resume_alias`/`replay` re-enter that pair for a specific turn already
+    `resume_alias`/`replay` re-enter the loop for a specific turn already
     in progress (what `advance_simulation` is resuming, decoded from its
     `resume_token`) instead of popping fresh -- `replay`'s answers-so-far
     mean everything up to the newest still-unanswered judgment call
@@ -898,26 +586,19 @@ async def _run_event_loop(
     are None only when the queue is empty (nothing left to stash);
     otherwise `alias`/`replay` are exactly what `advance_simulation` needs
     to encode into a `resume_token` for resuming this same pause point, and
-    `responder` ("human" or "host") says who it's asking.
+    `responder` (always "host" today) says who it's asking.
     """
-    character_enabled = "character" in enabled_modules()
-
-    async def _process(process_alias: str, process_replay: TurnReplay) -> str:
-        if character_enabled:
-            return await process_event(registrar, save_dir, process_alias, process_replay, ctx)
-        return await process_base_event(registrar, process_alias, process_replay, ctx)
-
     if resume_alias is not None:
         assert replay is not None
         try:
-            await _process(resume_alias, replay)
+            await _process_due_entity(registrar, save_dir, resume_alias, replay, ctx)
         except NeedsExternalInput as e:
             return resume_alias, replay, e.prompt, e.responder
         # No exception: this turn finished. Fall through to the ordinary
         # loop below rather than returning, since more entities may now be due.
 
     while True:
-        alias = spatial.pop_event(registrar) if character_enabled else core.pop_event(registrar)
+        alias = core.pop_event(registrar)
         if alias is None:
             return None, None, "Nothing scheduled.", None
         if not core.is_event_valid(registrar, alias):
@@ -925,16 +606,33 @@ async def _run_event_loop(
         _current_world_time[ctx.request_context.session] = core.advance_clock(registrar, alias)
         replay = TurnReplay(answers=[])
         try:
-            await _process(alias, replay)
+            await _process_due_entity(registrar, save_dir, alias, replay, ctx)
         except NeedsExternalInput as e:
             return alias, replay, e.prompt, e.responder
         # No exception: this turn resolved fully -- loop back and pop
-        # whatever's due next. A character turn usually completes here
-        # without ever pausing (responder="subagent" succeeding), but can
-        # pause the same as a player-voiced one if it falls back to
-        # responder="host" (see resolve_preferring_subagent). A base event
-        # always pauses (responder="host" is its only path) unless this
-        # exact call was already answered by a prior replay.
+        # whatever's due next. A base event always pauses (responder="host"
+        # is its only path) unless this exact call was already answered by
+        # a prior replay.
+
+
+async def _process_due_entity(
+    registrar: Registrar,
+    save_dir: Path,
+    alias: str,
+    replay: TurnReplay,
+    ctx: Context,
+) -> str:
+    """Dispatch one popped entity's turn to the base module's own process-event box.
+
+    A top-level function rather than a closure nested inside
+    `_run_event_loop` precisely so it becomes its own entity once iacs
+    parses this file -- a nested, undocumented closure made
+    `_run_event_loop`'s real dispatch invisible to iacs's parsed call graph
+    (see `docs/architecture/advance_simulation.md`). Kept as its own
+    single-branch step even now that there's only one module to dispatch
+    to, since it's the seam a character-aware branch returns to.
+    """
+    return await process_base_event(registrar, alias, replay, ctx)
 
 
 def _encode_token(alias: str, answers: list[str]) -> str:
@@ -985,36 +683,28 @@ async def advance_simulation(ctx: Context, resume_token: str | None = None, answ
     """Fast-forward through any due entities, and pause whenever a turn
     needs input only outside story-simulator's own process can supply.
 
-    With the character module enabled (see
-    `story_simulator.config.enabled_modules` -- on by default): the
-    player-voiced character's action or resolution, or (if no subagent key
-    is configured, see `TurnReplay.resolve_preferring_subagent`) an NPC's
-    own decision. With it disabled: the base event-driven simulation (see
-    `core.py`) -- every due entity resolves via responder="host", no
-    character/NPC concept at all.
+    The base event-driven simulation (see `core.py`) -- every due entity
+    resolves via responder="host", no character/NPC concept at all.
+    (A character-aware branch used to layer player/NPC turns on top of
+    this; moved out to `shelved/` pending a rewrite -- see
+    `docs/architecture.md`.)
 
     Call with neither argument to start (or continue after a prior call
     finished with nothing left scheduled). That, and every later call,
     returns either ``{"status": "done", "narration": ...}`` or
-    ``{"status": "input_required", "prompt": ..., "responder": ..., "resume_token": ...}``.
-    On the latter, `responder` is "human" (relay `prompt` to the actual
-    player and use their answer) or "host" (decide it yourself, e.g. as
-    that NPC would act, or what a base-module entity that's come due
-    does) -- then call again with that exact `resume_token` and your
-    `answer` -- no separate tool, and no server-side state to lose:
-    `resume_token` carries everything needed to resume, so it survives an
-    MCP disconnect/reconnect between calls too.
+    ``{"status": "input_required", "prompt": ..., "responder": "host", "resume_token": ...}``.
+    On the latter, decide what happens yourself, then call again with that
+    exact `resume_token` and your `answer` -- no separate tool, and no
+    server-side state to lose: `resume_token` carries everything needed to
+    resume, so it survives an MCP disconnect/reconnect between calls too.
 
     Args:
         resume_token: The `resume_token` from this session's last
             `input_required` result, or omitted to start/continue fresh.
-        answer: The answer to that result's `prompt` -- whatever it was
-            asking for (see `responder`). With the character module, the
-            player's stated action, the resolved outcome of one, or an
-            NPC's decision; with the base module, what happens (optionally
-            ending with a `next_due_in: <seconds>` line -- omit it if
-            there's nothing further to happen). Omit `answer` itself along
-            with `resume_token` on a fresh call.
+        answer: What happens for the entity that result's `prompt` asked
+            about (optionally ending with a `next_due_in: <seconds>` line
+            -- omit it if there's nothing further to happen). Omit `answer`
+            itself along with `resume_token` on a fresh call.
     """
     __iacs__ = {"solution of": "story_simulator_mission.tool_catalog.advance_simulation"}
     registrar = _get_registrar(ctx)

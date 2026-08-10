@@ -118,31 +118,6 @@ def resolve_anthropic_api_key() -> str | None:
     """
     return os.environ.get("STORY_SIM_ANTHROPIC_API_KEY") or None
 
-
-# Every module layered on top of story_simulator.core's base event loop --
-# see core.py's own docstring for what "base" guarantees regardless of
-# which of these are active. "character" is the only one advance_simulation
-# itself branches on today (whether a due entity gets resolved by a real
-# human/host via character_communication+resolve_event, or generically via
-# resolve_base_event); the rest (npc, physics, terrain, spatial) don't
-# change the loop's own control flow yet -- they're already reachable as
-# separately-callable tools (advance_npc_turn, resolve_physics,
-# generate_terrain, perceive) regardless of this set, and are only tracked
-# here so a deployment can describe/discover which are meant to be in play.
-ALL_MODULES = frozenset({"character", "npc", "physics", "terrain", "spatial"})
-
-
-def enabled_modules() -> frozenset[str]:
-    """Which optional modules are active for this deployment.
-
-    Read from STORY_SIM_MODULES, a comma-separated subset of ALL_MODULES
-    (e.g. "character,spatial"). Unset means every module -- the
-    fully-featured behavior this project shipped before any of them were
-    optional -- for backward compatibility; an explicitly empty value
-    ("STORY_SIM_MODULES=") means none: the base event-driven simulation
-    with nothing layered on top at all.
-    """
-    raw = os.environ.get("STORY_SIM_MODULES")
-    if raw is None:
-        return ALL_MODULES
-    return frozenset(m.strip() for m in raw.split(",") if m.strip())
+# ALL_MODULES/enabled_modules() (the character/npc/physics/terrain/spatial
+# optional-module toggle) removed along with the code it gated -- see
+# docs/architecture.md and git history for what it looked like.

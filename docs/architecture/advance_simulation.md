@@ -45,80 +45,104 @@ uv run --project iacs iacs --manifest story_simulator generate-architecture-diag
 
 ```mermaid
 flowchart TD
-    subgraph sg0["config"]
-        n19["event_responder"]
-    end
-    subgraph sg1["core"]
-        n8["is_event_valid"]
-        n9["advance_clock"]
-        n10["pop_event"]
+    subgraph sg0["core"]
         n12["due_by_entity"]
-        n13["predict_event"]
-        n14["push_event"]
         n17["merge_yaml_string"]
     end
-    subgraph sg2["mcp_server"]
+    subgraph sg1["mcp_server"]
         n0["advance_simulation"]
-        n1["_resolve_args"]
-        n2["_get_registrar"]
-        n3["_wrap_loop_result"]
-        n4["_run_event_loop"]
         n6["_encode_token"]
-        n7["_process_due_entity"]
         n11["process_event"]
-        n15["resolve_event"]
-        n16["_next_time_stamp"]
-        n18["_parse_next_due_in"]
     end
-    subgraph sg3["resolve"]
+    subgraph seq0["advance_simulation"]
+        direction LR
+        n2["_get_registrar"]
+        n1["_resolve_args"]
+        n4["_run_event_loop"]
+        n3["_wrap_loop_result"]
+        n2 -.-> n1
+        n1 -.-> n4
+        n4 -.-> n3
+    end
+    subgraph seq3["_run_event_loop"]
+        direction LR
+        n7["_process_due_entity"]
+        n10["pop_event"]
+        n8["is_event_valid"]
+        n9["advance_clock"]
         n5["TurnReplay"]
+        n7 -.-> n10
+        n10 -.-> n8
+        n8 -.-> n9
+        n9 -.-> n5
     end
-    n0 --> n1
-    n0 --> n2
-    n0 --> n3
-    n0 --> n4
-    n1 --> n5
-    n3 --> n6
-    n4 --> n5
-    n4 --> n7
-    n4 --> n8
-    n4 --> n9
-    n4 --> n10
-    n7 --> n11
-    n9 --> n12
-    n11 --> n13
-    n11 --> n14
-    n11 --> n15
-    n11 --> n16
-    n13 --> n9
-    n14 --> n17
-    n15 --> n18
-    n15 --> n19
-    n15 -.-> n13
-    n13 -.-> n14
-    n14 -.-> n16
-    n19 -.-> n18
-    n7 -.-> n10
-    n10 -.-> n8
-    n8 -.-> n9
-    n9 -.-> n5
-    n2 -.-> n1
-    n1 -.-> n4
-    n4 -.-> n3
+    subgraph seq6["process_event"]
+        direction LR
+        n15["resolve_event"]
+        n13["predict_event"]
+        n14["push_event"]
+        n16["_next_time_stamp"]
+        n15 -.-> n13
+        n13 -.-> n14
+        n14 -.-> n16
+    end
+    subgraph seq9["resolve_event"]
+        direction LR
+        n19["event_responder"]
+        n18["_parse_next_due_in"]
+        n19 -.-> n18
+    end
+    n0 --> seq0
+    seq0 --> seq3
+    seq0 --> n6
+    seq3 --> n11
+    seq3 --> n12
+    n11 --> seq6
+    seq6 --> seq3
+    seq6 --> n17
+    seq6 --> seq9
     class n0 rootNode
     classDef rootNode fill:#f96,stroke:#333,stroke-width:3px
 ```
 
-Solid arrows are calls; dotted arrows are new -- they connect one
-entity's own call targets in the order it actually calls them (e.g.
-`n15 -.-> n13 -.-> n14 -.-> n16`/`resolve_event -.-> predict_event -.->
-push_event -.-> _next_time_stamp` traces `process_event`'s own body top to
-bottom, since those four are exactly what it calls and in that order),
-skipping over any unresolved call in between rather than breaking the
-chain there. `load_python` now records each `calls` row's first-occurrence
-order as a `seq` field; `build_call_reachability`/`_order_edges` turns
-consecutive `seq` values from the same caller into these edges — see that
-module's docstring.
+Solid arrows are calls; the boxed groups are new. An entity that itself
+makes two or more calls gets those targets pulled into their own box
+(labeled with just the caller's name, laid out left-to-right regardless
+of the overall top-down flow) instead of scattered across the usual
+per-file ones, chained internally by dotted arrows in the order it
+actually calls them — e.g. `process_event`'s own box traces
+`resolve_event -.-> predict_event -.-> push_event -.-> _next_time_stamp`,
+exactly its body top to bottom.
+
+A solid arrow's endpoint resolves to a box's boundary, not a specific
+node inside it, on *both* ends: not just "the caller's own box" (`n0 -->
+seq0`), but any node that happens to be a box member either as caller or
+target. `_run_event_loop` is itself one of `advance_simulation`'s four
+ordered calls (a `seq0` member) and separately owns its own box of five
+calls (`seq3`) -- so that relationship renders as `seq0 --> seq3`, one
+box pointing at another, not `n4 --> seq3` naming the specific member
+that did it (already visible from `seq0`'s own internal dotted chain).
+Distinct underlying calls that abstract to the same box pair this way
+collapse to one arrow rather than drawing parallel copies of it, and a
+box referencing itself (two of its own members calling each other) draws
+nothing at all -- neither would add information a reader can't already
+see inside the box.
+
+The earlier flat version drew every target as its own solid arrow from
+the caller *and* chained them with dotted arrows threading back through
+the same targets, which just said the same thing twice and read as
+clutter, not structure, once tried against this real trace. The
+tradeoff of the box-based version: a node inside a sequence box no longer
+shows which file it's defined in (`TurnReplay`, born in `resolve.py`,
+sits in `_run_event_loop`'s box here, not a `resolve` file box) —
+accepted deliberately, since decluttering call order mattered more here
+than per-node file attribution, which a full trace lists elsewhere in
+this doc anyway. `load_python` records each `calls` row's
+first-occurrence order as a `seq` field; `build_call_reachability`/
+`_call_sequences` groups and orders a caller's own resolved targets by
+it, and `render_reachability_mermaid` is what turns a 2+-target sequence
+into a box like this (a 1-target one stays a plain arrow, nothing to
+order) — see those two docstrings.
 
 This traces cleanly end to end today — every real call from
 `advance_simulation` down through `resolve_event`/`predict_event`/
@@ -141,7 +165,7 @@ smoothed over:
    (only docstring'd/`__iacs__`-tagged constructs become entities), those
    calls were attributed to nothing and vanished from the graph. **Fixed**
    by extracting it to a top-level function with a docstring,
-   `_process_due_entity` — visible above as `n6`.
+   `_process_due_entity` — visible above as `n7`.
 3. **A self-inflicted near-repeat of #2.** The first name tried for that
    extracted function, `_dispatch_turn`, broke a *different* edge the
    moment it existed: `agents.run_tool_loop`'s generic `dispatch` callback

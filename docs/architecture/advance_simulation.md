@@ -173,7 +173,7 @@ flowchart TD
 
     subgraph PBE_detail["_process_due_entity -> process_event"]
         direction TB
-        RBE["resolve_event<br/><small>(may raise NeedsExternalInput,<br/>responder=\"host\" or \"subagent\")</small>"] --> PRED2[predict_event] --> PUSH2[push_event]
+        RBE["resolve_event<br/><small>(may raise NeedsExternalInput,<br/>responder=#quot;host#quot; or #quot;subagent#quot;)</small>"] --> PRED2[predict_event] --> PUSH2[push_event]
     end
 
     REL -. zooms into .-> Loop

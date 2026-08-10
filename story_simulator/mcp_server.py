@@ -1,47 +1,38 @@
 """MCP server exposing story-simulator's world-state and narrative tools.
 
 story-simulator is *just* this server — there is no in-process agent loop
-here. `advance_simulation` runs ONE event-driven simulation loop (one
-function per step -- see `_run_event_loop`) regardless of which optional
-modules are active (`story_simulator.config.enabled_modules`): with the
-character module, `process_event`/`character_communication`/
-`resolve_event` and `story_simulator.spatial`'s character-aware
-`pop_event`; with it off, `process_base_event` and
-`story_simulator.core`'s base
-`pop_event`/`predict_event`/`push_event` -- see `core.py`'s own docstring
-for what "base" guarantees with nothing layered on top. Either way, the
-loop fast-forwards through anything it can resolve on its own, and pauses
+here. `advance_simulation` runs one event-driven simulation loop (see
+`_run_event_loop`) regardless of which optional modules are active
+(`story_simulator.config.enabled_modules`): with the character module,
+`process_event`/`character_communication`/`resolve_event` and
+`story_simulator.spatial`'s character-aware `pop_event`; with it off,
+`process_base_event` and `story_simulator.core`'s base
+`pop_event`/`predict_event`/`push_event`. Either way, the loop
+fast-forwards through anything it can resolve on its own, and pauses
 whenever a turn needs input only the connected host can supply -- the
 player-voiced character's action/resolution, an NPC's decision (if no
-subagent key is configured -- not something every deployment can be
-assumed to have), or a base-module entity's own resolution -- handing
-control back to whatever MCP-aware host is connected (a human's chat
-agent, an automated harness, ...). That host IS the narrator: it perceives
-what's going on from the returned prompt, either relays it to the actual
-human or decides it itself (see `advance_simulation`'s own `responder`
-field), calls `generate_terrain`/`resolve_physics` when it needs a
-specialist's judgment, narrates directly in its own replies, and calls
-`advance_simulation` again with its decision (which itself records it via
-`update_data`/`update_registry`) and the `resume_token` it was given, to
-resume the loop -- Multi Round-Trip Requests (MRTR, MCP spec 2026-07-28),
-not a second dedicated tool. `perceive`/`view_registry`/`view_entity`/
-`update_registry` remain directly callable too, for anything outside that
-loop. `advance_npc_turn` is a thin wrapper over the same `process_event`
-used internally by the character module's own branch of the loop, forced
-onto one named NPC, kept for direct single-NPC use outside a full
-simulation pass.
+subagent key is configured), or a base-module entity's own resolution --
+handing control back to whatever MCP-aware host is connected. That host
+IS the narrator: it perceives what's going on from the returned prompt,
+relays it to a human or decides it itself, calls
+`generate_terrain`/`resolve_physics` when it needs a specialist's
+judgment, narrates directly in its own replies, and calls
+`advance_simulation` again with its decision and the `resume_token` it
+was given, to resume the loop -- Multi Round-Trip Requests (MRTR, MCP
+spec 2026-07-28), not a second dedicated tool.
+`perceive`/`view_registry`/`view_entity`/`update_registry` remain
+directly callable too. `advance_npc_turn` is a thin wrapper over the same
+`process_event` used internally by the character module's own branch,
+forced onto one named NPC.
 
-The judgment resolver behind all of this (`story_simulator.resolve`:
-nested subagent, or -- a real human, or the connected host standing in
-for a missing subagent key -- via MRTR) is what lets
-`character_communication`/`resolve_event`/`resolve_base_event` reach a
-real decision from any nesting depth without every intervening function
-having to be a generator — see that module's docstring.
+The judgment resolver behind all of this (`story_simulator.resolve`) is
+what lets `character_communication`/`resolve_event`/`resolve_base_event`
+reach a real decision from any nesting depth without every intervening
+function having to be a generator -- see that module's docstring.
 
 Structurally mirrors `iacs/iacs/mcp_server.py`: a session-scoped `Registrar`
-kept in a `weakref.WeakKeyDictionary` (so a session's world state is cleaned
-up automatically once the session ends), plain `@server.tool()` functions,
-`server.run(transport="stdio")`.
+kept in a `weakref.WeakKeyDictionary` (cleaned up automatically once the
+session ends), plain `@server.tool()` functions, `server.run(transport="stdio")`.
 """
 
 from __future__ import annotations
@@ -81,27 +72,22 @@ PROD_NPC_CONFIG_PATH = Path(__file__).parent / "npc.yaml"
 PROD_NPC_RESOLVER_CONFIG_PATH = Path(__file__).parent / "npc_resolver.yaml"
 MAX_NPC_TURN_TOOL_TURNS = 8
 # save_dir's two export subdirectories, each holding one EC yaml file per
-# original source (currently always one, since every registrar.update() call
-# shares WORLD_FILE_ID as its source key -- see that constant's comment) --
+# original source (currently always one, since WORLD_FILE_ID is shared) --
 # directories, not fixed filenames, so a save can be split across as many
-# files as its author wants, matching iacs's own entity-file organization
-# freedom, and the loader (see start_world) just recurses into whichever one
-# it picks rather than assuming a single file.
+# files as its author wants; the loader (see start_world) recurses into
+# whichever one it picks.
 WORLD_DIRNAME = WORLD_FILE_ID
 WORLD_HISTORY_DIRNAME = "world_history"
 
 _registrars: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
 _save_dirs: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
 # World time (seconds since world creation), per session -- set in
-# _run_event_loop from the popped entity's own `next_due` (see
-# core.advance_clock: "the popped entity's own next_due becomes 'now'
-# for this turn") and read by _next_time_stamp for every write anything
-# does while resolving that entity's turn, so "how recent is this row" and
-# "when is X next due" share one clock instead of the wall clock. Session-
-# scoped process memory, not persisted -- a subprocess restart mid-turn
-# resets it to 0.0 until the next entity pop re-derives it, a known gap
-# (see docs/manifest/story-simulator.yaml: world_time_concept) accepted
-# for now in favor of not introducing a separate persisted clock entity.
+# _run_event_loop from the popped entity's own `next_due` and read by
+# _next_time_stamp for every write while resolving that entity's turn, so
+# "how recent is this row" and "when is X next due" share one clock.
+# Session-scoped process memory, not persisted -- a subprocess restart
+# mid-turn resets it to 0.0 until the next entity pop re-derives it, a
+# known gap (see docs/manifest/story-simulator.yaml: world_time_concept).
 _current_world_time: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
 # The last stamp _next_time_stamp actually handed out, per session -- lets
 # it nudge apart same-world-time writes (see _next_time_stamp) instead of
@@ -166,13 +152,10 @@ _NPC_RESOLVER_TOOLS = [
     },
 ]
 
-# The player-voiced path only has one free-text answer channel
-# (advance_simulation's `answer` argument), unlike the NPC path's typed
-# update_data(next_due_in=...) tool parameter -- so resolve_event's ask for
-# a human asks for next_due_in as a trailing text line instead, parsed back
-# out by _parse_next_due_in. Whoever resolves a turn still supplies
-# next_due_in explicitly either way, player and NPC alike -- no separate
-# hardcoded interval for either path (see plan section 5).
+# The player-voiced path only has one free-text answer channel, unlike
+# the NPC path's typed update_data(next_due_in=...) tool parameter -- so
+# resolve_event's ask for a human asks for next_due_in as a trailing text
+# line instead, parsed back out by _parse_next_due_in.
 _NEXT_DUE_IN_INSTRUCTION = (
     "End your answer with a line formatted exactly as `next_due_in: <seconds>` "
     "stating how much in-world time this action took."
@@ -180,8 +163,7 @@ _NEXT_DUE_IN_INSTRUCTION = (
 
 # Unlike the character module's instruction above, omitting the
 # next_due_in line is meaningful here -- it's how a base-module event
-# tells the loop it's done (see resolve_base_event's default=inf), not a
-# mistake to fall back from with a hardcoded interval.
+# tells the loop it's done (see resolve_base_event's default=inf).
 _BASE_NEXT_DUE_IN_INSTRUCTION = (
     "If there's more to happen, end your answer with a line formatted "
     "exactly as `next_due_in: <seconds>` stating how long from now. Omit "
@@ -206,31 +188,24 @@ def _next_time_stamp(ctx: Context) -> float:
     current in-fiction "now" (seconds since world creation).
 
     Reads `_current_world_time`, set in `_run_event_loop` from the popped
-    entity's own `next_due` (see `core.advance_clock`) -- every write made
-    while resolving one entity's turn shares that same "now", the same
-    world-time axis `next_due.value` itself uses, rather than a wall-clock
+    entity's own `next_due` -- every write made while resolving one
+    entity's turn shares that same "now" rather than a wall-clock
     substitute. Falls back to 0.0 if nothing has been popped yet for this
-    session (e.g. a stray `update_registry` call before `advance_simulation`
-    is ever run).
+    session.
 
-    Two writes at the same world time -- several update_registry calls
-    resolving one turn, or any number of stray calls before the first event
-    is ever popped -- would otherwise tie, and Registry.view_current's tie
-    handling is presently arbitrary (iacs's own _seq write-order column,
-    zhafen/iacs#94, isn't merged into this submodule pointer yet). Nudged
-    apart here instead by _TIE_EPSILON, so a later write always gets a
-    strictly higher stamp than an earlier one at the same world time and
-    "most recent write wins" still holds -- a per-project stopgap to drop
-    once #94 merges and iacs's own tie-break can be relied on instead.
+    Two writes at the same world time would otherwise tie, since
+    Registry.view_current's tie handling is presently arbitrary (iacs's
+    own _seq write-order column, zhafen/iacs#94, isn't merged yet). Nudged
+    apart here by _TIE_EPSILON instead, so a later write always gets a
+    strictly higher stamp and "most recent write wins" still holds -- a
+    stopgap to drop once #94 merges.
 
-    _TIE_EPSILON is a whole 1, not a fraction of a second, for two reasons
-    observed directly: `math.nextafter`'s smallest-possible step starting
-    from 0.0 lands in subnormal-float range, which the registry's
-    duckdb/ibis pipeline was seen flushing back to 0.0 -- silently re-tying
-    the very rows this is meant to keep apart; and this same stamp also
-    backfills `description.time`, an iacs builtin declared `type: int` (not
-    story-simulator's to change), which truncates any fractional nudge to
-    nothing for the same reason. A whole-integer nudge survives both.
+    _TIE_EPSILON is a whole 1, not a fraction of a second: `math.nextafter`'s
+    smallest step from 0.0 lands in subnormal-float range, which the
+    registry's duckdb/ibis pipeline was seen flushing back to 0.0; and
+    this same stamp backfills `description.time`, an iacs builtin declared
+    `type: int`, which truncates any fractional nudge to nothing. A
+    whole-integer nudge survives both.
     """
     session = ctx.request_context.session
     world_time = _current_world_time.get(session, 0.0)
@@ -271,11 +246,10 @@ def _can_connect(dsn: str) -> str | None:
 def _start_local_postgres() -> None:
     """Best-effort start of a local `postgresql` service, for dev convenience.
 
-    Only ever called on a localhost DSN that just failed with a
-    connection-refused error (see `_ensure_postgres_running`) -- never
-    manages a remote server. Tries whichever service-control command this
-    install actually has; silently no-ops if neither is found; either way,
-    the caller's own follow-up connection attempt is what determines success.
+    Only called on a localhost DSN that just failed with
+    connection-refused (see `_ensure_postgres_running`) -- never manages
+    a remote server. Tries whichever service-control command this install
+    has; the caller's own follow-up connection attempt determines success.
     """
     for cmd in (["service", "postgresql", "start"], ["pg_ctlcluster", "16", "main", "start"]):
         if shutil.which(cmd[0]) is None:
@@ -290,13 +264,13 @@ def _start_local_postgres() -> None:
 def _ensure_default_dev_password() -> None:
     """Set the local `postgres` role's password to match the documented default DSN.
 
-    Only reached from `_ensure_postgres_running` after *this call* just
+    Only reached from `_ensure_postgres_running` after this call just
     started a previously-unreachable local server and it's rejecting the
-    default DSN's password -- i.e. a brand-new cluster whose `postgres` role
-    has no password set yet, not a pre-existing, deliberately configured
-    server. Runs the ALTER as the `postgres` OS/DB user over the Unix
-    socket (peer-authenticated, so no password needed for this step itself),
-    the same way a human operator would from the shell.
+    default DSN's password -- a brand-new cluster with no password set
+    yet, not a deliberately configured server. Runs the ALTER as the
+    `postgres` OS/DB user over the Unix socket (peer-authenticated, no
+    password needed for this step), the same way a human operator would
+    from the shell.
     """
     alter_sql = "ALTER USER postgres WITH PASSWORD 'postgres';"
     for cmd in (
@@ -315,13 +289,11 @@ def _ensure_default_dev_password() -> None:
 def _ensure_postgres_running() -> None:
     """Make sure the registry database is reachable, starting a local one if not.
 
-    Dev convenience only: intervenes solely for a localhost DSN whose server
-    isn't listening at all (connection refused), which is the "nobody has
-    started Postgres in this environment yet" case. Any other failure --
-    including a *reachable* server rejecting these credentials, which could
-    mean a deliberately different local password -- is left to surface via
-    `_ensure_postgres_schema`'s own connection attempt rather than papered
-    over here.
+    Dev convenience only: intervenes solely for a localhost DSN whose
+    server isn't listening at all (connection refused) -- "nobody has
+    started Postgres in this environment yet." Any other failure,
+    including a reachable server rejecting these credentials, surfaces
+    via `_ensure_postgres_schema`'s own connection attempt instead.
     """
     __iacs__ = {"solution of": "story_simulator_mission.dev_db_bootstrap"}
     dsn = resolve_database_dsn()
@@ -350,14 +322,13 @@ def _ensure_postgres_running() -> None:
 def _ensure_postgres_schema(save_dir: Path) -> None:
     """Create `save_dir`'s registry schema if it doesn't exist yet.
 
-    The one Postgres-specific piece of this file -- everywhere else talks to
-    the registry database only through `config.registry_url`/`Registrar`,
-    which stay backend-agnostic via `ibis.connect`. `CREATE SCHEMA` is a
-    one-off admin statement against the database, not registry data, so it's
-    a plain psycopg connection rather than something routed through
-    `Registrar`/`ibis`. Has to run before `Registrar.load` ever connects
-    with that schema name: an unknown schema in a connection's search_path
-    fails silently rather than erroring (see `config.registry_url`).
+    The one Postgres-specific piece of this file -- everywhere else talks
+    to the registry only through `config.registry_url`/`Registrar`,
+    backend-agnostic via `ibis.connect`. `CREATE SCHEMA` is a one-off
+    admin statement, not registry data, so it's a plain psycopg
+    connection. Has to run before `Registrar.load` connects with that
+    schema name: an unknown schema fails silently rather than erroring
+    (see `config.registry_url`).
     """
     schema = registry_schema_name(save_dir)
     with psycopg.connect(resolve_database_dsn(), autocommit=True) as con:
@@ -421,19 +392,17 @@ server = FastMCP(
 def start_world(save_dir: str, ctx: Context, scenario_dir: str | None = None) -> str:
     """Open a world save for this session, seeding it from `scenario_dir` if it's empty.
 
-    The loose seed *.yaml under save_dir is only ever merged into the
-    registry the first time this save_dir is opened (a brand-new schema has
-    no component types yet) — a resumed save's accumulated state already
-    lives in the persisted registry, so reloading the seed YAML again on
-    every start_world call would re-merge the same starting entities
-    repeatedly.
+    The loose seed *.yaml under save_dir is only merged into the registry
+    the first time this save_dir is opened (a brand-new schema has no
+    component types yet) -- a resumed save's accumulated state already
+    lives in the persisted registry.
 
     Args:
         save_dir: Directory holding (or to hold) this world's save data.
         scenario_dir: Starting scenario to seed a brand-new save_dir from
             (an EC directory, e.g. containing scenario.yaml). Defaults to
-            story-simulator's plain default world (a player, a door, an
-            empty expanse). Ignored if save_dir already has any save data.
+            story-simulator's plain default world. Ignored if save_dir
+            already has any save data.
     """
     __iacs__ = {"solution of": "story_simulator_mission.tool_catalog.start_world"}
     save_dir_path = Path(save_dir)
@@ -445,23 +414,11 @@ def start_world(save_dir: str, ctx: Context, scenario_dir: str | None = None) ->
     _ensure_postgres_schema(save_dir_path)
     registrar = Registrar.load(registry_url(save_dir_path))
     if not registrar.registry.component_types:
-        # WORLD_HISTORY_DIRNAME and WORLD_DIRNAME are both _export_world_yaml's
-        # own output, derived from (and redundant with) each other and with
-        # the original seed -- WORLD_HISTORY_DIRNAME's content is a strict
-        # superset of WORLD_DIRNAME's rows, which are in turn a strict
-        # superset of the seed's own content (still present as each entity's
-        # earliest historical row). Load exactly one, in that preference
-        # order, rather than every *.yaml file under save_dir: concatenating
-        # all of them (including both subdirectories at once) would rely on
-        # whichever one's rows happened to sort last to win the resulting
-        # duplicate top-level keys -- an accident of sort order, not a real
-        # guarantee, and not a union either way (YAML's last-key-wins
-        # replaces, it doesn't merge). Recursing into the *chosen* directory
-        # (rather than requiring one fixed filename) still lets a save's
-        # author split it across as many files as they like -- only the
-        # top-level choice between "history", "current", or "neither yet
-        # exported, fall back to everything under save_dir" needs to be
-        # exclusive.
+        # Load exactly one of world_history/ / world/ / everything under
+        # save_dir, in that preference order, rather than combining more
+        # than one -- concatenating redundant sources risks silently
+        # discarding data (YAML's last-key-wins on duplicate top-level
+        # keys). See CLAUDE.md for the full reasoning.
         history_dir = save_dir_path / WORLD_HISTORY_DIRNAME
         world_dir = save_dir_path / WORLD_DIRNAME
         found = (
@@ -470,10 +427,9 @@ def start_world(save_dir: str, ctx: Context, scenario_dir: str | None = None) ->
             or _yaml_files(save_dir_path)
         )
         if found:
-            # Merged as one WORLD_FILE_ID-keyed string, not passed as
-            # input_dirs (which would key each file by its own path instead)
-            # -- see WORLD_FILE_ID's comment for why every write must share
-            # one source key.
+            # Merged as one WORLD_FILE_ID-keyed string, not input_dirs
+            # (which would key each file by its own path) -- see
+            # WORLD_FILE_ID's comment.
             seed_text = "\n".join(f.read_text() for f in found)
             registrar.update(
                 input_dirs=[str(MANIFEST_DIR)], yaml_strings={WORLD_FILE_ID: seed_text}
@@ -529,43 +485,17 @@ def view_entity(entity_id: str, ctx: Context) -> str:
 def _export_world_yaml(registrar: Registrar, save_dir: Path) -> None:
     """Re-export the registry's state to `save_dir`'s `world/`/`world_history/` dirs.
 
-    A straight, mechanical round-trip (`Registrar.export_manifest`) -- not
-    the old `IacsArchivist`'s LLM-driven read/write loop, removed along with
-    `EnsembleWorld`/`Interpreter` in the MCP rebuild (see
-    docs/manifest/history.yaml: project_history.turn_pipeline_removed and
-    .world_yaml_sync_reverses_old_archivist_design). Runs after every
-    registry write so a save's own YAML stops being frozen turn-zero seed
-    data and instead reads as a live mirror of the registry, which stays the
-    actual source of truth.
-
-    Writes to two directories, not one:
-    - `world/`: current state (the default, collapsed export -- a
-      time_dimension'd component type like `description`/`state`/`position`
-      shows only its current row per entity, not every historical
-      restatement).
-    - `world_history/`: the same content, uncollapsed -- every row ever
-      recorded, full change history. Kept because the registry itself still
-      accumulates full history forever (nothing here is deleted, only what
-      the *collapsed* export shows), but that history would otherwise only
-      ever exist in this process's own database connection -- worth having
-      committed alongside the save, not just inferable from it.
-
-    Each is a directory, not a single fixed filename, because
-    `export_manifest` writes one EC file per original source filepath --
-    today that's always exactly one file (every registrar.update() call
-    across this project shares `WORLD_FILE_ID` as its source key), but the
-    directory is what leaves room for a save to be split across more files
-    later without a format change, matching iacs's own principle of letting
-    an EC source be organized across as many files as its author wants.
-    `start_world`'s loader recurses into whichever directory it picks rather
-    than assuming one file lives there.
+    A straight, mechanical round-trip (`Registrar.export_manifest`), not
+    the old `IacsArchivist`'s LLM-driven read/write loop -- see
+    docs/manifest/history.yaml: project_history.turn_pipeline_removed.
+    Runs after every registry write so a save's own YAML stops being
+    frozen turn-zero seed data and instead mirrors the registry live. See
+    CLAUDE.md for the full world/world_history export format.
 
     `export_manifest` also re-exports this project's own field-schema
-    manifest (merged into every registry via `input_dirs=[MANIFEST_DIR]`)
-    to its own `builtins.yaml` alongside `world.yaml` -- that's just a
-    normalized round-trip of `manifest/builtins.yaml`'s static content, not
-    game state, so it's deleted rather than left to accumulate confusingly
-    in each export directory.
+    manifest to its own `builtins.yaml` alongside `world.yaml` -- a
+    normalized round-trip of `manifest/builtins.yaml`'s static content,
+    not game state, so it's deleted rather than left to accumulate.
     """
     __iacs__ = {"solution of": "story_simulator_mission.seed_yaml_reflects_live_state"}
     world_dir = save_dir / WORLD_DIRNAME
@@ -618,8 +548,7 @@ def perceive(reference_alias: str, ctx: Context) -> str:
 
     Tags each perceived entity `active` (replacing whatever was previously
     tagged active) and merges them into `reference_alias`'s permanent
-    `memory`, the same way the old per-turn MapSystem did — just on demand
-    instead of automatically every turn.
+    `memory`.
     """
     __iacs__ = {"solution of": "story_simulator_mission.tool_catalog.perceive"}
     registrar = _get_registrar(ctx)
@@ -677,9 +606,8 @@ def _parse_next_due_in(answer: str, default: float = 1.0) -> tuple[str, float]:
 
     Looks for a trailing `next_due_in: <seconds>` line (see
     `_NEXT_DUE_IN_INSTRUCTION`) and falls back to `default` rather than
-    raising if it's missing or malformed -- a model's mistake here
-    shouldn't crash the turn, same reasoning as `run_tool_loop`'s own
-    dispatch error handling.
+    raising if it's missing or malformed -- a model's mistake shouldn't
+    crash the turn.
     """
     lines = answer.strip().splitlines()
     if lines and lines[-1].strip().lower().startswith("next_due_in:"):
@@ -733,11 +661,10 @@ async def get_character_input(
     """Get character input box.
 
     NPC path prefers subagent (nobody real is behind an NPC) but falls
-    back to responder="host" if it fails -- e.g. no subagent key
-    configured, not something every deployment can be assumed to have
+    back to responder="host" if it fails, e.g. no subagent key configured
     (see `TurnReplay.resolve_preferring_subagent`). Player-voiced path
-    always needs a human (responder="human"): only the actual human's
-    actual message can answer this, so there's nothing to fall back to.
+    always needs a human (responder="human") -- only the actual human's
+    message can answer this.
     """
     if spatial.character_interaction_type(registrar, alias) == "npc":
         decision_prompt = _build_npc_decision_prompt(registrar, alias)
@@ -757,24 +684,19 @@ async def resolve_event(
     with the latter via predict_event/push_event, uniformly for both paths.
 
     NPC path resolves via the existing resolver tool loop (its own nested
-    generate_terrain/resolve_physics/update_data calls) --
-    responder="subagent", `replay` never touched, since nobody real is
-    behind an NPC. Player-voiced path always needs a human
-    (responder="human"): the outcome can't be precomputed, since it has
-    to be resolved against state as of right now, not whatever was true
-    when this event was scheduled -- and only the outer conversation
-    should narrate to a human (see CLAUDE.md). Update data, for the
-    player-voiced path, is *not* called from here: the connected agent
-    already has direct access to the plain `update_registry` tool and
-    calls it itself the same way it always has, outside this replay
-    mechanism entirely -- only the NPC path needs update_data threaded
-    through its own resolver loop, since nothing else could call it there.
+    generate_terrain/resolve_physics/update_data calls), responder="subagent",
+    `replay` never touched. Player-voiced path always needs a human
+    (responder="human"): the outcome has to be resolved against state as
+    of right now, and only the outer conversation should narrate to a
+    human (see CLAUDE.md). update_data is *not* called here for the
+    player-voiced path -- the connected agent already has direct access
+    to the plain `update_registry` tool and calls it itself; only the NPC
+    path needs update_data threaded through its own resolver loop.
     """
     if spatial.character_interaction_type(registrar, alias) == "npc":
-        # Captured from update_data's own next_due_in argument below -- a typed
-        # tool parameter the model must fill in, more robust against a weak
-        # model's mistakes than asking it to append a specific text line (the
-        # player path's only option, see _NEXT_DUE_IN_INSTRUCTION below).
+        # Captured from update_data's own next_due_in argument -- a typed
+        # tool parameter, more robust than the player path's text-line
+        # convention (see _NEXT_DUE_IN_INSTRUCTION).
         captured: dict[str, float] = {}
 
         async def dispatch(name: str, arguments: dict) -> str:
@@ -837,14 +759,11 @@ async def process_event(
 async def resolve_base_event(alias: str, replay: TurnReplay) -> tuple[str, float]:
     """Resolve a base-module event: what happens now that `alias` is due,
     and how long until it's next due -- inf (never again, see
-    `core.pop_event`) if the answer omits `next_due_in` entirely, unlike
-    the character module's 1-second default. A base event has no standing
-    agenda to keep acting on; it's done unless told otherwise.
+    `core.pop_event`) if the answer omits `next_due_in`, unlike the
+    character module's 1-second default.
 
-    Always responder="host": no player is ever behind a base event
-    (there's no `character.interaction_type` to branch on, since the
-    character module isn't what's driving this popped entity), and
-    there's no subagent persona for one to fall back from either -- see
+    Always responder="host": no player is ever behind a base event, and
+    there's no subagent persona to fall back from either -- see
     `TurnReplay.resolve_preferring_subagent` for the module that has one.
     """
     request = JudgmentRequest(prompt=f"{alias} is due.\n\n{_BASE_NEXT_DUE_IN_INSTRUCTION}")
@@ -876,28 +795,22 @@ async def _run_event_loop(
     clock -> Process event, looping until either a NeedsExternalInput pauses it
     (returned to the caller, not raised further) or the queue empties.
 
-    Branches once, up front, on whether the character module is active
-    (see `story_simulator.config.enabled_modules`) -- `spatial.pop_event`/
-    `process_event` (the character-aware pair) when it is,
-    `core.pop_event`/`process_base_event` (no notion of character at all,
-    what `core.py`'s own docstring promises works with nothing layered on
-    top) when it isn't. One loop either way: this is what makes
-    `advance_simulation` a single tool rather than a character-ful one and
-    a separate base one.
+    Branches once, up front, on whether the character module is active --
+    `spatial.pop_event`/`process_event` (character-aware) when it is,
+    `core.pop_event`/`process_base_event` (no notion of character) when
+    it isn't. One loop either way: this is what makes `advance_simulation`
+    a single tool rather than a character-ful one and a separate base one.
 
-    `resume_alias`/`replay` re-enter that pair for a specific turn already
-    in progress (what `advance_simulation` is resuming, decoded from its
-    `resume_token`) instead of popping fresh -- `replay`'s answers-so-far
-    mean everything up to the newest still-unanswered judgment call
-    replays from cache (see `story_simulator.resolve.TurnReplay`), and if
-    that call now completes, execution falls straight through into the
-    ordinary loop below for whatever's next, rather than returning
-    immediately.
+    `resume_alias`/`replay` re-enter that pair for a turn already in
+    progress (decoded from `advance_simulation`'s `resume_token`) instead
+    of popping fresh -- `replay`'s answers-so-far replay from cache (see
+    `story_simulator.resolve.TurnReplay`), and if the newest call now
+    completes, execution falls through into the ordinary loop for
+    whatever's next.
 
     Returns (alias, replay, prompt, responder): `alias`/`replay`/`responder`
-    are None only when the queue is empty (nothing left to stash);
-    otherwise `alias`/`replay` are exactly what `advance_simulation` needs
-    to encode into a `resume_token` for resuming this same pause point, and
+    are None only when the queue is empty; otherwise `alias`/`replay` are
+    what `advance_simulation` encodes into a `resume_token`, and
     `responder` ("human" or "host") says who it's asking.
     """
     character_enabled = "character" in enabled_modules()
@@ -930,11 +843,10 @@ async def _run_event_loop(
             return alias, replay, e.prompt, e.responder
         # No exception: this turn resolved fully -- loop back and pop
         # whatever's due next. A character turn usually completes here
-        # without ever pausing (responder="subagent" succeeding), but can
-        # pause the same as a player-voiced one if it falls back to
-        # responder="host" (see resolve_preferring_subagent). A base event
-        # always pauses (responder="host" is its only path) unless this
-        # exact call was already answered by a prior replay.
+        # without pausing (responder="subagent" succeeding), but can pause
+        # like a player-voiced one on fallback to responder="host". A base
+        # event always pauses unless this exact call was already answered
+        # by a prior replay.
 
 
 def _encode_token(alias: str, answers: list[str]) -> str:
@@ -943,9 +855,7 @@ def _encode_token(alias: str, answers: list[str]) -> str:
     Self-contained, not a lookup key into server memory -- the host
     round-trips this same string back via `advance_simulation`'s own
     `resume_token` argument, so whichever subprocess decodes it (even a
-    fresh one after a restart) can resume identically. No `_pending_turns`-
-    style session dict needed, matching this module's own
-    `stateless_client` mandate (see the `__iacs__` marker at the top).
+    fresh one after a restart) can resume identically.
     """
     payload = json.dumps({"alias": alias, "answers": answers}).encode()
     return base64.urlsafe_b64encode(payload).decode()
@@ -985,36 +895,33 @@ async def advance_simulation(ctx: Context, resume_token: str | None = None, answ
     """Fast-forward through any due entities, and pause whenever a turn
     needs input only outside story-simulator's own process can supply.
 
-    With the character module enabled (see
-    `story_simulator.config.enabled_modules` -- on by default): the
-    player-voiced character's action or resolution, or (if no subagent key
-    is configured, see `TurnReplay.resolve_preferring_subagent`) an NPC's
-    own decision. With it disabled: the base event-driven simulation (see
-    `core.py`) -- every due entity resolves via responder="host", no
-    character/NPC concept at all.
+    With the character module enabled (on by default): the player-voiced
+    character's action or resolution, or (if no subagent key is
+    configured) an NPC's own decision. With it disabled: the base
+    event-driven simulation -- every due entity resolves via
+    responder="host", no character/NPC concept at all.
 
     Call with neither argument to start (or continue after a prior call
     finished with nothing left scheduled). That, and every later call,
     returns either ``{"status": "done", "narration": ...}`` or
     ``{"status": "input_required", "prompt": ..., "responder": ..., "resume_token": ...}``.
     On the latter, `responder` is "human" (relay `prompt` to the actual
-    player and use their answer) or "host" (decide it yourself, e.g. as
-    that NPC would act, or what a base-module entity that's come due
-    does) -- then call again with that exact `resume_token` and your
-    `answer` -- no separate tool, and no server-side state to lose:
-    `resume_token` carries everything needed to resume, so it survives an
-    MCP disconnect/reconnect between calls too.
+    player and use their answer) or "host" (decide it yourself) -- then
+    call again with that exact `resume_token` and your `answer`. No
+    separate tool, and no server-side state to lose: `resume_token`
+    carries everything needed to resume, surviving an MCP
+    disconnect/reconnect between calls too.
 
     Args:
         resume_token: The `resume_token` from this session's last
             `input_required` result, or omitted to start/continue fresh.
-        answer: The answer to that result's `prompt` -- whatever it was
-            asking for (see `responder`). With the character module, the
-            player's stated action, the resolved outcome of one, or an
-            NPC's decision; with the base module, what happens (optionally
-            ending with a `next_due_in: <seconds>` line -- omit it if
-            there's nothing further to happen). Omit `answer` itself along
-            with `resume_token` on a fresh call.
+        answer: The answer to that result's `prompt` (see `responder`).
+            With the character module, the player's stated action, the
+            resolved outcome of one, or an NPC's decision; with the base
+            module, what happens (optionally ending with a
+            `next_due_in: <seconds>` line -- omit it if there's nothing
+            further to happen). Omit `answer` itself along with
+            `resume_token` on a fresh call.
     """
     __iacs__ = {"solution of": "story_simulator_mission.tool_catalog.advance_simulation"}
     registrar = _get_registrar(ctx)

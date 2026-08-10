@@ -1,16 +1,12 @@
 """Position/distance/perception helpers shared by the MCP server's tools.
 
-The spatial module: optional, layered on top of `story_simulator.core`'s
-base event loop, not part of it -- a world with no position/distance/
-perception concept at all still runs the base simulation fine (see
-`core.py`'s own docstring). Ported from the old per-turn `MapSystem` into
-plain functions any tool can call on demand: there's no more automatic
-per-turn pass recomputing "what's active" for a fixed reference character,
-since there's no more per-turn pipeline at all. `perceive` (in
-`mcp_server.py`) calls these when a caller actually asks who/what a given
-character can perceive, for whichever character it names — there's no
-single privileged "the player" anymore, so every function here takes its
-reference character explicitly.
+Optional, layered on top of `story_simulator.core`'s base event loop --
+a world with no position/distance/perception concept still runs the base
+simulation fine. Plain functions any tool can call on demand, not an
+automatic per-turn pass: `perceive` (mcp_server.py) calls these for
+whichever character it names, since there's no single privileged "the
+player" anymore -- every function here takes its reference character
+explicitly.
 """
 
 from __future__ import annotations
@@ -39,10 +35,8 @@ def entity_position(registrar: Registrar, alias: str) -> tuple[float, float] | N
     """Return the (x, y) position of the entity aliased `alias`, or None if it has none yet.
 
     Resolves `alias` via `Registrar.get_entity_id` (exact hash, else exact
-    alias, else unambiguous path fragment) rather than a literal
-    `entity_id.alias ==` string match, so a dotted path fragment (e.g.
-    "desk" for "journaling_desk.desk") or a raw entity_id hash resolves the
-    same way `same_as`/`entity_ref` fields already do.
+    alias, else unambiguous path fragment), the same way `same_as`/
+    `entity_ref` fields already resolve one.
     """
     entity_id = registrar.get_entity_id(alias)
     if entity_id is None:
@@ -73,10 +67,8 @@ def distance(registrar: Registrar, a: "str | tuple[float, float]", b: "str | tup
 def entities_within(registrar: Registrar, center: "str | tuple[float, float]", radius: float) -> set[str]:
     """Return the aliases of every positioned entity within `radius` of `center`.
 
-    `center` is an entity alias or a bare (x, y) point; when it's an alias,
-    that entity itself is excluded from the result (resolved via
-    `Registrar.get_entity_id`, so a path fragment or raw hash excludes the
-    right entity even when it doesn't match `entity_id.alias` literally).
+    `center` is an entity alias or a bare (x, y) point; when it's an
+    alias, that entity itself is excluded from the result.
     """
     center_id = registrar.get_entity_id(center) if isinstance(center, str) else None
     center_pos = _resolve_point(registrar, center)
@@ -94,12 +86,9 @@ def entities_within(registrar: Registrar, center: "str | tuple[float, float]", r
 def _perceptible_fov_tan() -> float:
     """tan of the angle below which an object blends into the background.
 
-    An object subtending less than `game_config.PERCEPTIBLE_FOV_FRACTION` of
-    a `game_config.FOV_DEGREES`-wide field of view blends into the
-    background rather than staying perceptible -- see
-    `data/living_world/scenario.yaml`'s journaling_desk placement note and
-    `game_config`'s own docstring for the reasoning and the real-world
-    figures it was checked against.
+    An object subtending less than `game_config.PERCEPTIBLE_FOV_FRACTION`
+    of a `game_config.FOV_DEGREES`-wide field of view blends into the
+    background -- see `game_config`'s own docstring for the reasoning.
     """
     __iacs__ = {"solution of": "story_simulator_mission.tool_catalog.perceive"}
     threshold_angle = math.radians(game_config.FOV_DEGREES * game_config.PERCEPTIBLE_FOV_FRACTION)
@@ -117,14 +106,12 @@ def visibility_distance(size: float) -> float:
 def perceptible_entities(registrar: Registrar, center: "str | tuple[float, float]") -> set[str]:
     """Return the aliases of every positioned entity `center` can perceive.
 
-    Unlike `entities_within`'s single flat cutoff for every entity, each
-    candidate's own visibility distance is computed from its `size`
-    component (falling back to `game_config.DEFAULT_ENTITY_SIZE` when it has
-    none) via the same geometry `visibility_distance` uses -- so a mountain
-    stays visible from far further away than a dropped coin, with no extra
-    calculation required of the caller beyond making sure entities carry a
-    `size` component. Done as a single relational query (join + filter) via
-    ibis rather than iterating rows in Python, so the comparison runs in the
+    Unlike `entities_within`'s single flat cutoff, each candidate's own
+    visibility distance is computed from its `size` component (falling
+    back to `game_config.DEFAULT_ENTITY_SIZE`) via the same geometry
+    `visibility_distance` uses -- so a mountain stays visible from far
+    further away than a dropped coin. A single relational query (join +
+    filter) via ibis, not row iteration, so the comparison runs in the
     registry's own backend.
     """
     if "position" not in registrar.registry.component_types:
@@ -134,13 +121,10 @@ def perceptible_entities(registrar: Registrar, center: "str | tuple[float, float
     cx, cy = _resolve_point(registrar, center)
 
     positions = registrar.view_current(["position.x", "position.y"])
-    # Cast to the manifest-declared `size.value: float` type explicitly rather than
-    # trusting whatever dtype `registrar.get` infers: when no entity anywhere in the
-    # save has ever had a `size` component, reopening the save (a plain DB reconnect,
-    # not a manifest re-merge) leaves that schema undeclared, so `get` falls back to
-    # a generic `value: string` empty table -- and `.max()` over a string column
-    # produces a string `size` column that then fails to coalesce with the float
-    # `DEFAULT_ENTITY_SIZE` fallback below.
+    # Cast to `size.value: float` explicitly: when no entity anywhere in
+    # the save has ever had a `size` component, reopening it leaves that
+    # schema undeclared, so `get` falls back to a string table that can't
+    # coalesce with the float `DEFAULT_ENTITY_SIZE` fallback below.
     sizes = (
         registrar.get("size")
         .group_by("entity_id")
@@ -208,10 +192,9 @@ def record_memory(registrar: Registrar, owner_alias: str, perceived_aliases: set
 def entity_descriptions(registrar: Registrar, aliases: set[str]) -> str:
     """Return one `alias: description (state: ...)` line per alias with a `description` or `state`.
 
-    Reads via `safe_view_current`, not `safe_view`: both `description` and
-    `state` are time_dimension'd (see manifest/builtins.yaml and iacs's own
-    `description` component), so this shows an entity's current description/
-    state -- not every historical restatement of it.
+    Reads via `safe_view_current`, not `safe_view`: both fields are
+    time_dimension'd, so this shows an entity's current description/state,
+    not every historical restatement of it.
     """
     if not aliases:
         return ""
@@ -245,10 +228,8 @@ def active_aliases(registrar: Registrar) -> set[str]:
 def character_interaction_type(registrar: Registrar, alias: str) -> str | None:
     """Return `alias`'s `character.interaction_type` ("player"/"npc"), or None if unset.
 
-    Used by `get_character_input`/`resolve_event` (mcp_server.py) to branch
-    between the player-voiced path (responder="human" -- only a real human
-    can answer) and the NPC path (responder="keyed_subagent" -- nobody real
-    is behind it).
+    Used to branch between the player-voiced path (responder="human") and
+    the NPC path (responder="keyed_subagent").
     """
     entity_id = registrar.get_entity_id(alias)
     if entity_id is None:
@@ -262,8 +243,7 @@ def character_interaction_type(registrar: Registrar, alias: str) -> str | None:
 
 # ---------------------------------------------------------------------------
 # The character module's own scheduling: layers "only characters, and a
-# brand-new one sorts first" on top of core.py's plain next_due data --
-# see core.pop_event's docstring for the base version this specializes.
+# brand-new one sorts first" on top of core.py's plain next_due data.
 # ---------------------------------------------------------------------------
 
 
@@ -272,14 +252,11 @@ def next_due_entity(registrar: Registrar) -> str | None:
 
     A character with no `next_due` row yet sorts as due immediately
     (-inf), so a brand-new character always goes before anything already
-    scheduled into the future -- unlike `core.pop_event`'s base rule
-    (nothing is a candidate without an explicit `next_due` row), which
-    this deliberately overrides for characters specifically. Only
-    characters are scheduled -- non-character entities (objects, terrain)
-    don't take turns this way; see `core.pop_event` for those instead. A
-    plain read, not a destructive dequeue: `story_simulator.resolve`'s
-    replay-from-the-top mechanism depends on this being safe to call again
-    and again and get the same answer for the same registry state.
+    scheduled -- overriding `core.pop_event`'s base rule (nothing is a
+    candidate without an explicit `next_due` row) for characters
+    specifically. A plain read, not a destructive dequeue:
+    `story_simulator.resolve`'s replay-from-the-top mechanism depends on
+    calling this again and again being safe.
     """
     if "character" not in registrar.registry.component_types:
         return None
@@ -312,11 +289,10 @@ def narrate_to_character(registrar: Registrar, alias: str) -> str:
     """Narrate to character box: what `alias` can currently perceive, and record it.
 
     Tags each perceived entity `active` (replacing whatever was previously
-    tagged active) and merges them into `alias`'s permanent `memory`, the
-    same way the old per-turn MapSystem did -- just on demand instead of
-    automatically every turn. This is the `perceive` tool's own body,
-    factored out here so `character_communication` (mcp_server.py) can
-    call it directly instead of going through a second MCP round-trip.
+    tagged active) and merges them into `alias`'s permanent `memory`. This
+    is the `perceive` tool's own body, factored out here so
+    `character_communication` (mcp_server.py) can call it directly instead
+    of going through a second MCP round-trip.
     """
     nearby = perceptible_entities(registrar, alias)
     sync_active_tags(registrar, nearby)

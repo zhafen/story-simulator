@@ -57,8 +57,8 @@ section). This module doesn't introduce that requirement, it spends one
 already paid for.
 
 The answers-so-far themselves travel in an opaque token
-(`mcp_server._encode_token`/`_decode_token`), not server-side session
-state -- see `mcp_server.advance_simulation`.
+(`core._encode_token`/`_decode_token`), not server-side session
+state -- see `core.advance_simulation`.
 """
 
 from __future__ import annotations
@@ -93,7 +93,7 @@ class NeedsExternalInput(Exception):
     `responder` is "human" (a real player), "subagent" (the connected agent
     should answer via its own isolated subagent mechanism, not its own
     accumulated context), or "host" (the connected agent decides inline
-    itself) -- carried through to `mcp_server.advance_simulation`'s
+    itself) -- carried through to `core.advance_simulation`'s
     returned result so whichever host answers it knows what's actually
     being asked of it.
     """
@@ -127,7 +127,7 @@ def _frame_for_responder(request: JudgmentRequest, responder: str) -> str:
         # embed it in this rendered prompt with an instruction that the
         # subagent's own response must begin with it verbatim, then have
         # the caller that receives the resumed answer
-        # (mcp_server.advance_simulation) verify the nonce is present and
+        # (core.advance_simulation) verify the nonce is present and
         # strip it before treating the rest as the real answer. On a
         # missing/wrong nonce, don't advance the turn -- raise
         # NeedsExternalInput again with a corrective prompt (same

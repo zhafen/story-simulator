@@ -93,7 +93,7 @@ story_simulator_mission:
         - work_state: done
     single_shared_source_key:
         - description: >
-              Every direct registrar.update() call (mcp_server.py, spatial.py)
+              Every direct registrar.update() call (core.py, spatial.py)
               must merge under the same source key (config.WORLD_FILE_ID), or
               the same alias written from two call sites would hash to two
               different entity_ids and silently fork a duplicate entity instead
@@ -309,7 +309,7 @@ story_simulator_mission:
               Position/state/next_due's ordering field is now `time` (in
               seconds since world creation), sourced from `next_due`'s own
               accumulated next_due_in history rather than the wall clock --
-              see mcp_server._current_world_time/_next_time_stamp and
+              see core._current_world_time/_next_time_stamp and
               single_ordering_vocabulary. Still no day/night cycle or
               calendar; "how long has X been walking" is answerable from
               `time` deltas but nothing surfaces it yet.
@@ -681,7 +681,7 @@ story_simulator_mission:
 # ---------------------------------------------------------------------------
 # What satisfies each done (or partially done) requirement. Most solutions
 # now live as `__iacs__ = {"solution of": ...}` metadata right in the Python
-# docstring of the code that solves them (mcp_server.py, spatial.py,
+# docstring of the code that solves them (core.py, mcp_server.py, spatial.py,
 # config.py) rather than described here at a distance — load
 # load_manifest(["docs/manifest", "story_simulator"]) to see the full,
 # solved requirement tree. Only what has no Python home stays here.

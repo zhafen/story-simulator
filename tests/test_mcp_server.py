@@ -3,10 +3,8 @@ from unittest.mock import MagicMock
 import pytest
 
 from story_simulator.config import LIVING_WORLD_DIR
+from story_simulator.core import _get_registrar, _registrars, _save_dirs
 from story_simulator.mcp_server import (
-    _get_registrar,
-    _registrars,
-    _save_dirs,
     server,
     start_world,
     update_registry,
@@ -156,7 +154,7 @@ class TestRegistryTools:
     def test_get_registrar_errors_before_start_world(self):
         ctx = _make_ctx()
         with pytest.raises(ValueError, match="start_world"):
-            _get_registrar(ctx)
+            _get_registrar(ctx.request_context.session)
 
     def test_view_registry_returns_csv_of_positions(self, tmp_path):
         ctx = _make_ctx()

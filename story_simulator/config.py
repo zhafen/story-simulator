@@ -4,6 +4,10 @@ Every other story_simulator module imports from here rather than
 hardcoding these paths/constants itself.
 """
 
+__iacs__ = {
+    "todo": "Evaluate moving as much config as possible to EC files."
+}
+
 import hashlib
 import os
 import urllib.parse
@@ -68,7 +72,7 @@ def registry_url(save_dir: Path) -> str:
     Scoped to that save's own schema via the `schema` query param.
     Connecting doesn't create the schema -- an unknown schema is silently
     skipped rather than erroring, so callers must create it first (see
-    mcp_server._ensure_postgres_schema).
+    core._ensure_postgres_schema).
 
     Postgres specifically: a live MCP session needs its connection to stay
     open for the whole session while other processes read/write
@@ -103,7 +107,7 @@ _EVENT_RESPONDERS = ("host", "subagent")
 
 
 def event_responder() -> str:
-    """Which responder `mcp_server.resolve_event` should ask each time
+    """Which responder `core.resolve_event` should ask each time
     a base event comes due: "host" (default -- the connected agent decides
     inline, from its own accumulated context) or "subagent" (ask it to
     delegate to its own isolated subagent mechanism instead, e.g. Claude

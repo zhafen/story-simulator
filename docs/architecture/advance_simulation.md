@@ -40,72 +40,91 @@ which traces every resolved `calls` edge outward from one entity instead of
 collapsing the whole project to one node per file:
 
 ```
-uv run --project iacs iacs --manifest story_simulator generate-architecture-diagram --root advance_simulation --output docs/architecture/advance_simulation.md
+uv run --project iacs iacs --manifest story_simulator generate-architecture-diagram --root mcp_server.advance_simulation --output docs/architecture/advance_simulation.md
 ```
 
+`--root advance_simulation` alone is ambiguous now and errors out
+(`resolved to 2 entities`): `mcp_server.py` and `core.py` each have their
+own `advance_simulation` (see below for why), so the root has to spell out
+which one -- `mcp_server.advance_simulation`, the actual MCP entry point.
+
 ```mermaid
-%%{init: {'themeVariables': {'clusterBkg': 'transparent', 'clusterBorder': '#999999'}}}%%
 flowchart TB
     subgraph sg0["core"]
-        n14["merge_yaml_string"]
-        n17["due_by_entity"]
+        n1["advance_simulation"]
+        n6["_encode_token"]
+        n15["merge_yaml_string"]
+        n16["due_by_entity"]
     end
     subgraph sg1["mcp_server"]
         n0["advance_simulation"]
-        n5["_encode_token"]
     end
-    subgraph seq0["advance_simulation"]
-        n2["_get_registrar"]
-        n1["_resolve_args"]
-        n4["_run_event_loop"]
-        n3["_wrap_loop_result"]
-        n2 -.-> n1
-        n1 -.-> n4
-        n4 -.-> n3
+    subgraph seq1["advance_simulation"]
+        n4["_get_registrar"]
+        n5["_resolve_args"]
+        n3["_run_event_loop"]
+        n2["_wrap_loop_result"]
+        n4 -.-> n5
+        n5 -.-> n3
+        n3 -.-> n2
     end
-    subgraph seq2["_run_event_loop"]
-        n6["process_event"]
-        n8["pop_event"]
+    subgraph seq3["_run_event_loop"]
+        n9["pop_event"]
         n7["is_event_valid"]
-        n6 -.-> n8
-        n8 -.-> n7
+        n8["process_event"]
+        n9 -.-> n7
+        n7 -.-> n8
     end
-    subgraph seq3["process_event"]
-        n12["advance_clock"]
-        n11["resolve_event"]
-        n9["predict_next_event"]
-        n10["push_event"]
-        n13["_next_time_stamp"]
-        n12 -.-> n11
-        n11 -.-> n9
-        n9 -.-> n10
-        n10 -.-> n13
+    subgraph seq4["process_event"]
+        n13["advance_clock"]
+        n14["resolve_event"]
+        n11["predict_next_event"]
+        n12["push_event"]
+        n10["_next_time_stamp"]
+        n13 -.-> n14
+        n14 -.-> n11
+        n11 -.-> n12
+        n12 -.-> n10
     end
-    subgraph seq6["resolve_event"]
-        n16["event_responder"]
-        n15["_parse_next_due_in"]
-        n16 -.-> n15
+    subgraph seq8["resolve_event"]
+        n18["event_responder"]
+        n17["_parse_next_due_in"]
+        n18 -.-> n17
     end
-    n0 --> seq0
-    n3 --> n5
-    n4 --> seq2
-    n6 --> seq3
-    n9 --> seq3
-    n10 --> n14
-    n11 --> seq6
-    n12 --> n17
+    n0 --> n1
+    n1 --> seq1
+    n2 --> n6
+    n3 --> seq3
+    n8 --> seq4
+    n11 --> seq4
+    n12 --> n15
+    n13 --> n16
+    n14 --> seq8
     class n0 rootNode
     classDef rootNode fill:#f96,stroke:#333,stroke-width:3px
 ```
 
-The diagram's first line (`%%{init: ...}%%`) makes every box's
-background transparent rather than Mermaid's default solid fill --
-`mcp_server` above spans a bounding box wide enough to sit visually
-behind several unrelated boxes and edges, since its two members
-(`advance_simulation`, `_encode_token`) end up pulled apart once
-everything else claims its own sequence box; a filled box that size
-would hide whatever's underneath it. Solid arrows are calls; the boxed
-groups are new. An entity that itself makes two or more calls gets those
+`mcp_server.advance_simulation` (the root, highlighted, `n0` in `sg1`)
+now makes exactly one call: `core.advance_simulation` (`n1`, a plain
+arrow -- one target, no order to show). That single edge *is* the point:
+`mcp_server.py` used to hold this whole subgraph's worth of
+implementation itself; it's since been moved into `core.py` wholesale
+(session state, Postgres bootstrap, world save I/O, the event loop, the
+lot -- see `core.py`'s own module docstring for why "keep it
+framework-agnostic" stopped being the right call once responders became
+central to how this project works, not an optional layer on top of it),
+leaving `mcp_server.py` as a thin `@server.tool()` wrapper around each
+`core.*` function of the same name. `mcp_server.py` keeps only the
+host-facing tool docstrings and the FastMCP wiring; everything below
+`core.advance_simulation`'s own box is exactly what used to hang directly
+off `mcp_server.advance_simulation` before the move.
+
+Default Mermaid theme -- an earlier version made every box's background
+transparent instead, tried while tracking down the boundary-crossing-edge
+bug covered next, but the transparency itself turned out not to matter
+once that bug's actual cause (an explicit inner `direction` on a sequence
+subgraph) was found and fixed, so it was dropped again. Solid arrows are
+calls; the boxed groups are new. An entity that itself makes two or more calls gets those
 targets pulled into their own box (labeled with just the caller's name),
 chained internally by dotted arrows in the order it actually calls them
 — e.g. `process_event`'s own box traces `advance_clock -.->
@@ -138,17 +157,21 @@ combination that's both correct and legible is outer top-to-bottom with
 no inner override, which is what's here now.
 
 Only the *target* side of a solid arrow resolves to a box's boundary,
-not the source: `_run_event_loop` is itself one of `advance_simulation`'s
-four ordered calls (a `seq0` member) *and* separately owns its own box of
-three calls (`seq2`) -- but the edge for that relationship, `n4 -->
-seq2`, still names `_run_event_loop` as the specific node reaching its
-own box, not some anonymous box-to-box arrow. An *incoming* edge does
-resolve to the box, though (`n0 --> seq0`, not naming a specific
-first-called member): "something outside calls into this whole ordered
-sequence" is exactly what the box exists to show, with no member-level
-provenance lost by landing on the boundary instead.
+not the source: `_run_event_loop` is itself one of `core.advance_simulation`'s
+four ordered calls (a `seq1` member) *and* separately owns its own box of
+three calls (`seq3`) -- but the edge for that relationship, `n3 -->
+seq3`, still names `_run_event_loop` as the specific node reaching its
+own box, not some anonymous box-to-box arrow. Every box-landing edge in
+this particular trace happens to be a caller reaching its own box this
+same way (`n1 --> seq1`, `n8 --> seq4`, `n14 --> seq8` are the others) --
+a genuinely different caller reaching into some other entity's box would
+land on that box's boundary exactly the same way, just without a
+first-called member named either: "something outside calls into this
+whole ordered sequence" is what the box exists to show, with no
+member-level provenance lost by landing on the boundary instead of a
+specific member.
 
-`_resolve_args`, another `seq0` member, has no outgoing edge at all
+`_resolve_args`, another `seq1` member, has no outgoing edge at all
 here -- its only call is `TurnReplay(answers=[...])`, a constructor, and
 iacs's `calls` extraction now excludes those on purpose: a
 call-reachability trace is meant to show callables calling other
@@ -160,6 +183,21 @@ looked exactly like `_resolve_args` calling into `_run_event_loop`
 itself, which it never actually did -- a genuinely misleading edge, an
 artifact of tracing "constructs a `TurnReplay`" as if it were "calls
 behavior," not just a stylistic one.
+
+`_run_event_loop`'s own box (`seq3`) reads `pop_event -.-> is_event_valid
+-.-> process_event` -- the order they actually run in for the common
+case. An earlier version of `_run_event_loop` had two separate
+`process_event` call sites (one on a "resuming an in-progress turn"
+early-return path, one in the main loop), and the early-return one came
+*first* in source, so this box used to read `process_event -.-> pop_event
+-.-> is_event_valid` instead -- accurate to source order (`load_python`'s
+`seq` field, and this box's chain, both go strictly by first occurrence
+in the file, not by which branch actually runs first for a given call),
+but backwards from how a reader would expect the loop to work. Refactored
+to a single call site (`alias` starts as `resume_alias`, and the loop
+only pops/validates a fresh one when `alias` is still `None`) specifically
+so the common case's real order and the source's first-occurrence order
+would agree -- see (b) below for the updated control flow.
 
 The earlier flat version drew every target as its own solid arrow from
 the caller *and* chained them with dotted arrows threading back through
@@ -178,10 +216,10 @@ into a box like this (a 1-target one stays a plain arrow, nothing to
 order) — see those two docstrings.
 
 This traces cleanly end to end today — every real call from
-`advance_simulation` down through `resolve_event`/`predict_next_event`/
-`push_event` shows up, nothing false. It didn't start that way; getting
-here surfaced four real, distinct problems, each fixed rather than
-smoothed over:
+`mcp_server.advance_simulation` down through `resolve_event`/
+`predict_next_event`/`push_event` shows up, nothing false. It didn't
+start that way; getting here surfaced four real, distinct problems, each
+fixed rather than smoothed over:
 
 1. **A false positive in iacs.** `core.pop_event`/`advance_clock` call the
    *Python builtin* `float(...)`, which coincidentally substring/alias-matched
@@ -226,36 +264,41 @@ character-aware branch to return to, kept as its own step for exactly
 that reason -- but that branch moved out to `shelved/` (point 4 above)
 without ever coming back, and a seam nothing branches through anymore is
 just indirection, not a hedge. `_run_event_loop` calls `process_event`
-directly now.)
+directly now. Since then, `_run_event_loop` itself -- along with
+`_resolve_args`/`_wrap_loop_result`/`process_event`/`resolve_event` and
+the rest of what used to hang directly off `mcp_server.advance_simulation`
+-- moved into `core.py`, per the diagram above; `mcp_server.advance_simulation`
+is a one-line wrapper around `core.advance_simulation` now.)
 
 ## (b) Logical flow — drawn by hand
 
 Automating *this* would mean tracing control-flow order (branches, which
 path a condition actually takes, loop bodies) rather than just "what calls
 what" — a materially bigger feature than the reachability graph above, so
-this one's manual for now, per the plan to automate it later.
+this one's manual for now, per the plan to automate it later. Traces
+`core.advance_simulation`'s own control flow specifically --
+`mcp_server.advance_simulation` itself has none worth drawing, just the
+one-line delegation shown in (a).
 
 ```mermaid
 flowchart TD
-    subgraph AS["advance_simulation"]
+    subgraph AS["core.advance_simulation"]
         direction TB
         RA["_resolve_args(resume_token, answer)"] --> REL[_run_event_loop] --> WR[_wrap_loop_result]
     end
 
     subgraph Loop["_run_event_loop"]
         direction TB
-        RESUME{resume_alias given?}
-        RESUME -- yes --> PROC0["process_event(resume_alias, replay)"]
-        PROC0 -- "NeedsExternalInput" --> PAUSE1[["return (alias, replay, prompt, responder)"]]
-        PROC0 -- resolved fully --> L1
-        RESUME -- no --> L1[core.pop_event]
+        START["alias = resume_alias"] --> CHECK{alias is None?}
+        CHECK -- no, resuming --> PROC
+        CHECK -- yes --> L1[core.pop_event]
         L1 --> EMPTY{alias is None?}
         EMPTY -- yes --> DONE[["return (None, None, 'Nothing scheduled.', None)"]]
         EMPTY -- no --> V{is_event_valid?}
         V -- stale --> L1
-        V -- valid --> PROC["process_event(alias, fresh TurnReplay)"]
-        PROC -- "NeedsExternalInput" --> PAUSE2[["return (alias, replay, prompt, responder)"]]
-        PROC -- resolved fully --> L1
+        V -- valid --> FRESH["replay = fresh TurnReplay"] --> PROC["process_event(alias, replay)"]
+        PROC -- "NeedsExternalInput" --> PAUSE[["return (alias, replay, prompt, responder)"]]
+        PROC -- resolved fully --> RESET["alias = None"] --> CHECK
     end
 
     subgraph PE_detail["process_event"]
@@ -265,8 +308,16 @@ flowchart TD
 
     REL -. zooms into .-> Loop
     PROC -. zooms into .-> PE_detail
-    PROC0 -. zooms into .-> PE_detail
 ```
+
+`_run_event_loop` has a single `process_event` call site, not one per
+branch (an earlier version did, and the auto-generated trace in (a) used
+to read confusingly for it -- see the note there, right after
+`_resolve_args`'s own): `alias` starts out as `resume_alias` (possibly
+`None`), and the loop only pops/validates a fresh one when `alias` is
+still `None`, so a resumed turn skips straight to `PROC` while a fresh
+one falls through `pop_event`/`is_event_valid` first, same destination
+either way.
 
 `NeedsExternalInput` (raised by `TurnReplay.resolve` whenever this turn's
 replay has no cached answer yet for that judgment call) is what makes the

@@ -9,10 +9,9 @@ flowchart LR
     n2["mcp_client"]
     n3["mcp_server"]
     n4["resolve"]
-    n3 --> n0
-    n3 -.-> n0
+    n1 --> n0
+    n1 -.-> n0
+    n1 -.-> n4
     n3 --> n1
     n3 -.-> n1
-    n3 --> n4
-    n3 -.-> n4
 ```

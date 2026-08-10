@@ -53,18 +53,22 @@ a brand-new entity's first event and rescheduling after one resolves are
 the same operation, not two.
 
 `story_simulator/core.py` holds this event-loop kernel (`pop_event`,
-`is_event_valid`, `advance_clock`, `predict_next_event`, `push_event`).
-`story_simulator/mcp_server.py`'s `_run_event_loop` drives it, dispatching
-each popped entity straight to `process_event`
-(`resolve_event` asks the connected host what happens via
+`is_event_valid`, `advance_clock`, `predict_next_event`, `push_event`) and,
+since it also absorbed the bulk of what used to be `mcp_server.py`'s own
+implementation (see that module's docstring for why), the loop that drives
+it too: `_run_event_loop` dispatches each popped entity straight to
+`process_event` (`resolve_event` asks the connected host what happens via
 `story_simulator.resolve.TurnReplay`, `responder="host"` by default or
 `"subagent"` if `STORY_SIM_RESPONDER=subagent` is set — see
 `story_simulator.config.event_responder` — then predicts/pushes the
-next event). A `_process_due_entity` seam used to sit between the two,
-kept specifically for a character-aware branch to return to; once that
-branch moved to `shelved/` there was nothing left to dispatch between,
-so the seam was removed too — a future character-aware branch would need
-its own dispatch step again, not assume this one still exists.
+next event). `story_simulator/mcp_server.py` only exposes all of this as
+the `advance_simulation` MCP tool, a thin wrapper around
+`core.advance_simulation`. A `_process_due_entity` seam used to sit
+between `_run_event_loop` and `process_event`, kept specifically for a
+character-aware branch to return to; once that branch moved to
+`shelved/` there was nothing left to dispatch between, so the seam was
+removed too — a future character-aware branch would need its own
+dispatch step again, not assume this one still exists.
 
 `"subagent"` doesn't ask the connected host to decide inline; its prompt
 instead asks the host to answer via its own isolated subagent mechanism
@@ -124,10 +128,12 @@ The diagrams above are hand-drawn, each making one specific point. For a
 diagram of the actual file/call structure — not curated, whatever the
 source currently is — see
 [`docs/architecture/story_simulator.md`](architecture/story_simulator.md)
-(the whole-project overview: one node per file, `mcp_server` as the hub —
-it calls into `config`, `core`, and `resolve`; that's the whole file list
-now that the character/npc/physics/terrain/spatial modules are shelved —
-see below) or
+(the whole-project overview: one node per file, `core` as the hub now --
+it calls into `config` and imports `resolve`, and `mcp_server` calls into
+`core` alone, a thin MCP-protocol wrapper around it (see
+`docs/architecture/advance_simulation.md` for why); that's the whole file
+list now that the character/npc/physics/terrain/spatial modules are
+shelved — see below) or
 [`docs/architecture/advance_simulation.md`](architecture/advance_simulation.md)
 (the same thing traced outward from one specific entry point instead of
 collapsed to the whole-project overview).

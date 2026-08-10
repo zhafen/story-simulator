@@ -57,6 +57,19 @@ loops `select_character`/`narrate_to_character`
 (`story_simulator/mcp_server.py`) until that character's due action is
 fully decided.
 
+> **Known drift, not yet reconciled.** Tracing `advance_simulation` (the
+> actual entry point) function-by-function in
+> [`docs/architecture/advance_simulation.md`](architecture/advance_simulation.md)
+> found this diagram and the paragraph above no longer match the code in a
+> few specific, checkable ways — no loop in `character_communication`,
+> `update_data` isn't a peer step of `resolve_event`, only one of two
+> `_run_event_loop` branches is shown, and the pause/resume (MRTR)
+> mechanism that makes the whole tool work isn't depicted at all. Left
+> as-is here pending a decision on whether the diagram/prose should be
+> corrected to match the code, or whether some of this (the character-
+> communication loop, in particular) was actually meant to work the way
+> it's drawn and the code is what drifted.
+
 ```mermaid
 flowchart TD
     subgraph Turn["Process event"]
@@ -131,4 +144,7 @@ diagram of the actual file/call structure — not curated, whatever the
 source currently is — see
 [`docs/architecture/story_simulator.md`](architecture/story_simulator.md),
 parsed straight out of `story_simulator/`'s source via a new iacs
-capability (not yet merged upstream — see that page for the caveat).
+capability (not yet merged upstream — see that page for the caveat), or
+[`docs/architecture/advance_simulation.md`](architecture/advance_simulation.md)
+for the same thing traced outward from one specific entry point instead of
+collapsed to the whole-project overview.

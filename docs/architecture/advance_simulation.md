@@ -47,13 +47,12 @@ uv run --project iacs iacs --manifest story_simulator generate-architecture-diag
 %%{init: {'themeVariables': {'clusterBkg': 'transparent', 'clusterBorder': '#999999'}}}%%
 flowchart TB
     subgraph sg0["core"]
-        n12["due_by_entity"]
-        n17["merge_yaml_string"]
+        n14["merge_yaml_string"]
+        n17["due_by_entity"]
     end
     subgraph sg1["mcp_server"]
         n0["advance_simulation"]
-        n6["_encode_token"]
-        n11["process_event"]
+        n5["_encode_token"]
     end
     subgraph seq0["advance_simulation"]
         n2["_get_registrar"]
@@ -64,41 +63,37 @@ flowchart TB
         n1 -.-> n4
         n4 -.-> n3
     end
-    subgraph seq3["_run_event_loop"]
-        n7["_process_due_entity"]
-        n10["pop_event"]
-        n8["is_event_valid"]
-        n9["advance_clock"]
-        n5["TurnReplay"]
-        n7 -.-> n10
-        n10 -.-> n8
-        n8 -.-> n9
-        n9 -.-> n5
+    subgraph seq2["_run_event_loop"]
+        n6["process_event"]
+        n8["pop_event"]
+        n7["is_event_valid"]
+        n6 -.-> n8
+        n8 -.-> n7
     end
-    subgraph seq6["process_event"]
-        n15["resolve_event"]
-        n13["predict_event"]
-        n14["push_event"]
-        n16["_next_time_stamp"]
-        n15 -.-> n13
-        n13 -.-> n14
-        n14 -.-> n16
+    subgraph seq3["process_event"]
+        n12["advance_clock"]
+        n11["resolve_event"]
+        n9["predict_next_event"]
+        n10["push_event"]
+        n13["_next_time_stamp"]
+        n12 -.-> n11
+        n11 -.-> n9
+        n9 -.-> n10
+        n10 -.-> n13
     end
-    subgraph seq9["resolve_event"]
-        n19["event_responder"]
-        n18["_parse_next_due_in"]
-        n19 -.-> n18
+    subgraph seq6["resolve_event"]
+        n16["event_responder"]
+        n15["_parse_next_due_in"]
+        n16 -.-> n15
     end
     n0 --> seq0
-    n1 --> seq3
-    n3 --> n6
-    n4 --> seq3
-    n7 --> n11
-    n9 --> n12
+    n3 --> n5
+    n4 --> seq2
+    n6 --> seq3
+    n9 --> seq3
+    n10 --> n14
     n11 --> seq6
-    n13 --> seq3
-    n14 --> n17
-    n15 --> seq9
+    n12 --> n17
     class n0 rootNode
     classDef rootNode fill:#f96,stroke:#333,stroke-width:3px
 ```
@@ -106,16 +101,20 @@ flowchart TB
 The diagram's first line (`%%{init: ...}%%`) makes every box's
 background transparent rather than Mermaid's default solid fill --
 `mcp_server` above spans a bounding box wide enough to sit visually
-behind several unrelated boxes and edges, since its three members
-(`advance_simulation`, `_encode_token`, `process_event`) end up scattered
-far apart once everything else pulls its own nodes into their own
-sequence boxes; a filled box that size would hide whatever's underneath
-it. Solid arrows are calls; the boxed groups are new. An entity that itself
-makes two or more calls gets those targets pulled into their own box
-(labeled with just the caller's name), chained internally by dotted
-arrows in the order it actually calls them — e.g. `process_event`'s own
-box traces `resolve_event -.-> predict_event -.-> push_event -.->
-_next_time_stamp`, exactly its body top to bottom.
+behind several unrelated boxes and edges, since its two members
+(`advance_simulation`, `_encode_token`) end up pulled apart once
+everything else claims its own sequence box; a filled box that size
+would hide whatever's underneath it. Solid arrows are calls; the boxed
+groups are new. An entity that itself makes two or more calls gets those
+targets pulled into their own box (labeled with just the caller's name),
+chained internally by dotted arrows in the order it actually calls them
+— e.g. `process_event`'s own box traces `advance_clock -.->
+resolve_event -.-> predict_next_event -.-> push_event -.->
+_next_time_stamp`, exactly its body top to bottom (`advance_clock` leads
+that chain now -- it used to run once in `_run_event_loop` before
+dispatching to `process_event` at all, moved inside so every write
+`process_event` makes shares one "now" from the very start of handling
+this entity's turn, not a value computed one function up).
 
 The whole diagram runs top-to-bottom, including inside each box, and no
 box declares its own inner direction anymore -- both are load-bearing,
@@ -128,9 +127,11 @@ Mermaid/dagre's compound layout mis-anchors a boundary-crossing edge
 whenever the box it touches declares an explicit inner `direction` at
 all -- matching the outer direction or not -- rendering it as if it
 started from an arbitrary other box member instead of the true source
-(`_process_due_entity --> process_event` above, `n7 --> n11`, was one
-such case, rendering as if it came from wherever in `_run_event_loop`'s
-box happened to align, not from `_process_due_entity` itself). Dropping
+(back when `_process_due_entity` was still its own step here, before it
+was cut out as an unneeded middleman -- see below --
+`_process_due_entity --> process_event` was one such case, rendering as
+if it came from wherever in `_run_event_loop`'s box happened to align,
+not from `_process_due_entity` itself). Dropping
 the inner `direction` line entirely fixes it, but a box then has no
 choice but to inherit the outer diagram's own direction -- so the only
 combination that's both correct and legible is outer top-to-bottom with
@@ -139,26 +140,37 @@ no inner override, which is what's here now.
 Only the *target* side of a solid arrow resolves to a box's boundary,
 not the source: `_run_event_loop` is itself one of `advance_simulation`'s
 four ordered calls (a `seq0` member) *and* separately owns its own box of
-five calls (`seq3`) -- but the edge for that relationship is `n1 -->
-seq3` (from `_resolve_args`, the specific member that actually made the
-call) alongside a second, separate `n4 --> seq3` (`_run_event_loop`
-reaching its own box directly) -- not one box-to-box arrow hiding which
-member did which. An *incoming* edge does resolve to the box, though
-(`n0 --> seq0`, not naming a specific first-called member): "something
-outside calls into this whole ordered sequence" is exactly what the box
-exists to show, with no member-level provenance lost by landing on the
-boundary instead.
+three calls (`seq2`) -- but the edge for that relationship, `n4 -->
+seq2`, still names `_run_event_loop` as the specific node reaching its
+own box, not some anonymous box-to-box arrow. An *incoming* edge does
+resolve to the box, though (`n0 --> seq0`, not naming a specific
+first-called member): "something outside calls into this whole ordered
+sequence" is exactly what the box exists to show, with no member-level
+provenance lost by landing on the boundary instead.
+
+`_resolve_args`, another `seq0` member, has no outgoing edge at all
+here -- its only call is `TurnReplay(answers=[...])`, a constructor, and
+iacs's `calls` extraction now excludes those on purpose: a
+call-reachability trace is meant to show callables calling other
+callables, and instantiating a type isn't that (a PEP 8-capitalized call
+target -- `Foo(...)`, not `foo(...)` -- is treated as a constructor and
+left out). Before this exclusion, `_resolve_args --> seq3` (into
+`_run_event_loop`'s box, back when `TurnReplay` was one of its members)
+looked exactly like `_resolve_args` calling into `_run_event_loop`
+itself, which it never actually did -- a genuinely misleading edge, an
+artifact of tracing "constructs a `TurnReplay`" as if it were "calls
+behavior," not just a stylistic one.
 
 The earlier flat version drew every target as its own solid arrow from
 the caller *and* chained them with dotted arrows threading back through
 the same targets, which just said the same thing twice and read as
 clutter, not structure, once tried against this real trace. The
 tradeoff of the box-based version: a node inside a sequence box no longer
-shows which file it's defined in (`TurnReplay`, born in `resolve.py`,
-sits in `_run_event_loop`'s box here, not a `resolve` file box) —
-accepted deliberately, since decluttering call order mattered more here
-than per-node file attribution, which a full trace lists elsewhere in
-this doc anyway. `load_python` records each `calls` row's
+shows which file it's defined in (`push_event`, born in `core.py`, sits
+in `process_event`'s box here, not a `core` file box) — accepted
+deliberately, since decluttering call order mattered more here than
+per-node file attribution, which a full trace lists elsewhere in this
+doc anyway. `load_python` records each `calls` row's
 first-occurrence order as a `seq` field; `build_call_reachability`/
 `_call_sequences` groups and orders a caller's own resolved targets by
 it, and `render_reachability_mermaid` is what turns a 2+-target sequence
@@ -166,7 +178,7 @@ into a box like this (a 1-target one stays a plain arrow, nothing to
 order) — see those two docstrings.
 
 This traces cleanly end to end today — every real call from
-`advance_simulation` down through `resolve_event`/`predict_event`/
+`advance_simulation` down through `resolve_event`/`predict_next_event`/
 `push_event` shows up, nothing false. It didn't start that way; getting
 here surfaced four real, distinct problems, each fixed rather than
 smoothed over:
@@ -186,7 +198,7 @@ smoothed over:
    (only docstring'd/`__iacs__`-tagged constructs become entities), those
    calls were attributed to nothing and vanished from the graph. **Fixed**
    by extracting it to a top-level function with a docstring,
-   `_process_due_entity` — visible above as `n7`.
+   `_process_due_entity`.
 3. **A self-inflicted near-repeat of #2.** The first name tried for that
    extracted function, `_dispatch_turn`, broke a *different* edge the
    moment it existed: `agents.run_tool_loop`'s generic `dispatch` callback
@@ -208,6 +220,14 @@ smoothed over:
    just fixing that one file — this diagram, `docs/architecture.md`, and
    `docs/architecture/story_simulator.md` all reflect the result.
 
+(Since this list was first written, `_process_due_entity`'s seam itself
+was removed too. It only ever existed as a dispatch point for a
+character-aware branch to return to, kept as its own step for exactly
+that reason -- but that branch moved out to `shelved/` (point 4 above)
+without ever coming back, and a seam nothing branches through anymore is
+just indirection, not a hedge. `_run_event_loop` calls `process_event`
+directly now.)
+
 ## (b) Logical flow — drawn by hand
 
 Automating *this* would mean tracing control-flow order (branches, which
@@ -225,7 +245,7 @@ flowchart TD
     subgraph Loop["_run_event_loop"]
         direction TB
         RESUME{resume_alias given?}
-        RESUME -- yes --> PROC0["_process_due_entity(resume_alias, replay)"]
+        RESUME -- yes --> PROC0["process_event(resume_alias, replay)"]
         PROC0 -- "NeedsExternalInput" --> PAUSE1[["return (alias, replay, prompt, responder)"]]
         PROC0 -- resolved fully --> L1
         RESUME -- no --> L1[core.pop_event]
@@ -233,26 +253,26 @@ flowchart TD
         EMPTY -- yes --> DONE[["return (None, None, 'Nothing scheduled.', None)"]]
         EMPTY -- no --> V{is_event_valid?}
         V -- stale --> L1
-        V -- valid --> ADV[advance_clock] --> PROC["_process_due_entity(alias, fresh TurnReplay)"]
+        V -- valid --> PROC["process_event(alias, fresh TurnReplay)"]
         PROC -- "NeedsExternalInput" --> PAUSE2[["return (alias, replay, prompt, responder)"]]
         PROC -- resolved fully --> L1
     end
 
-    subgraph PBE_detail["_process_due_entity -> process_event"]
+    subgraph PE_detail["process_event"]
         direction TB
-        RBE["resolve_event<br/><small>(may raise NeedsExternalInput,<br/>responder=#quot;host#quot; or #quot;subagent#quot;)</small>"] --> PRED2[predict_event] --> PUSH2[push_event]
+        ADV2[advance_clock] --> RBE["resolve_event<br/><small>(may raise NeedsExternalInput,<br/>responder=#quot;host#quot; or #quot;subagent#quot;)</small>"] --> PRED2[predict_next_event] --> PUSH2[push_event]
     end
 
     REL -. zooms into .-> Loop
-    PROC -. zooms into .-> PBE_detail
-    PROC0 -. zooms into .-> PBE_detail
+    PROC -. zooms into .-> PE_detail
+    PROC0 -. zooms into .-> PE_detail
 ```
 
 `NeedsExternalInput` (raised by `TurnReplay.resolve` whenever this turn's
 replay has no cached answer yet for that judgment call) is what makes the
 pause/resume contract work: it unwinds straight to `_run_event_loop`'s own
-`try`/`except`, skipping over `_process_due_entity`/`process_event`/
-`resolve_event` in between, not caught anywhere along the way.
+`try`/`except`, skipping over `process_event`/`resolve_event` in between,
+not caught anywhere along the way.
 
 ## Comparison against `docs/architecture.md`
 
@@ -271,7 +291,7 @@ fine." With the character-aware branch actually gone from the codebase
 now (not just under-documented), there was no longer a real question of
 whether the diagram or the code was the one that had drifted.
 
-`predict_event`/`push_event` being the same function at both the
+`predict_next_event`/`push_event` being the same function at both the
 reschedule-after-processing call site and, elsewhere, brand-new-entity
 setup — the "same function as" edge in `docs/architecture.md`'s diagram —
 still holds up; that part was accurate all along.

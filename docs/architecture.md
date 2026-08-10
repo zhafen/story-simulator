@@ -47,22 +47,24 @@ Turns aren't a fixed round-robin over every entity — they're scheduled,
 Sedgewick & Wayne style (*Algorithms*, 4th ed., §6.1 Event-Driven
 Simulation): every entity carries its own `next_due` time in the registry,
 and the loop only ever pops whichever entity is due soonest, discarding
-stale events rather than replaying them. `predict_event`/`push_event` is
-the same function at both call sites in the diagram below — scheduling a
-brand-new entity's first event and rescheduling after one resolves are the
-same operation, not two.
+stale events rather than replaying them. `predict_next_event`/`push_event`
+is the same function at both call sites in the diagram below — scheduling
+a brand-new entity's first event and rescheduling after one resolves are
+the same operation, not two.
 
 `story_simulator/core.py` holds this event-loop kernel (`pop_event`,
-`is_event_valid`, `advance_clock`, `predict_event`, `push_event`).
+`is_event_valid`, `advance_clock`, `predict_next_event`, `push_event`).
 `story_simulator/mcp_server.py`'s `_run_event_loop` drives it, dispatching
-each popped entity through `_process_due_entity` to `process_event`
+each popped entity straight to `process_event`
 (`resolve_event` asks the connected host what happens via
 `story_simulator.resolve.TurnReplay`, `responder="host"` by default or
 `"subagent"` if `STORY_SIM_RESPONDER=subagent` is set — see
 `story_simulator.config.event_responder` — then predicts/pushes the
-next event) — kept as its own step specifically as the seam a
-character-aware branch returns to, not because there's anything left to
-branch on right now.
+next event). A `_process_due_entity` seam used to sit between the two,
+kept specifically for a character-aware branch to return to; once that
+branch moved to `shelved/` there was nothing left to dispatch between,
+so the seam was removed too — a future character-aware branch would need
+its own dispatch step again, not assume this one still exists.
 
 `"subagent"` doesn't ask the connected host to decide inline; its prompt
 instead asks the host to answer via its own isolated subagent mechanism
@@ -85,9 +87,9 @@ generated version and how the two were reconciled.
 
 ```mermaid
 flowchart TD
-    subgraph Turn["Process due entity"]
+    subgraph Turn["process_event"]
         direction TB
-        RBE[Resolve event] --> PRED2[Predict event] --> PUSH2[Push event]
+        ADV[Advance clock] --> RBE[Resolve event] --> PRED2[Predict next event] --> PUSH2[Push event]
     end
 
     subgraph Event["Event-driven simulation (Sedgewick & Wayne)"]
@@ -97,8 +99,7 @@ flowchart TD
         I2 --> L1[Pop event]
         L1 --> V{Valid?}
         V -- stale --> L1
-        V -- valid --> ADV[Advance clock]
-        ADV --> PROC[Process due entity]
+        V -- valid --> PROC[Process event]
         PROC --> PRED[Predict next]
         PRED --> PUSH[Push events]
         PUSH --> L1

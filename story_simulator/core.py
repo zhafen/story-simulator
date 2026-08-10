@@ -10,7 +10,7 @@ from __future__ import annotations
 
 __iacs__ = {
     "todo": (
-        "The pop/is_event_valid/advance_clock/predict_event/push_event "
+        "The pop/is_event_valid/advance_clock/predict_next_event/push_event "
         "functions just live loose at module scope here. Evaluate whether "
         "the event loop deserves a more deliberate structure (a class, a "
         "dataclass-based state object, an explicit stage protocol) as more "
@@ -139,8 +139,12 @@ def advance_clock(registrar: Registrar, alias: str) -> float:
     return float(match.iloc[0]["due"]) if not match.empty else 0.0
 
 
-def predict_event(registrar: Registrar, alias: str, next_due_in: float) -> float:
-    """Predict events / Predict next box: compute when `alias` should next be due.
+def predict_next_event(registrar: Registrar, alias: str, next_due_in: float) -> float:
+    """Predict next event / Predict next box: compute when `alias` should next be due.
+
+    Named for what the result actually is -- the event `alias`'s current
+    resolution causes to happen next -- rather than the more generic
+    "predict an event" `predict_event` used to read as.
 
     Serves both call sites (initial per-entity setup and the
     post-`Process event` reschedule) -- same computation either way.

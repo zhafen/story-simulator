@@ -3,7 +3,7 @@
 story-simulator is *just* this server — there is no in-process agent loop
 here. `advance_simulation` runs ONE event-driven simulation loop (one
 function per step -- see `_run_event_loop`), built entirely on
-`story_simulator.core`'s base `pop_event`/`predict_event`/`push_event` --
+`story_simulator.core`'s base `pop_event`/`predict_next_event`/`push_event` --
 see `core.py`'s own docstring for what that guarantees with nothing
 layered on top. The loop fast-forwards through anything it can resolve on
 its own, and pauses whenever a turn needs input only the connected host
@@ -81,7 +81,7 @@ WORLD_HISTORY_DIRNAME = "world_history"
 _registrars: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
 _save_dirs: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
 # World time (seconds since world creation), per session -- set in
-# _run_event_loop from the popped entity's own `next_due` (see
+# process_event from the popped entity's own `next_due` (see
 # core.advance_clock: "the popped entity's own next_due becomes 'now'
 # for this turn") and read by _next_time_stamp for every write anything
 # does while resolving that entity's turn, so "how recent is this row" and
@@ -125,7 +125,7 @@ def _next_time_stamp(ctx: Context) -> float:
     """The world-time stamp for `position.time` and friends: this session's
     current in-fiction "now" (seconds since world creation).
 
-    Reads `_current_world_time`, set in `_run_event_loop` from the popped
+    Reads `_current_world_time`, set in `process_event` from the popped
     entity's own `next_due` (see `core.advance_clock`) -- every write made
     while resolving one entity's turn shares that same "now", the same
     world-time axis `next_due.value` itself uses, rather than a wall-clock
@@ -552,36 +552,41 @@ async def resolve_event(alias: str, replay: TurnReplay) -> tuple[str, float]:
 
 
 async def process_event(registrar: Registrar, alias: str, replay: TurnReplay, ctx: Context) -> str:
-    """Base module's process event box: Resolve event -> Predict event ->
-    Push event -- no character-communication step first: a base event has
-    no agency to ask "what do you do" of, it just resolves.
+    """Base module's process event box: Advance clock -> Resolve event ->
+    Predict next event -> Push event -- no character-communication step
+    first: a base event has no agency to ask "what do you do" of, it just
+    resolves.
     """
+    _current_world_time[ctx.request_context.session] = core.advance_clock(registrar, alias)
     narration, next_due_in = await resolve_event(alias, replay)
-    due_at = core.predict_event(registrar, alias, next_due_in)
+    due_at = core.predict_next_event(registrar, alias, next_due_in)
     core.push_event(registrar, alias, due_at, time=_next_time_stamp(ctx))
     return narration
 
 
 async def _run_event_loop(
     registrar: Registrar,
-    save_dir: Path,
     ctx: Context,
     *,
     resume_alias: str | None = None,
     replay: TurnReplay | None = None,
 ) -> tuple[str | None, TurnReplay | None, str, str | None]:
-    """The Event-driven simulation subgraph itself: Pop event -> Valid? -> Advance
-    clock -> Process event, looping until either a NeedsExternalInput pauses it
-    (returned to the caller, not raised further) or the queue empties.
+    """The Event-driven simulation subgraph itself: Pop event -> Valid? ->
+    Process event (which itself advances the clock first), looping until
+    either a NeedsExternalInput pauses it (returned to the caller, not
+    raised further) or the queue empties.
 
     Always the base path today (`core.pop_event`/`process_event`, no
     notion of character at all, what `core.py`'s own docstring promises
-    works with nothing layered on top) -- `_process_due_entity` used to
-    also branch to a character-aware pair (`spatial.pop_event`/
-    `process_event`) depending on `story_simulator.config.enabled_modules`,
-    moved out to `shelved/` (see `docs/architecture.md`) pending a rewrite.
-    `_process_due_entity` is kept as its own step (rather than inlined
-    here) specifically as the seam that branching returns to.
+    works with nothing layered on top) -- this loop used to dispatch
+    through its own `_process_due_entity` seam so a character-aware pair
+    (`spatial.pop_event`/`process_event`) could branch in depending on
+    `story_simulator.config.enabled_modules`; that branch moved out to
+    `shelved/` (see `docs/architecture.md`) pending a rewrite, and with it
+    gone there was no longer a second destination for the seam to pick
+    between, so it called `process_event` directly instead. A future
+    character-aware branch would need to reintroduce its own dispatch step
+    rather than assume this one still exists.
 
     `resume_alias`/`replay` re-enter the loop for a specific turn already
     in progress (what `advance_simulation` is resuming, decoded from its
@@ -602,7 +607,7 @@ async def _run_event_loop(
     if resume_alias is not None:
         assert replay is not None
         try:
-            await _process_due_entity(registrar, save_dir, resume_alias, replay, ctx)
+            await process_event(registrar, resume_alias, replay, ctx)
         except NeedsExternalInput as e:
             return resume_alias, replay, e.prompt, e.responder
         # No exception: this turn finished. Fall through to the ordinary
@@ -614,10 +619,9 @@ async def _run_event_loop(
             return None, None, "Nothing scheduled.", None
         if not core.is_event_valid(registrar, alias):
             continue
-        _current_world_time[ctx.request_context.session] = core.advance_clock(registrar, alias)
         replay = TurnReplay(answers=[])
         try:
-            await _process_due_entity(registrar, save_dir, alias, replay, ctx)
+            await process_event(registrar, alias, replay, ctx)
         except NeedsExternalInput as e:
             return alias, replay, e.prompt, e.responder
         # No exception: this turn resolved fully -- loop back and pop
@@ -625,26 +629,6 @@ async def _run_event_loop(
         # or "subagent", per config.event_responder() -- never
         # "human", see resolve_event) unless this exact call was
         # already answered by a prior replay.
-
-
-async def _process_due_entity(
-    registrar: Registrar,
-    save_dir: Path,
-    alias: str,
-    replay: TurnReplay,
-    ctx: Context,
-) -> str:
-    """Dispatch one popped entity's turn to the base module's own process-event box.
-
-    A top-level function rather than a closure nested inside
-    `_run_event_loop` precisely so it becomes its own entity once iacs
-    parses this file -- a nested, undocumented closure made
-    `_run_event_loop`'s real dispatch invisible to iacs's parsed call graph
-    (see `docs/architecture/advance_simulation.md`). Kept as its own
-    single-branch step even now that there's only one module to dispatch
-    to, since it's the seam a character-aware branch returns to.
-    """
-    return await process_event(registrar, alias, replay, ctx)
 
 
 def _encode_token(alias: str, answers: list[str]) -> str:
@@ -724,10 +708,9 @@ async def advance_simulation(ctx: Context, resume_token: str | None = None, answ
     """
     __iacs__ = {"solution of": "story_simulator_mission.tool_catalog.advance_simulation"}
     registrar = _get_registrar(ctx)
-    save_dir = _get_save_dir(ctx)
     resume_alias, replay = _resolve_args(resume_token, answer)
     alias, replay, prompt, responder = await _run_event_loop(
-        registrar, save_dir, ctx, resume_alias=resume_alias, replay=replay
+        registrar, ctx, resume_alias=resume_alias, replay=replay
     )
     return _wrap_loop_result(alias, replay, prompt, responder)
 

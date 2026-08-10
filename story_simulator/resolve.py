@@ -1,11 +1,11 @@
-"""The judgment resolver: `resolve_base_event`'s way of getting a real
+"""The judgment resolver: `resolve_event`'s way of getting a real
 decision, regardless of who ends up answering it.
 
 Same request shape (`JudgmentRequest`) at every call site, dispatched by
 `responder`:
 
 - "host" -- the connected agent decides inline, from its own accumulated
-  context. `resolve_base_event`'s default (see
+  context. `resolve_event`'s default (see
   `story_simulator.config.base_event_responder`).
 - "subagent" -- also the connected agent, but asked (via `_frame_for_responder`)
   to answer through its own isolated subagent mechanism (e.g. Claude Code's

@@ -28,7 +28,7 @@ rewrite -- not deleted, and easy to pull back in piece by piece; see git
 history for exactly what those looked like at removal.
 
 The judgment resolver behind all of this (`story_simulator.resolve`) is
-what lets `resolve_base_event` reach a real decision from any nesting
+what lets `resolve_event` reach a real decision from any nesting
 depth without every intervening function having to be a generator -- see
 that module's docstring.
 
@@ -100,7 +100,7 @@ _last_time_stamp: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
 _TIE_EPSILON = 1
 
 # It's how a base-module event tells the loop it's done (see
-# resolve_base_event's default=inf) when the next_due_in line is omitted,
+# resolve_event's default=inf) when the next_due_in line is omitted,
 # not a mistake to fall back from with a hardcoded interval.
 _BASE_NEXT_DUE_IN_INSTRUCTION = (
     "If there's more to happen, end your answer with a line formatted "
@@ -514,7 +514,7 @@ def update_registry(yaml_string: str, ctx: Context) -> str:
 
 
 def _parse_next_due_in(answer: str, default: float = 1.0) -> tuple[str, float]:
-    """Split a resolve_base_event answer into (narration, next_due_in).
+    """Split a resolve_event answer into (narration, next_due_in).
 
     Looks for a trailing `next_due_in: <seconds>` line (see
     `_BASE_NEXT_DUE_IN_INSTRUCTION`) and falls back to `default` rather
@@ -531,7 +531,7 @@ def _parse_next_due_in(answer: str, default: float = 1.0) -> tuple[str, float]:
     return answer.strip(), default
 
 
-async def resolve_base_event(alias: str, replay: TurnReplay) -> tuple[str, float]:
+async def resolve_event(alias: str, replay: TurnReplay) -> tuple[str, float]:
     """Resolve a base-module event: what happens now that `alias` is due,
     and how long until it's next due -- inf (never again, see
     `core.pop_event`) if the answer omits `next_due_in` entirely, unlike
@@ -556,7 +556,7 @@ async def process_base_event(registrar: Registrar, alias: str, replay: TurnRepla
     Push event -- no character-communication step first: a base event has
     no agency to ask "what do you do" of, it just resolves.
     """
-    narration, next_due_in = await resolve_base_event(alias, replay)
+    narration, next_due_in = await resolve_event(alias, replay)
     due_at = core.predict_event(registrar, alias, next_due_in)
     core.push_event(registrar, alias, due_at, time=_next_time_stamp(ctx))
     return narration
@@ -597,7 +597,7 @@ async def _run_event_loop(
     otherwise `alias`/`replay` are exactly what `advance_simulation` needs
     to encode into a `resume_token` for resuming this same pause point, and
     `responder` ("host" or "subagent", never "human" -- see
-    `resolve_base_event`) says who it's asking.
+    `resolve_event`) says who it's asking.
     """
     if resume_alias is not None:
         assert replay is not None
@@ -623,7 +623,7 @@ async def _run_event_loop(
         # No exception: this turn resolved fully -- loop back and pop
         # whatever's due next. A base event always pauses (responder="host"
         # or "subagent", per config.base_event_responder() -- never
-        # "human", see resolve_base_event) unless this exact call was
+        # "human", see resolve_event) unless this exact call was
         # already answered by a prior replay.
 
 

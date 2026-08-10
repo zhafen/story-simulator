@@ -56,7 +56,7 @@ same operation, not two.
 `is_event_valid`, `advance_clock`, `predict_event`, `push_event`).
 `story_simulator/mcp_server.py`'s `_run_event_loop` drives it, dispatching
 each popped entity through `_process_due_entity` to `process_base_event`
-(`resolve_base_event` asks the connected host what happens via
+(`resolve_event` asks the connected host what happens via
 `story_simulator.resolve.TurnReplay`, `responder="host"` by default or
 `"subagent"` if `STORY_SIM_BASE_RESPONDER=subagent` is set — see
 `story_simulator.config.base_event_responder` — then predicts/pushes the
@@ -71,7 +71,7 @@ call the same context isolation a real subagent call would, without
 story-simulator needing an API key of its own. This is the piece of
 [PR #42](https://github.com/zhafen/story-simulator/pull/42) ("Rename
 responders and add isolated subagent delegation option") that PR itself
-never wired up — even there, `resolve_base_event` stayed hardcoded to
+never wired up — even there, `resolve_event` stayed hardcoded to
 `"host"`, "subagent" existed only as unused infrastructure. It's opt-in
 and defaults to `"host"` (today's only behavior, unchanged) rather than
 forced on, since nothing verifies a `"subagent"`-labeled answer actually

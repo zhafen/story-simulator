@@ -46,7 +46,7 @@ uv run --project iacs iacs --manifest story_simulator generate-architecture-diag
 ```mermaid
 flowchart TD
     subgraph sg0["config"]
-        n18["base_event_responder"]
+        n19["base_event_responder"]
     end
     subgraph sg1["core"]
         n8["is_event_valid"]
@@ -54,8 +54,8 @@ flowchart TD
         n10["pop_event"]
         n12["due_by_entity"]
         n13["predict_event"]
-        n15["push_event"]
-        n19["merge_yaml_string"]
+        n14["push_event"]
+        n17["merge_yaml_string"]
     end
     subgraph sg2["mcp_server"]
         n0["advance_simulation"]
@@ -66,9 +66,9 @@ flowchart TD
         n6["_encode_token"]
         n7["_process_due_entity"]
         n11["process_base_event"]
-        n14["resolve_base_event"]
+        n15["resolve_event"]
         n16["_next_time_stamp"]
-        n17["_parse_next_due_in"]
+        n18["_parse_next_due_in"]
     end
     subgraph sg3["resolve"]
         n5["TurnReplay"]
@@ -92,14 +92,14 @@ flowchart TD
     n11 --> n16
     n13 --> n9
     n14 --> n17
-    n14 --> n18
+    n15 --> n18
     n15 --> n19
     class n0 rootNode
     classDef rootNode fill:#f96,stroke:#333,stroke-width:3px
 ```
 
 This traces cleanly end to end today — every real call from
-`advance_simulation` down through `resolve_base_event`/`predict_event`/
+`advance_simulation` down through `resolve_event`/`predict_event`/
 `push_event` shows up, nothing false. It didn't start that way; getting
 here surfaced four real, distinct problems, each fixed rather than
 smoothed over:
@@ -171,7 +171,7 @@ flowchart TD
 
     subgraph PBE_detail["_process_due_entity -> process_base_event"]
         direction TB
-        RBE["resolve_base_event<br/><small>(may raise NeedsExternalInput,<br/>responder=\"host\" or \"subagent\")</small>"] --> PRED2[predict_event] --> PUSH2[push_event]
+        RBE["resolve_event<br/><small>(may raise NeedsExternalInput,<br/>responder=\"host\" or \"subagent\")</small>"] --> PRED2[predict_event] --> PUSH2[push_event]
     end
 
     REL -. zooms into .-> Loop
@@ -183,7 +183,7 @@ flowchart TD
 replay has no cached answer yet for that judgment call) is what makes the
 pause/resume contract work: it unwinds straight to `_run_event_loop`'s own
 `try`/`except`, skipping over `_process_due_entity`/`process_base_event`/
-`resolve_base_event` in between, not caught anywhere along the way.
+`resolve_event` in between, not caught anywhere along the way.
 
 ## Comparison against `docs/architecture.md`
 

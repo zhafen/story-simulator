@@ -126,7 +126,7 @@ _BASE_EVENT_RESPONDERS = ("host", "subagent")
 
 
 def base_event_responder() -> str:
-    """Which responder `mcp_server.resolve_base_event` should ask each time
+    """Which responder `mcp_server.resolve_event` should ask each time
     a base event comes due: "host" (default -- the connected agent decides
     inline, from its own accumulated context) or "subagent" (ask it to
     delegate to its own isolated subagent mechanism instead, e.g. Claude

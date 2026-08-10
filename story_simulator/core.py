@@ -114,7 +114,7 @@ def pop_event(registrar: Registrar) -> str | None:
     schedule once something explicitly pushes it there (see `push_event`).
     An entity most recently pushed at `due_at=inf` is treated as
     permanently done, filtered out the same way -- see
-    `mcp_server.resolve_base_event`.
+    `mcp_server.resolve_event`.
 
     A plain read, not a destructive dequeue: `story_simulator.resolve`'s
     replay-from-the-top mechanism depends on this being safe to call again

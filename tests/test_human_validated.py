@@ -27,6 +27,7 @@ import pytest
 
 from iacs.registrar import Registrar
 from story_simulator.config import registry_schema_name, registry_url, resolve_database_dsn
+from story_simulator.core import safe_view_current
 
 REPO_ROOT = Path(__file__).parent.parent
 PARKING_SCENARIO_DIR = REPO_ROOT / "tests" / "data" / "scenarios" / "parking"
@@ -107,22 +108,19 @@ def _load_registrar(save_dir: Path, narration: str) -> Registrar:
     return Registrar.load(registry_url(save_dir))
 
 
-def _distance(registrar: Registrar, alias_a: str, alias_b: str) -> float:
-    """Euclidean distance between two aliased entities' current positions.
+def _current_state(registrar: Registrar, alias: str) -> str | None:
+    """The current `state.value` recorded for an aliased entity, or None if it has none yet.
 
-    A small local stand-in for the character module's own
-    `story_simulator.spatial.distance` (now shelved along with the rest of
-    that file) -- this test needs nothing fancier than a flat (x, y) read.
+    `state` is time_dimension'd (an entity can accumulate several state
+    rows over a turn), so this reads the current one via `view_current`
+    the same way the rest of story-simulator does, rather than the first
+    or last row in write order.
     """
-    positions = registrar.view_current(["position.x", "position.y"]).execute()
-
-    def _point(alias: str) -> tuple[float, float]:
-        row = positions[positions["entity_id.alias"] == alias].iloc[0]
-        return float(row["position.x"]), float(row["position.y"])
-
-    ax, ay = _point(alias_a)
-    bx, by = _point(alias_b)
-    return ((ax - bx) ** 2 + (ay - by) ** 2) ** 0.5
+    df = safe_view_current(registrar, "state.value")
+    if df is None:
+        return None
+    match = df[df["entity_id.alias"] == alias]
+    return None if match.empty else str(match.iloc[-1]["state.value"])
 
 
 @pytest.mark.live
@@ -139,28 +137,33 @@ def test_car_parking_reasoning(tmp_path):
     correctly divide up a two-spot parking lot on a first-come-first-served basis.
 
     This is a human-validated check on "reasoning, not physics" (see CLAUDE.md's
-    component-schema section and the project's general design goals): nothing
-    about the scenario needs distance, speed, or any other physical-world fact
-    the sim would have to invent or look up -- every number the puzzle needs
-    (each car's start delay and trip duration) is stated directly in that
-    car's own `description` (see tests/data/scenarios/parking/scenario.yaml).
-    What's actually hard is the arithmetic and the resource bookkeeping: Car A
-    starts driving first but has the longest trip and so actually arrives
-    last; Car B starts second with a slightly longer trip than Car C but,
-    because it left earlier by more than that difference, still arrives
-    first; Car C starts last with the shortest trip and arrives second.
-    First-come-first-served over exactly two dedicated spots then means Car B
-    takes parking_spot_1, Car C takes parking_spot_2, and Car A -- last to
-    arrive -- has to park on the street.
+    component-schema section and the project's general design goals): the
+    scenario has no `position` component anywhere in it, deliberately --
+    every number the puzzle needs (each car's starts_at/duration) lives as
+    structured `drive` facts on that car's own car_X_drive entity (see
+    tests/data/scenarios/parking/scenario.yaml), discoverable in one shot
+    via view_registry("drive"), with no distance/speed/physics involved at
+    all. What's actually hard is the arithmetic and the resource
+    bookkeeping: Car A starts driving first but has the longest trip and so
+    actually arrives last; Car B starts second with a slightly longer trip
+    than Car C but, because it left earlier by more than that difference,
+    still arrives first; Car C starts last with the shortest trip and
+    arrives second. First-come-first-served over exactly two dedicated
+    spots then means Car B takes parking_spot_1, Car C takes
+    parking_spot_2, and Car A -- last to arrive -- has to park on the
+    street. The scenario's own restaurant description spells out the
+    recording convention: each car's outcome should land in that car's own
+    `state` as exactly "parked in parking_spot_1", "parked in
+    parking_spot_2", or "parked on street".
 
     Deliberately structured so naive shortcuts give the wrong answer: "first
     to start goes first" and "shortest trip wins" both misorder these three,
-    and the scenario's own `next_due` seeding (see that file's docstring)
-    even makes advance_simulation *pop* the cars in start order (A, B, C) --
-    matching neither the real arrival order nor the parking outcome -- so
-    getting this right takes actually reasoning through the elapsed-time
-    arithmetic each car's own description gives it, not just following
-    processing order.
+    and the scenario's own `next_due` seeding (matching each car's drive's
+    own starts_at -- see that file's docstring) even makes advance_simulation
+    *pop* the cars in start order (A, B, C) -- matching neither the real
+    arrival order nor the parking outcome -- so getting this right takes
+    actually reasoning through the elapsed-time arithmetic in
+    view_registry("drive")'s results, not just following processing order.
 
     No character/NPC module is involved (see this file's own module
     docstring): every entity is a plain object, and each of the three "X is
@@ -172,7 +175,6 @@ def test_car_parking_reasoning(tmp_path):
     nested tool call within that single turn, not a separate user message.
     A generous timeout accounts for three such rounds.
     """
-    ROUGHLY_THERE = 15.0
     save_dir = tmp_path / "test_save"
 
     narration = _run_headless_turn(
@@ -190,16 +192,16 @@ def test_car_parking_reasoning(tmp_path):
     )
 
     r = _load_registrar(save_dir, narration)
-    assert _distance(r, "car_a", "street") < ROUGHLY_THERE, (
+    assert _current_state(r, "car_a") == "parked on street", (
         "Car A starts first but has the longest trip, so it should actually "
         f"arrive last and end up parked on the street -- narration: {narration!r}"
     )
-    assert _distance(r, "car_b", "parking_spot_1") < ROUGHLY_THERE, (
+    assert _current_state(r, "car_b") == "parked in parking_spot_1", (
         "Car B's trip is slightly longer than Car C's, but it starts earlier by "
         "more than that difference, so it should still arrive first and take "
         f"the first parking spot -- narration: {narration!r}"
     )
-    assert _distance(r, "car_c", "parking_spot_2") < ROUGHLY_THERE, (
+    assert _current_state(r, "car_c") == "parked in parking_spot_2", (
         "Car C starts last with the shortest trip and should arrive second, "
         f"taking the remaining parking spot -- narration: {narration!r}"
     )

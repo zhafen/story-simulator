@@ -45,29 +45,32 @@ uv run --project iacs iacs --manifest story_simulator generate-architecture-diag
 
 ```mermaid
 flowchart TD
-    subgraph sg0["core"]
-        n7["is_event_valid"]
-        n8["advance_clock"]
-        n9["pop_event"]
-        n12["due_by_entity"]
-        n15["predict_event"]
-        n16["push_event"]
-        n18["merge_yaml_string"]
+    subgraph sg0["config"]
+        n18["base_event_responder"]
     end
-    subgraph sg1["mcp_server"]
+    subgraph sg1["core"]
+        n8["is_event_valid"]
+        n9["advance_clock"]
+        n10["pop_event"]
+        n12["due_by_entity"]
+        n13["predict_event"]
+        n15["push_event"]
+        n19["merge_yaml_string"]
+    end
+    subgraph sg2["mcp_server"]
         n0["advance_simulation"]
-        n1["_run_event_loop"]
-        n2["_resolve_args"]
+        n1["_resolve_args"]
+        n2["_get_registrar"]
         n3["_wrap_loop_result"]
-        n4["_get_registrar"]
-        n6["_process_due_entity"]
-        n10["_encode_token"]
+        n4["_run_event_loop"]
+        n6["_encode_token"]
+        n7["_process_due_entity"]
         n11["process_base_event"]
-        n13["_next_time_stamp"]
         n14["resolve_base_event"]
+        n16["_next_time_stamp"]
         n17["_parse_next_due_in"]
     end
-    subgraph sg2["resolve"]
+    subgraph sg3["resolve"]
         n5["TurnReplay"]
     end
     n0 --> n1
@@ -75,21 +78,22 @@ flowchart TD
     n0 --> n3
     n0 --> n4
     n1 --> n5
-    n1 --> n6
-    n1 --> n7
-    n1 --> n8
-    n1 --> n9
-    n2 --> n5
-    n3 --> n10
-    n6 --> n11
-    n8 --> n12
+    n3 --> n6
+    n4 --> n5
+    n4 --> n7
+    n4 --> n8
+    n4 --> n9
+    n4 --> n10
+    n7 --> n11
+    n9 --> n12
     n11 --> n13
     n11 --> n14
     n11 --> n15
     n11 --> n16
+    n13 --> n9
     n14 --> n17
-    n15 --> n8
-    n16 --> n18
+    n14 --> n18
+    n15 --> n19
     class n0 rootNode
     classDef rootNode fill:#f96,stroke:#333,stroke-width:3px
 ```
@@ -167,7 +171,7 @@ flowchart TD
 
     subgraph PBE_detail["_process_due_entity -> process_base_event"]
         direction TB
-        RBE["resolve_base_event<br/><small>(may raise NeedsExternalInput,<br/>responder=\"host\" always today)</small>"] --> PRED2[predict_event] --> PUSH2[push_event]
+        RBE["resolve_base_event<br/><small>(may raise NeedsExternalInput,<br/>responder=\"host\" or \"subagent\")</small>"] --> PRED2[predict_event] --> PUSH2[push_event]
     end
 
     REL -. zooms into .-> Loop

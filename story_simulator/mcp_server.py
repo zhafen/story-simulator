@@ -9,9 +9,12 @@ layered on top. The loop fast-forwards through anything it can resolve on
 its own, and pauses whenever a turn needs input only the connected host
 can supply -- an entity's own resolution -- handing control back to
 whatever MCP-aware host is connected (a human's chat agent, an automated
-harness, ...). That host decides what happens (see `advance_simulation`'s
-own `responder` field, always "host" today), then calls `advance_simulation`
-again with its decision (recorded via `update_registry`) and
+harness, ...). That host decides what happens itself (`responder="host"`,
+the default) or is asked to delegate to its own isolated subagent
+mechanism instead (`responder="subagent"`, opt in via
+STORY_SIM_BASE_RESPONDER -- see `story_simulator.config.base_event_responder`)
+-- see `advance_simulation`'s own `responder` field -- then calls
+`advance_simulation` again with its decision (recorded via `update_registry`) and
 the `resume_token` it was given, to resume the loop -- Multi Round-Trip
 Requests (MRTR, MCP spec 2026-07-28), not a second dedicated tool.
 `view_registry`/`view_entity`/`update_registry` remain directly callable
@@ -58,6 +61,7 @@ from story_simulator.config import (
     DEFAULT_WORLD_DIR,
     MANIFEST_DIR,
     WORLD_FILE_ID,
+    base_event_responder,
     registry_schema_name,
     registry_url,
     resolve_database_dsn,
@@ -293,13 +297,17 @@ server = FastMCP(
         "own next_due) rather than a fixed per-turn loop.\n\n"
         "Call start_world once, at the beginning, to open or seed a save. Then call "
         "advance_simulation with no arguments: it pauses on every due entity in turn, "
-        "returning {\"status\": \"input_required\", \"prompt\": ..., \"responder\": \"host\", "
-        "\"resume_token\": ...} -- decide what happens yourself, then call advance_simulation "
-        "again with that exact resume_token and your answer to resume the loop. State the "
-        "outcome and end your answer with a line formatted exactly as `next_due_in: <seconds>` "
-        "if this entity has more to do, or omit that line if it's finished. It will keep "
-        "asking (a new resume_token each time -- always use the one from the latest result) "
-        "until either it needs you once more or the schedule empties (\"status\": \"done\").\n\n"
+        "returning {\"status\": \"input_required\", \"prompt\": ..., \"responder\": \"host\" or "
+        "\"subagent\", \"resume_token\": ...}. If responder is \"host\", decide what happens "
+        "yourself, from your own context. If it's \"subagent\", the prompt itself asks you to "
+        "delegate to your own isolated subagent mechanism (e.g. an Agent/Task tool) instead of "
+        "answering inline -- follow that instruction rather than answering directly. Either "
+        "way, call advance_simulation again with that exact resume_token and the answer to "
+        "resume the loop. State the outcome and end your answer with a line formatted exactly "
+        "as `next_due_in: <seconds>` if this entity has more to do, or omit that line if it's "
+        "finished. It will keep asking (a new resume_token each time -- always use the one "
+        "from the latest result) until either it needs you once more or the schedule empties "
+        "(\"status\": \"done\").\n\n"
         "Record what happened yourself via update_registry (new positions, new entities, "
         "changed details — reusing existing aliases; attach new data to an existing entity "
         "via a `same_as` component rather than creating a disconnected duplicate). "
@@ -530,14 +538,16 @@ async def resolve_base_event(alias: str, replay: TurnReplay) -> tuple[str, float
     the character module's 1-second default. A base event has no standing
     agenda to keep acting on; it's done unless told otherwise.
 
-    Always responder="host": no player is ever behind a base event
-    (there's no `character.interaction_type` to branch on, since the
-    character module isn't what's driving this popped entity), and
-    there's no subagent persona for one to fall back from either -- see
-    `TurnReplay.resolve_preferring_subagent` for the module that has one.
+    Never responder="human": no player is ever behind a base event (there's
+    no `character.interaction_type` to branch on, since the character
+    module isn't what's driving this popped entity). Between "host" and
+    "subagent" -- see `story_simulator.resolve`'s module docstring for what
+    "subagent" buys -- `config.base_event_responder()` decides, defaulting
+    to "host" so nothing changes unless a deployment opts in via
+    STORY_SIM_BASE_RESPONDER.
     """
     request = JudgmentRequest(prompt=f"{alias} is due.\n\n{_BASE_NEXT_DUE_IN_INSTRUCTION}")
-    answer = await replay.resolve(request, responder="host")
+    answer = await replay.resolve(request, responder=base_event_responder())
     return _parse_next_due_in(answer, default=float("inf"))
 
 
@@ -586,7 +596,8 @@ async def _run_event_loop(
     are None only when the queue is empty (nothing left to stash);
     otherwise `alias`/`replay` are exactly what `advance_simulation` needs
     to encode into a `resume_token` for resuming this same pause point, and
-    `responder` (always "host" today) says who it's asking.
+    `responder` ("host" or "subagent", never "human" -- see
+    `resolve_base_event`) says who it's asking.
     """
     if resume_alias is not None:
         assert replay is not None
@@ -611,8 +622,9 @@ async def _run_event_loop(
             return alias, replay, e.prompt, e.responder
         # No exception: this turn resolved fully -- loop back and pop
         # whatever's due next. A base event always pauses (responder="host"
-        # is its only path) unless this exact call was already answered by
-        # a prior replay.
+        # or "subagent", per config.base_event_responder() -- never
+        # "human", see resolve_base_event) unless this exact call was
+        # already answered by a prior replay.
 
 
 async def _process_due_entity(
@@ -684,7 +696,8 @@ async def advance_simulation(ctx: Context, resume_token: str | None = None, answ
     needs input only outside story-simulator's own process can supply.
 
     The base event-driven simulation (see `core.py`) -- every due entity
-    resolves via responder="host", no character/NPC concept at all.
+    resolves via responder="host" or "subagent" (see
+    `config.base_event_responder`), no character/NPC concept at all.
     (A character-aware branch used to layer player/NPC turns on top of
     this; moved out to `shelved/` pending a rewrite -- see
     `docs/architecture.md`.)
@@ -692,11 +705,14 @@ async def advance_simulation(ctx: Context, resume_token: str | None = None, answ
     Call with neither argument to start (or continue after a prior call
     finished with nothing left scheduled). That, and every later call,
     returns either ``{"status": "done", "narration": ...}`` or
-    ``{"status": "input_required", "prompt": ..., "responder": "host", "resume_token": ...}``.
-    On the latter, decide what happens yourself, then call again with that
-    exact `resume_token` and your `answer` -- no separate tool, and no
-    server-side state to lose: `resume_token` carries everything needed to
-    resume, so it survives an MCP disconnect/reconnect between calls too.
+    ``{"status": "input_required", "prompt": ..., "responder": "host" or
+    "subagent", "resume_token": ...}``. On the latter, decide what happens
+    yourself if `responder` is "host", or follow `prompt`'s own instruction
+    to delegate to an isolated subagent if it's "subagent" -- either way,
+    call again with that exact `resume_token` and your `answer` -- no
+    separate tool, and no server-side state to lose: `resume_token` carries
+    everything needed to resume, so it survives an MCP disconnect/reconnect
+    between calls too.
 
     Args:
         resume_token: The `resume_token` from this session's last

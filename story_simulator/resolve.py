@@ -2,18 +2,34 @@
 decision, regardless of who ends up answering it.
 
 Same request shape (`JudgmentRequest`) at every call site, dispatched by
-`responder`. Only "host" (the connected/hosting agent itself decides,
-autonomously) is reachable today -- "human" (a real player's answer) still
-exists here as a responder value `resolve()` accepts, kept for whichever
-character-facing code eventually returns from `shelved/` (see
-docs/architecture.md) and needs it again, but nothing currently calls this
-with anything but "host". "subagent" (a nested specialist call on
-story-simulator's own key, no MCP round-trip, via
-`TurnReplay.resolve_preferring_subagent`) was removed along with its only
-caller (`get_character_input`) and its dependency on `story_simulator.agents`
-(now shelved too) -- see git history to bring it back.
+`responder`:
 
-"human"/"host" are reached by raising `NeedsExternalInput`, resumed
+- "host" -- the connected agent decides inline, from its own accumulated
+  context. `resolve_base_event`'s default (see
+  `story_simulator.config.base_event_responder`).
+- "subagent" -- also the connected agent, but asked (via `_frame_for_responder`)
+  to answer through its own isolated subagent mechanism (e.g. Claude Code's
+  Agent/Task tool) instead of from its own accumulated context, giving a
+  base event's judgment call subagent-shaped context isolation without
+  story-simulator needing an API key of its own. Opt into it via
+  `STORY_SIM_BASE_RESPONDER=subagent`. Nothing here verifies the connected
+  agent actually delegated rather than just answering inline -- see the
+  TODO in `_frame_for_responder`.
+- "human" (a real player's answer) still exists here as a responder value
+  `resolve()` accepts, kept for whichever character-facing code eventually
+  returns from `shelved/` (see docs/architecture.md) and needs it again,
+  but nothing currently calls this with "human".
+
+A fourth responder, "keyed_subagent" (a nested specialist call on
+story-simulator's own API key, no MCP round-trip, via
+`TurnReplay.resolve_preferring_keyed_subagent`) was removed along with its
+only caller (`get_character_input`) and its dependency on
+`story_simulator.agents` (now shelved too) -- see git history, and PR #42
+("Rename responders and add isolated subagent delegation option") for the
+fuller four-way design this is a subset of, to bring it back alongside the
+character/npc module it served.
+
+"human"/"subagent"/"host" are reached by raising `NeedsExternalInput`, resumed
 through MRTR (Multi Round-Trip Requests, MCP spec 2026-07-28) rather than
 MCP sampling. Sampling would have offered a third option -- the connected
 client's own model/provider, not ours -- but it's gone: deprecated
@@ -54,19 +70,19 @@ from dataclasses import dataclass, field
 class JudgmentRequest:
     """One judgment ask, in the same shape no matter which responder answers it.
 
-    Swapping a call site from `responder="human"` to `responder="subagent"`
-    (see `mcp_server._build_npc_decision_prompt` for the sibling "spec"
-    pattern this needs) is then a one-word change at the call site, not a
-    rewrite of the request itself.
+    Swapping a call site from `responder="host"` to `responder="subagent"`
+    (see `story_simulator.config.base_event_responder`) is then a one-word
+    change at the call site, not a rewrite of the request itself.
     """
 
     prompt: str
     system_prompt: str = ""
 
     def render(self) -> str:
-        """Flatten to plain text for responder="human"/"host" -- no separate
-        system/user split there, just a prompt returned to the connected
-        agent as an ordinary tool result."""
+        """Flatten to plain text -- no separate system/user split for any of
+        "human"/"subagent"/"host", just a prompt returned to the connected
+        agent as an ordinary tool result. `_frame_for_responder` wraps this
+        with per-responder instructions before it ever leaves this process."""
         return f"{self.system_prompt}\n\n{self.prompt}" if self.system_prompt else self.prompt
 
 
@@ -74,17 +90,66 @@ class NeedsExternalInput(Exception):
     """Raised to unwind to the tool boundary when this can only be answered
     outside story-simulator's own process.
 
-    `responder` is "human" (a real player) or "host" (the connected agent
-    deciding autonomously, e.g. standing in for a missing subagent key) --
-    carried through to `mcp_server.advance_simulation`'s returned result so
-    whichever host answers it knows whether to relay this to an actual
-    human or just decide it itself.
+    `responder` is "human" (a real player), "subagent" (the connected agent
+    should answer via its own isolated subagent mechanism, not its own
+    accumulated context), or "host" (the connected agent decides inline
+    itself) -- carried through to `mcp_server.advance_simulation`'s
+    returned result so whichever host answers it knows what's actually
+    being asked of it.
     """
 
     def __init__(self, prompt: str, responder: str):
         super().__init__(prompt)
         self.prompt = prompt
         self.responder = responder
+
+
+def _frame_for_responder(request: JudgmentRequest, responder: str) -> str:
+    """Wrap `request` with instructions for "human"/"subagent", so they
+    travel with the prompt text itself (survives an MRTR pause/resume, an
+    MCP disconnect, a different host entirely reconnecting) rather than
+    living only in `mcp_server`'s static tool descriptions, which a given
+    client may or may not still have in view by the time it matters.
+
+    "host" gets no framing at all -- the bare `request.render()` text,
+    unchanged from before "subagent" existed -- specifically so that
+    `STORY_SIM_BASE_RESPONDER`'s "host" default (see
+    `story_simulator.config.base_event_responder`) changes nothing about
+    what a base event's prompt looks like.
+    """
+    body = request.render()
+    if responder == "human":
+        return (
+            "Relay the following to the connected human player, verbatim, "
+            "and resume with their own actual reply -- don't answer on "
+            "their behalf.\n\n" + body
+        )
+    if responder == "subagent":
+        # TODO: this is trust-based -- nothing here verifies the host
+        # actually spawned an isolated subagent rather than just answering
+        # inline itself. A real check would need the resumed answer to
+        # prove a subagent ran it: e.g. mint a single-use nonce per call,
+        # embed it in this rendered prompt with an instruction that the
+        # subagent's own response must begin with it verbatim, then have
+        # the caller that receives the resumed answer
+        # (mcp_server.advance_simulation) verify the nonce is present and
+        # strip it before treating the rest as the real answer. On a
+        # missing/wrong nonce, don't advance the turn -- raise
+        # NeedsExternalInput again with a corrective prompt (same
+        # resume_token/nonce) so the host gets re-prompted to actually
+        # delegate this time, instead of silently accepting an inline
+        # answer wearing a "subagent" label.
+        return (
+            "Answer this via your own subagent mechanism (e.g. Claude "
+            "Code's Agent/Task tool), not from your own accumulated "
+            "context: pass the text below as that subagent's entire "
+            "prompt, run it in the foreground (you need its result before "
+            "you can resume), and resume with its answer verbatim as your "
+            "own answer.\n\n" + body
+        )
+    if responder == "host":
+        return body
+    raise ValueError(f"unknown responder {responder!r}")
 
 
 @dataclass
@@ -107,6 +172,6 @@ class TurnReplay:
         i, self.call_index = self.call_index, self.call_index + 1
         if i < len(self.answers):
             return self.answers[i]
-        if responder in ("human", "host"):
-            raise NeedsExternalInput(prompt=request.render(), responder=responder)
+        if responder in ("human", "subagent", "host"):
+            raise NeedsExternalInput(prompt=_frame_for_responder(request, responder), responder=responder)
         raise ValueError(f"unknown responder {responder!r}")

@@ -57,10 +57,26 @@ same operation, not two.
 `story_simulator/mcp_server.py`'s `_run_event_loop` drives it, dispatching
 each popped entity through `_process_due_entity` to `process_base_event`
 (`resolve_base_event` asks the connected host what happens via
-`story_simulator.resolve.TurnReplay`, always `responder="host"` today,
-then predicts/pushes the next event) — kept as its own step specifically
-as the seam a character-aware branch returns to, not because there's
-anything left to branch on right now.
+`story_simulator.resolve.TurnReplay`, `responder="host"` by default or
+`"subagent"` if `STORY_SIM_BASE_RESPONDER=subagent` is set — see
+`story_simulator.config.base_event_responder` — then predicts/pushes the
+next event) — kept as its own step specifically as the seam a
+character-aware branch returns to, not because there's anything left to
+branch on right now.
+
+`"subagent"` doesn't ask the connected host to decide inline; its prompt
+instead asks the host to answer via its own isolated subagent mechanism
+(e.g. Claude Code's Agent/Task tool), giving each base event's judgment
+call the same context isolation a real subagent call would, without
+story-simulator needing an API key of its own. This is the piece of
+[PR #42](https://github.com/zhafen/story-simulator/pull/42) ("Rename
+responders and add isolated subagent delegation option") that PR itself
+never wired up — even there, `resolve_base_event` stayed hardcoded to
+`"host"`, "subagent" existed only as unused infrastructure. It's opt-in
+and defaults to `"host"` (today's only behavior, unchanged) rather than
+forced on, since nothing verifies a `"subagent"`-labeled answer actually
+came from an isolated call rather than the host just answering inline —
+see the TODO in `story_simulator.resolve._frame_for_responder`.
 
 This diagram matches
 [`docs/architecture/advance_simulation.md`](architecture/advance_simulation.md)'s

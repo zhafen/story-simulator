@@ -13,14 +13,13 @@ Same request shape (`JudgmentRequest`) at every call site, dispatched by
 2. "human" -- a real human's answer, needed. Hand control back to the
    connected agent entirely, via the `NeedsExternalInput` exception below,
    resumed through MRTR (Multi Round-Trip Requests, MCP spec 2026-07-28)
-   rather than MCP sampling. Sampling would have offered a third option --
-   the connected client's own model/provider, not ours -- but it's gone:
-   deprecated protocol-wide by that same spec revision, not just
-   unsupported by this project's actual client (Claude Code CLI 2.1.222
-   declared no `sampling` capability, confirmed live before the
-   deprecation). "human" is the only responder that can guarantee a real
-   human actually answered, and the only one that tolerates the player
-   disappearing indefinitely between rounds.
+   rather than MCP sampling, deprecated protocol-wide by that same spec
+   revision before this project could adopt it -- see
+   docs/manifest/history.yaml:
+   project_history.mcp_sampling_deprecated_before_project_adoption.
+   "human" is the only responder that can guarantee a real human actually
+   answered, and the only one that tolerates the player disappearing
+   indefinitely between rounds.
 3. "host" -- the connected/hosting agent itself decides, autonomously, no
    real human involved -- same MRTR mechanism as "human" (same exception,
    same pause/resume), but standing in for "subagent" wherever we can't

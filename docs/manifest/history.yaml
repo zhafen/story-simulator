@@ -99,3 +99,62 @@ project_history:
               didn't exist and reintroducing exactly the kind of unjustified
               flat constant the fix was meant to eliminate. perceive() no
               longer takes a radius parameter at all.
+    world_save_format_switched_from_fixed_filenames_to_directories:
+        - description: >
+              The save-format fix (CLAUDE.md's world/world_history export
+              scheme) originally used single fixed filenames,
+              `world.yaml`/`world_history.yaml`, instead of directories.
+              Replaced because a fixed filename can't be split across
+              multiple files, which defeated the point of a save being
+              freely organizable EC data in the first place, and because a
+              genuinely multi-file `scenario_dir` would have lost that
+              freedom the moment it was first opened and re-exported back to
+              a single file.
+    mcp_reload_trick_confirmed_working_with_postgres_down:
+        - description: >
+              The `pkill -f story-simulator-mcp` reload trick (documented in
+              CLAUDE.md) was verified end-to-end: killed the subprocess,
+              stopped Postgres, then called `start_world` through the
+              reloaded connection with no manual `service postgresql start`
+              — it self-healed via the (freshly loaded)
+              `_ensure_postgres_running()` fix, confirming the kill actually
+              picks up new code rather than just timing out to the same
+              behavior.
+    state_component_schema_undefined_during_playtest:
+        - description: >
+              iacs doesn't require pre-registering a component type before
+              `update_registry` accepts it, typing fields from whatever the
+              YAML shorthand implies. That's how `state` (a door's
+              open/closed status) ended up undefined for most of a playtest
+              session: real, working gameplay data with no `description`,
+              no field types, and critically no `time_dimension` flag, so it
+              silently accumulated an ever-growing, undifferentiable history
+              instead of resolving to one current value the way
+              `position`/`description` do. Motivated the CLAUDE.md guidance
+              to define a component type's schema in `manifest/
+              builtins.yaml` before improvising one through gameplay YAML.
+    mcp_sampling_deprecated_before_project_adoption:
+        - description: >
+              MCP sampling (letting the connected client's own model/
+              provider answer a judgment request) was considered as a third
+              responder option alongside "subagent"/"human"/"host" in
+              story_simulator.resolve, but was dropped: deprecated
+              protocol-wide by MCP spec 2026-07-28, not just unsupported by
+              this project's actual client (Claude Code CLI 2.1.222 declared
+              no `sampling` capability, confirmed live before the
+              deprecation).
+    seed_yaml_reflects_live_state_fix_landed:
+        - description: >
+              Root-cause fix for the gap seed_yaml_staleness_discovered
+              surfaced: every update_registry call (including
+              advance_npc_turn's own internal one) now re-exports the
+              registry's current state to save_dir/world.yaml, a generated,
+              read-only mirror rewritten in full each turn — the original
+              seed YAML itself is still never touched. Not fully closed at
+              the time: an agent could still default to grepping the frozen
+              seed specifically instead of the live world.yaml, or not know
+              world.yaml exists — tracked as
+              story-simulator.yaml: mcp_instructions_mention_world_yaml.
+              (Superseded by the later directory-based world/world_history
+              export scheme — see
+              world_save_format_switched_from_fixed_filenames_to_directories.)

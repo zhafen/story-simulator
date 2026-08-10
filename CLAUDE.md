@@ -51,13 +51,10 @@ never-yet-opened `scenario_dir` be organized across multiple files at
 arbitrary depth (not just one flat `scenario.yaml`), same as before this
 directory-based redesign.
 
-(Earlier revision of this same fix used single fixed filenames,
-`world.yaml`/`world_history.yaml`, instead of directories — replaced
-because a fixed filename can't be split across multiple files, which
-defeated the point of a save being freely organizable EC data in the first
-place, and because a genuinely multi-file `scenario_dir` would have lost
-that freedom the moment it was first opened and re-exported back to a
-single file.)
+(Earlier revision of this same fix used single fixed filenames instead of
+directories — see docs/manifest/history.yaml:
+project_history.world_save_format_switched_from_fixed_filenames_to_directories
+for why.)
 
 **`data/living_world` is still not a pristine `scenario_dir` template.**
 It holds `scenario.yaml` (the original turn-zero seed) plus
@@ -101,11 +98,9 @@ tool call, picking up current source. World state is untouched (it lives in
 Postgres, not this process), but the session-scoped registrar cache resets,
 so call `start_world` again once after killing it.
 
-Confirmed live: killed the subprocess, stopped Postgres, then called
-`start_world` through the reloaded connection with no manual `service
-postgresql start` — it self-healed via the (freshly loaded)
-`_ensure_postgres_running()` fix, proving the kill actually picks up new
-code rather than just timing out to the same behavior.
+(Verified end-to-end with Postgres itself stopped — see
+docs/manifest/history.yaml:
+project_history.mcp_reload_trick_confirmed_working_with_postgres_down.)
 
 For validating plain Python logic changes (not the live MCP tool surface
 itself), prefer `pytest`/a fresh `python -c` invocation over this — it's
@@ -142,12 +137,10 @@ save without asking the player to repeat it.
 
 iacs doesn't require pre-registering a component type — `update_registry`
 will happily accept a component name nobody ever declared, typing its
-fields from whatever the YAML shorthand implies. That's how `state` (a
-door's open/closed status) ended up undefined for most of a playtest
-session: real, working gameplay data with no `description`, no field
-types, and critically no `time_dimension` flag, so it silently
-accumulated an ever-growing, undifferentiable history instead of
-resolving to one current value the way `position`/`description` do.
+fields from whatever the YAML shorthand implies. That's what let `state`
+go undefined for most of a playtest session before anyone noticed — see
+docs/manifest/history.yaml:
+project_history.state_component_schema_undefined_during_playtest.
 
 If a turn's narration needs a component type that isn't already in
 `manifest/builtins.yaml` (check there and in `iacs/iacs/builtins/

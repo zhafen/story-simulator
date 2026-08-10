@@ -1,5 +1,5 @@
 """The base event-driven simulation kernel: registry write/read primitives
-and the event-loop boxes (pop/advance clock/predict/push) that don't
+and the event-loop functions (e.g. pop/advance clock/process/predict/push) that don't
 depend on any optional module.
 
 Everything here has to work in a world with no character, NPC, physics

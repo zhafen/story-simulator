@@ -499,10 +499,12 @@ story_simulator_mission:
             - work_state: new
         honest_function_responsibilities:
             - description: >
-                  story_simulator.spatial.advance_clock reads next_due AND
-                  writes the world_clock entity under a name that only
-                  advertises reading -- a caller checking "what does this
-                  function do" from its name alone would miss the write.
+                  story_simulator.core.advance_clock (moved from
+                  story_simulator.spatial when the base event-loop kernel
+                  was split out) reads next_due AND writes the world_clock
+                  entity under a name that only advertises reading -- a
+                  caller checking "what does this function do" from its
+                  name alone would miss the write.
             - requirement
             - impact:
                   type: architecture_clarity

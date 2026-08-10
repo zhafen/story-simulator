@@ -4,6 +4,7 @@ from iacs.registrar import Registrar
 
 from story_simulator import game_config
 from story_simulator.config import MANIFEST_DIR, WORLD_FILE_ID
+from story_simulator.core import merge_yaml_string
 from story_simulator.spatial import (
     active_aliases,
     distance,
@@ -12,7 +13,6 @@ from story_simulator.spatial import (
     entity_position,
     latest_positions,
     memory_aliases,
-    merge_yaml_string,
     perceptible_entities,
     record_memory,
     sync_active_tags,

@@ -89,7 +89,7 @@ class NeedsExternalInput(Exception):
     `responder` is "human" (a real player) or "host" (the connected agent
     deciding autonomously, e.g. standing in for a missing subagent key) --
     carried through to `mcp_server.advance_simulation`'s returned result so
-    whichever client answers it knows whether to relay this to an actual
+    whichever host answers it knows whether to relay this to an actual
     human or just decide it itself.
     """
 

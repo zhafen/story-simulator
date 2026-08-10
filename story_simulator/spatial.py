@@ -1,12 +1,16 @@
 """Position/distance/perception helpers shared by the MCP server's tools.
 
-Ported from the old per-turn `MapSystem` into plain functions any tool can
-call on demand: there's no more automatic per-turn pass recomputing "what's
-active" for a fixed reference character, since there's no more per-turn
-pipeline at all. `perceive` (in `mcp_server.py`) calls these when a caller
-actually asks who/what a given character can perceive, for whichever
-character it names — there's no single privileged "the player" anymore, so
-every function here takes its reference character explicitly.
+The spatial module: optional, layered on top of `story_simulator.core`'s
+base event loop, not part of it -- a world with no position/distance/
+perception concept at all still runs the base simulation fine (see
+`core.py`'s own docstring). Ported from the old per-turn `MapSystem` into
+plain functions any tool can call on demand: there's no more automatic
+per-turn pass recomputing "what's active" for a fixed reference character,
+since there's no more per-turn pipeline at all. `perceive` (in
+`mcp_server.py`) calls these when a caller actually asks who/what a given
+character can perceive, for whichever character it names — there's no
+single privileged "the player" anymore, so every function here takes its
+reference character explicitly.
 """
 
 from __future__ import annotations
@@ -20,50 +24,7 @@ import yaml
 from iacs.registrar import Registrar
 
 from story_simulator import game_config
-from story_simulator.config import MANIFEST_DIR, WORLD_FILE_ID
-
-
-def merge_yaml_string(registrar: Registrar, yaml_text: str, time: float | None = None) -> None:
-    """Run the ETL pipeline on a raw YAML string and merge the result into `registrar`.
-
-    Same mechanism every write in this project uses (see the old
-    `story_simulator.systems._merge_yaml_string`): `time`, when given, backfills
-    the `position.time` time-dimension field (world time, seconds since world
-    creation) so `latest_positions` can resolve which of an entity's
-    accumulated position rows is current.
-    """
-    registrar.update(input_dirs=[str(MANIFEST_DIR)], yaml_strings={WORLD_FILE_ID: yaml_text}, time=time)
-
-
-def safe_view(registrar: Registrar, fields: str | list[str]) -> pd.DataFrame | None:
-    """Execute `registrar.view(fields)`, or None if that component type isn't loaded yet."""
-    names = [fields] if isinstance(fields, str) else fields
-    tables = {name.split(".", 1)[0] for name in names}
-    if not tables <= set(registrar.registry.component_types):
-        return None
-    try:
-        return registrar.view(fields).execute()
-    except KeyError:
-        return None
-
-
-def safe_view_current(registrar: Registrar, fields: str | list[str]) -> pd.DataFrame | None:
-    """Like `safe_view`, but resolves each field's current row per entity.
-
-    Uses `registrar.view_current` (see `Registry.view_current`) instead of
-    `view` -- the right choice for anything meant to show an entity's
-    *current* state (`perceive`, narration) rather than its full change
-    history. A component type with no `time_dimension` field behaves
-    exactly like `safe_view` (every row is "current").
-    """
-    names = [fields] if isinstance(fields, str) else fields
-    tables = {name.split(".", 1)[0] for name in names}
-    if not tables <= set(registrar.registry.component_types):
-        return None
-    try:
-        return registrar.view_current(fields).execute()
-    except KeyError:
-        return None
+from story_simulator.core import due_by_entity, merge_yaml_string, safe_view, safe_view_current
 
 
 def latest_positions(registrar: Registrar) -> pd.DataFrame:
@@ -300,33 +261,10 @@ def character_interaction_type(registrar: Registrar, alias: str) -> str | None:
 
 
 # ---------------------------------------------------------------------------
-# Event-driven simulation loop -- one function per box in the turn-anatomy
-# diagram (see docs/architecture.md and the published turn-flow artifact).
-# Modeled on Sedgewick & Wayne's individual-timestep event-driven
-# simulation, but with the schedule itself living as registry data (a
-# `next_due` component) rather than an in-memory priority queue -- see
-# next_due_entity's docstring for why that's what makes resuming a paused
-# turn safe (see story_simulator.resolve).
+# The character module's own scheduling: layers "only characters, and a
+# brand-new one sorts first" on top of core.py's plain next_due data --
+# see core.pop_event's docstring for the base version this specializes.
 # ---------------------------------------------------------------------------
-
-
-def _next_due_by_entity(registrar: Registrar) -> pd.DataFrame:
-    """One row per entity with a next_due of its own: `entity_id`, `due` (float).
-
-    Casts explicitly to the manifest-declared `next_due.value: float` type,
-    for the same reason `perceptible_entities` casts `size`: a save with
-    zero `next_due` rows anywhere leaves the schema undeclared on a plain
-    `Registrar.load()` reconnect (`declare_schema` only runs during the
-    ETL/validation pipeline a real `update` merge goes through, not a bare
-    reconnect), so `get` falls back to a generic `value: string` table and
-    `.max()` over it can't be compared against a float fallback.
-    """
-    return (
-        registrar.get("next_due")
-        .group_by("entity_id")
-        .aggregate(due=lambda t: t["value"].cast("float64").max())
-        .execute()
-    )
 
 
 def next_due_entity(registrar: Registrar) -> str | None:
@@ -334,18 +272,21 @@ def next_due_entity(registrar: Registrar) -> str | None:
 
     A character with no `next_due` row yet sorts as due immediately
     (-inf), so a brand-new character always goes before anything already
-    scheduled into the future. Only characters are scheduled -- non-character
-    entities (objects, terrain) don't take turns. A plain read, not a
-    destructive dequeue: `story_simulator.resolve`'s replay-from-the-top
-    mechanism depends on this being safe to call again and again and get
-    the same answer for the same registry state.
+    scheduled into the future -- unlike `core.pop_event`'s base rule
+    (nothing is a candidate without an explicit `next_due` row), which
+    this deliberately overrides for characters specifically. Only
+    characters are scheduled -- non-character entities (objects, terrain)
+    don't take turns this way; see `core.pop_event` for those instead. A
+    plain read, not a destructive dequeue: `story_simulator.resolve`'s
+    replay-from-the-top mechanism depends on this being safe to call again
+    and again and get the same answer for the same registry state.
     """
     if "character" not in registrar.registry.component_types:
         return None
     characters = registrar.view_current(["character.interaction_type"]).execute()
     if characters.empty:
         return None
-    due_df = _next_due_by_entity(registrar)
+    due_df = due_by_entity(registrar)
     merged = characters.merge(due_df, on="entity_id", how="left")
     merged["due"] = merged["due"].fillna(float("-inf"))
     return merged.sort_values("due").iloc[0]["entity_id.alias"]
@@ -354,66 +295,6 @@ def next_due_entity(registrar: Registrar) -> str | None:
 def pop_event(registrar: Registrar) -> str | None:
     """Pop event box: identify (not destructively dequeue) whichever character is due next."""
     return next_due_entity(registrar)
-
-
-def is_event_valid(registrar: Registrar, alias: str) -> bool:
-    """Valid? box: is `alias` still a real, eligible character.
-
-    Always true today by construction -- `pop_event` always re-reads
-    current state fresh rather than pre-computing events into a queue, so
-    the classic "has this entity changed since it was scheduled" staleness
-    problem (Sedgewick & Wayne's own reason for this check) doesn't arise
-    yet. This is the seam a future lookahead/precomputed-event design
-    would extend, the same way `CollisionSystem.Event.isValid()` compares
-    a captured collision count against the current one.
-    """
-    return registrar.get_entity_id(alias) is not None
-
-
-def advance_clock(registrar: Registrar, alias: str) -> float:
-    """Advance clock box: the popped entity's own `next_due` becomes "now" for this turn.
-
-    No separate persisted global clock yet -- the popped event's own
-    timestamp is the only notion of "current time" anything downstream
-    needs today. A shared clock entity would only become necessary if
-    something other than "whichever event was just popped" ever needed to
-    read "now" independently.
-    """
-    entity_id = registrar.get_entity_id(alias)
-    if entity_id is None:
-        return 0.0
-    due_df = _next_due_by_entity(registrar)
-    match = due_df[due_df["entity_id"] == entity_id]
-    return float(match.iloc[0]["due"]) if not match.empty else 0.0
-
-
-def predict_event(registrar: Registrar, alias: str, next_due_in: float) -> float:
-    """Predict events / Predict next box: compute when `alias` should next be due.
-
-    One function serving both call sites, per the diagram's own "same
-    function as" edge -- the initial per-entity setup and the
-    post-`Process event` reschedule are the identical computation, just
-    invoked for a different set of entities at different points in the
-    loop. Pure: doesn't write anything itself (see `push_event`).
-    """
-    now = advance_clock(registrar, alias)
-    return now + next_due_in
-
-
-def push_event(registrar: Registrar, alias: str, due_at: float, time: float | None = None) -> None:
-    """Push to queue / Push events box: commit `alias`'s next_due to the registry.
-
-    One function serving both call sites, matching `predict_event`.
-    Writing `next_due` IS "pushing to the queue" here -- there's no
-    separate in-memory priority queue; `next_due_entity`'s live registry
-    read *is* the queue. `time` should be given the same world-time stamp
-    every other time_dimension'd write in this project uses (see
-    `mcp_server._next_time_stamp`) -- `next_due.time` is time_dimension'd
-    exactly like `position.time`/`state.time`, so an entity rescheduled
-    more than once needs it to resolve which row is current.
-    """
-    data = {f"{alias}_next_due": [{"same_as": {"value": alias}}, {"next_due": {"value": due_at}}]}
-    merge_yaml_string(registrar, yaml.safe_dump(data, sort_keys=False), time=time)
 
 
 def select_character(registrar: Registrar, alias: str) -> str:

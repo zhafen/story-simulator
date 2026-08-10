@@ -46,8 +46,10 @@ class TestMcpToolRegistration:
             "generate_terrain",
             "resolve_physics",
             "advance_npc_turn",
+            "advance_simulation",
         }
         assert expected <= self._tool_names()
+        assert "advance_bare_simulation" not in self._tool_names()
 
     def test_generate_terrain_has_no_ctx_parameter(self):
         """generate_terrain/resolve_physics don't touch the registry, so no ctx is needed."""

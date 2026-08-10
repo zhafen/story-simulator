@@ -2,14 +2,8 @@
 and the event-loop boxes (pop/advance clock/predict/push) that don't
 depend on any optional module.
 
-Everything here has to work in a world with no character, NPC, physics
-(specialist judgment), terrain, or spatial (position/distance/perception)
-module active at all -- those are layered on top (see
-`story_simulator.spatial`, `story_simulator.specialists`,
-`mcp_server.advance_simulation`'s character branch), not baked in here.
-Modules may depend on this and on each other, but nothing here may import
-from an optional module -- that's what keeps "no modules enabled" a real,
-runnable base rather than an unreachable configuration.
+Everything here has to work in a world with no character, NPC, spatial, etc
+modules active at all -- those are layered on top as optional modules.
 """
 
 from __future__ import annotations
@@ -34,11 +28,10 @@ from story_simulator.config import MANIFEST_DIR, WORLD_FILE_ID
 def merge_yaml_string(registrar: Registrar, yaml_text: str, time: float | None = None) -> None:
     """Run the ETL pipeline on a raw YAML string and merge the result into `registrar`.
 
-    Same mechanism every write in this project uses (see the old
-    `story_simulator.systems._merge_yaml_string`): `time`, when given, backfills
-    whichever time_dimension field the merged data declares (world time,
-    seconds since world creation) so `Registry.view_current` can resolve
-    which of an entity's accumulated rows is current.
+    Same mechanism every write in this project uses.
+    `time`, when given, backfills the time_dimension field the merged data
+    declares (world time, seconds since world creation) so `Registry.view_current` can
+    resolve which of an entity's accumulated rows is current.
     """
     registrar.update(input_dirs=[str(MANIFEST_DIR)], yaml_strings={WORLD_FILE_ID: yaml_text}, time=time)
 
@@ -58,11 +51,8 @@ def safe_view(registrar: Registrar, fields: str | list[str]) -> pd.DataFrame | N
 def safe_view_current(registrar: Registrar, fields: str | list[str]) -> pd.DataFrame | None:
     """Like `safe_view`, but resolves each field's current row per entity.
 
-    Uses `registrar.view_current` (see `Registry.view_current`) instead of
-    `view` -- the right choice for anything meant to show an entity's
-    *current* state rather than its full change history. A component type
-    with no `time_dimension` field behaves exactly like `safe_view` (every
-    row is "current").
+    Uses `registrar.view_current`.  A component type with no `time_dimension` field
+    behaves exactly like `safe_view` (every row is "current").
     """
     names = [fields] if isinstance(fields, str) else fields
     tables = {name.split(".", 1)[0] for name in names}

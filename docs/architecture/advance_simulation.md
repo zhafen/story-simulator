@@ -44,7 +44,7 @@ uv run --project iacs iacs --manifest story_simulator generate-architecture-diag
 ```
 
 ```mermaid
-flowchart TD
+flowchart LR
     subgraph sg0["core"]
         n12["due_by_entity"]
         n17["merge_yaml_string"]
@@ -55,7 +55,7 @@ flowchart TD
         n11["process_event"]
     end
     subgraph seq0["advance_simulation"]
-        direction LR
+        direction TB
         n2["_get_registrar"]
         n1["_resolve_args"]
         n4["_run_event_loop"]
@@ -65,7 +65,7 @@ flowchart TD
         n4 -.-> n3
     end
     subgraph seq3["_run_event_loop"]
-        direction LR
+        direction TB
         n7["_process_due_entity"]
         n10["pop_event"]
         n8["is_event_valid"]
@@ -77,7 +77,7 @@ flowchart TD
         n9 -.-> n5
     end
     subgraph seq6["process_event"]
-        direction LR
+        direction TB
         n15["resolve_event"]
         n13["predict_event"]
         n14["push_event"]
@@ -87,46 +87,48 @@ flowchart TD
         n14 -.-> n16
     end
     subgraph seq9["resolve_event"]
-        direction LR
+        direction TB
         n19["event_responder"]
         n18["_parse_next_due_in"]
         n19 -.-> n18
     end
     n0 --> seq0
-    seq0 --> seq3
-    seq0 --> n6
-    seq3 --> n11
-    seq3 --> n12
+    n1 --> seq3
+    n3 --> n6
+    n4 --> seq3
+    n7 --> n11
+    n9 --> n12
     n11 --> seq6
-    seq6 --> seq3
-    seq6 --> n17
-    seq6 --> seq9
+    n13 --> seq3
+    n14 --> n17
+    n15 --> seq9
     class n0 rootNode
     classDef rootNode fill:#f96,stroke:#333,stroke-width:3px
 ```
 
 Solid arrows are calls; the boxed groups are new. An entity that itself
 makes two or more calls gets those targets pulled into their own box
-(labeled with just the caller's name, laid out left-to-right regardless
-of the overall top-down flow) instead of scattered across the usual
-per-file ones, chained internally by dotted arrows in the order it
-actually calls them — e.g. `process_event`'s own box traces
-`resolve_event -.-> predict_event -.-> push_event -.-> _next_time_stamp`,
-exactly its body top to bottom.
+(labeled with just the caller's name, always laid out top-to-bottom
+internally regardless of the overall left-right flow -- a box's own
+multi-step chain read as more cramped running the same direction as the
+outer diagram than getting its own perpendicular one) instead of
+scattered across the usual per-file ones, chained internally by dotted
+arrows in the order it actually calls them — e.g. `process_event`'s own
+box traces `resolve_event -.-> predict_event -.-> push_event -.->
+_next_time_stamp`, exactly its body top to bottom.
 
-A solid arrow's endpoint resolves to a box's boundary, not a specific
-node inside it, on *both* ends: not just "the caller's own box" (`n0 -->
-seq0`), but any node that happens to be a box member either as caller or
-target. `_run_event_loop` is itself one of `advance_simulation`'s four
-ordered calls (a `seq0` member) and separately owns its own box of five
-calls (`seq3`) -- so that relationship renders as `seq0 --> seq3`, one
-box pointing at another, not `n4 --> seq3` naming the specific member
-that did it (already visible from `seq0`'s own internal dotted chain).
-Distinct underlying calls that abstract to the same box pair this way
-collapse to one arrow rather than drawing parallel copies of it, and a
-box referencing itself (two of its own members calling each other) draws
-nothing at all -- neither would add information a reader can't already
-see inside the box.
+Only the *target* side of a solid arrow resolves to a box's boundary,
+not the source: `_run_event_loop` is itself one of `advance_simulation`'s
+four ordered calls (a `seq0` member) *and* separately owns its own box of
+five calls (`seq3`) -- but the edge for that relationship is `n1 -->
+seq3` (from `_resolve_args`, the specific member that actually made the
+call) alongside a second, separate `n4 --> seq3` (`_run_event_loop`
+reaching its own box directly) -- not one box-to-box arrow hiding which
+member did which. An *incoming* edge does resolve to the box, though
+(`n0 --> seq0`, not naming a specific first-called member): "something
+outside calls into this whole ordered sequence" is exactly what the box
+exists to show, with no member-level provenance lost by landing on the
+boundary instead.
 
 The earlier flat version drew every target as its own solid arrow from
 the caller *and* chained them with dotted arrows threading back through

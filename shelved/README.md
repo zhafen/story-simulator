@@ -15,6 +15,12 @@ See [`docs/architecture.md`](../docs/architecture.md) for what's live
 instead, and why this was set aside.
 
 - `story_simulator/`: `spatial.py`, `specialists.py`, `agents.py`,
-  `game_config.py`, and the `npc`/`terrain`/`physics` agent configs.
+  `game_config.py`, `interaction.py`, `collision.py`, and the
+  `npc`/`terrain`/`physics` agent configs. `interaction.py`/`collision.py`
+  (energy-based multi-entity interaction resolution, backing a
+  `resolve_interaction` MCP tool) never had a live counterpart on this
+  branch -- they depend on `specialists.py`'s `PhysicsAgent` and
+  `spatial.py`'s `entity_label`, so they were shelved alongside those
+  rather than reintroduced solo.
 - `tests/`: the tests for the above, plus the character-branch/module-toggle
   tests that no longer apply now that `_run_event_loop` only has one path.

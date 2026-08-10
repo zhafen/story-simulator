@@ -123,6 +123,80 @@ physics_components:
             value:
                 description: The size in meters.
                 type: float
+    mass:
+        - description: The entity's mass in kilograms, read by
+            `resolve_interaction` (shelved/story_simulator/interaction.py --
+            see shelved/README.md) for its collision math. Unlike `size`,
+            there's no flat fallback -- plausible mass varies too much by
+            object for a single default to mean anything, so an entity with
+            none is estimated by the Physics Resolver instead.
+        - component_type
+        - field:
+            value:
+                description: The mass in kilograms.
+                type: float
+    kinetic_energy:
+        - description: The entity's current kinetic energy in Joules, read
+            and rewritten every time `resolve_interaction`
+            (shelved/story_simulator/interaction.py) resolves an
+            interaction it's part of. An entity with none is estimated by
+            the Physics Resolver rather than defaulted.
+        - component_type
+        - field:
+            value:
+                description: The kinetic energy in Joules.
+                type: float
+            time:
+                description: World time (seconds since world creation) this
+                    kinetic energy was recorded at, backfilled on merge (see
+                    story_simulator.spatial.merge_yaml_string), not authored
+                    directly, so it stays nullable for hand-authored rows.
+                    Entities can accumulate multiple kinetic_energy rows over
+                    time; flagged time_dimension so Registry.view_current
+                    resolves the row with the highest time as the entity's
+                    current kinetic energy.
+                type: float
+                nullable: true
+                time_dimension: true
+                units: seconds
+    binding_energy:
+        - description: The energy (Joules) an interaction's total energy must
+            exceed to destroy this entity -- see `resolve_interaction`
+            (shelved/story_simulator/interaction.py). Not a fixed threshold
+            -- once established (read from here, or estimated by the
+            Physics Resolver the first time this entity has none), a
+            collision the entity survives erodes it by half the kinetic
+            energy lost to restitution, and a later interaction always
+            reads the latest row rather than re-estimating. Only ever
+            reduced by `resolve_interaction` today, but not permanently
+            one-directional -- a future mechanism (e.g. repairs) may
+            increase it too.
+        - component_type
+        - field:
+            value:
+                description: The binding energy in Joules.
+                type: float
+            time:
+                description: World time (seconds since world creation) this
+                    binding energy was recorded at, backfilled on merge (see
+                    story_simulator.spatial.merge_yaml_string), not authored
+                    directly, so it stays nullable for hand-authored rows.
+                    Entities can accumulate multiple binding_energy rows over
+                    time; flagged time_dimension so Registry.view_current
+                    resolves the row with the highest time as the entity's
+                    current binding energy.
+                type: float
+                nullable: true
+                time_dimension: true
+                units: seconds
+    destroyed:
+        - description: A tag component marking that this entity has been
+            destroyed. Currently only written by `resolve_interaction`
+            (shelved/story_simulator/interaction.py), when an interaction's
+            total energy exceeds its binding energy, but not specific to
+            that path -- other ways of destroying an entity should reuse
+            this same tag rather than inventing their own.
+        - component_type
 
 character_components:
     memory:

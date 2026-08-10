@@ -1,11 +1,12 @@
 """Tests for the character/npc/physics/terrain optional-module tools.
 
 Shelved alongside the code they test (perceive, generate_terrain,
-resolve_physics, advance_npc_turn -- see docs/architecture.md) when those
-were moved out of the live tool surface. Outside `testpaths` (tests/), so
-not collected by pytest, and these imports no longer resolve as-is (the
-names were removed from mcp_server.py along with the tools) -- kept as
-reference for pulling this back in, not as a runnable suite.
+resolve_physics, resolve_interaction, advance_npc_turn -- see
+docs/architecture.md) when those were moved out of the live tool surface.
+Outside `testpaths` (tests/), so not collected by pytest, and these
+imports no longer resolve as-is (the names were removed from
+mcp_server.py along with the tools) -- kept as reference for pulling this
+back in, not as a runnable suite.
 """
 
 import asyncio
@@ -16,6 +17,7 @@ from story_simulator.mcp_server import (
     advance_npc_turn,
     generate_terrain,
     perceive,
+    resolve_interaction,
     resolve_physics,
     start_world,
 )
@@ -85,6 +87,21 @@ class TestSpecialistTools:
 
         assert result == "The gap is narrow enough to clear."
         fake_agent.resolve.assert_called_once_with("jumping a two-meter gap")
+
+    def test_resolve_interaction_delegates_and_syncs_world_yaml(self, tmp_path, monkeypatch):
+        ctx = _make_ctx()
+        save_dir = tmp_path / "save"
+        start_world(str(save_dir), ctx)
+        mock_resolve = MagicMock(return_value="rock and window collide.")
+        monkeypatch.setattr("story_simulator.mcp_server._resolve_interaction", mock_resolve)
+
+        result = resolve_interaction(["rock", "window"], "a rock hits a window", ctx)
+
+        assert result == "rock and window collide."
+        (registrar, physics_agent, entity_ids, scenario, time), _ = mock_resolve.call_args
+        assert entity_ids == ["rock", "window"]
+        assert scenario == "a rock hits a window"
+        assert (save_dir / "world" / "world.yaml").exists()
 
 
 # ---------------------------------------------------------------------------

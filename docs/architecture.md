@@ -22,11 +22,9 @@ read on what's still open.
 ```mermaid
 flowchart LR
     Human(("Human player")) <--> Client["MCP-aware chat client<br/>(the narrator/game master)"]
-    Client -- "start_world, perceive,<br/>view_registry, view_entity,<br/>update_registry,<br/>generate_terrain, resolve_physics,<br/>advance_npc_turn" --> Server["story-simulator-mcp"]
+    Client -- "start_world, advance_simulation,<br/>view_registry, view_entity,<br/>update_registry" --> Server["story-simulator-mcp"]
     Client -- "describe_format,<br/>validate_yaml" --> Iacs["iacs-mcp"]
     Server -- "reads/writes" --> DB[("registry database<br/>(one schema per save_dir)")]
-    Server -- "generate_terrain /<br/>resolve_physics calls" --> LiteLLM
-    LiteLLM --> Provider[("Anthropic, OpenAI, Ollama, ...")]
 ```
 
 For a human player, narration is just the connected agent's own replies —
@@ -36,40 +34,66 @@ unmodified) stays the format/validation reference — `describe_format`/
 accumulating registry state (its own `load_manifest` only re-reads static
 files).
 
+> **Character/NPC/terrain/physics/spatial-perception tools are currently
+> shelved** (`perceive`, `advance_npc_turn`, `generate_terrain`,
+> `resolve_physics`, and the character-aware branch the event loop below
+> used to take) — moved to [`shelved/`](../shelved) rather than deleted;
+> see [`shelved/README.md`](../shelved/README.md) and git history to pull
+> any of it back in. What's below reflects what's actually live.
+
 ## The event-driven turn loop
 
-Turns aren't a fixed round-robin over every character — they're scheduled,
+Turns aren't a fixed round-robin over every entity — they're scheduled,
 Sedgewick & Wayne style (*Algorithms*, 4th ed., §6.1 Event-Driven
 Simulation): every entity carries its own `next_due` time in the registry,
 and the loop only ever pops whichever entity is due soonest, discarding
-stale events rather than replaying them. `predict_event`/`push_event` is
-the same function at both call sites in the diagram below — scheduling a
-brand-new entity's first event and rescheduling after one resolves are the
-same operation, not two.
+stale events rather than replaying them. `predict_next_event`/`push_event`
+is the same function at both call sites in the diagram below — scheduling
+a brand-new entity's first event and rescheduling after one resolves are
+the same operation, not two.
 
 `story_simulator/core.py` holds this event-loop kernel (`pop_event`,
-`is_event_valid`, `advance_clock`, `predict_event`, `push_event`).
-`story_simulator/mcp_server.py` holds the turn-processing layer that zooms
-into whichever event `core.py` just popped (`process_event`,
-`character_communication`, `resolve_event`, `update_data`), which in turn
-loops `select_character`/`narrate_to_character`
-(`story_simulator/spatial.py`) with `get_character_input`
-(`story_simulator/mcp_server.py`) until that character's due action is
-fully decided.
+`is_event_valid`, `advance_clock`, `predict_next_event`, `push_event`) and,
+since it also absorbed the bulk of what used to be `mcp_server.py`'s own
+implementation (see that module's docstring for why), the loop that drives
+it too: `_run_event_loop` dispatches each popped entity straight to
+`process_event` (`resolve_event` asks the connected host what happens via
+`story_simulator.resolve.TurnReplay`, `responder="host"` by default or
+`"subagent"` if `STORY_SIM_RESPONDER=subagent` is set — see
+`story_simulator.config.event_responder` — then predicts/pushes the
+next event). `story_simulator/mcp_server.py` only exposes all of this as
+the `advance_simulation` MCP tool, a thin wrapper around
+`core.advance_simulation`. A `_process_due_entity` seam used to sit
+between `_run_event_loop` and `process_event`, kept specifically for a
+character-aware branch to return to; once that branch moved to
+`shelved/` there was nothing left to dispatch between, so the seam was
+removed too — a future character-aware branch would need its own
+dispatch step again, not assume this one still exists.
+
+`"subagent"` doesn't ask the connected host to decide inline; its prompt
+instead asks the host to answer via its own isolated subagent mechanism
+(e.g. Claude Code's Agent/Task tool), giving each base event's judgment
+call the same context isolation a real subagent call would, without
+story-simulator needing an API key of its own. This is the piece of
+[PR #42](https://github.com/zhafen/story-simulator/pull/42) ("Rename
+responders and add isolated subagent delegation option") that PR itself
+never wired up — even there, `resolve_event` stayed hardcoded to
+`"host"`, "subagent" existed only as unused infrastructure. It's opt-in
+and defaults to `"host"` (today's only behavior, unchanged) rather than
+forced on, since nothing verifies a `"subagent"`-labeled answer actually
+came from an isolated call rather than the host just answering inline —
+see the TODO in `story_simulator.resolve._frame_for_responder`.
+
+This diagram matches
+[`docs/architecture/advance_simulation.md`](architecture/advance_simulation.md)'s
+automated trace from the real entry point — see that page for the
+generated version and how the two were reconciled.
 
 ```mermaid
 flowchart TD
-    subgraph Turn["Process event"]
+    subgraph Turn["process_event"]
         direction TB
-        G["Character communication"] --> F[Resolve event]
-        F --> D[Update data]
-    end
-
-    subgraph Comm["Character communication"]
-        direction TB
-        SC[Select character] --> NC[Narrate to character]
-        NC --> GI[Get character input]
-        GI --> SC
+        ADV[Advance clock] --> RBE[Resolve event] --> PRED2[Predict next event] --> PUSH2[Push event]
     end
 
     subgraph Event["Event-driven simulation (Sedgewick & Wayne)"]
@@ -79,47 +103,50 @@ flowchart TD
         I2 --> L1[Pop event]
         L1 --> V{Valid?}
         V -- stale --> L1
-        V -- valid --> ADV[Advance clock]
-        ADV --> PROC[Process event]
+        V -- valid --> PROC[Process event]
         PROC --> PRED[Predict next]
         PRED --> PUSH[Push events]
         PUSH --> L1
     end
 
     PROC -. zooms into .-> Turn
-    G -. zooms into .-> Comm
     PRED -. same function as .-> I1
     PUSH -. same function as .-> I2
 ```
 
-## `advance_npc_turn`: a tool that calls other tools
+Pausing/resuming (`NeedsExternalInput`, `resume_token`, MRTR — Multi
+Round-Trip Requests, MCP spec 2026-07-28) isn't drawn here, same as
+before: it's not a step in the loop's own shape, it's how "Resolve
+event" reaches back out to the connected host without every intervening
+function needing to be a generator — see
+`story_simulator/resolve.py`'s own docstring, or the sequence-style trace
+in [`docs/architecture/advance_simulation.md`](architecture/advance_simulation.md).
 
-Nested tool calls are how an autonomous NPC turn gets resolved without a
-human or connected chat agent driving it — the outer caller sees one opaque
-tool call; internally it decides, then runs its own small tool-calling loop
-(`agents.run_tool_loop`) that can call
-`generate_terrain`/`resolve_physics`/`update_registry` in-process before
-returning.
+## Generated file/call-structure diagram
 
-```mermaid
-sequenceDiagram
-    participant Caller as Connected agent
-    participant Tool as advance_npc_turn
-    participant Decide as npc.yaml (complete)
-    participant Narrate as npc_resolver.yaml (run_tool_loop)
+The diagrams above are hand-drawn, each making one specific point. For a
+diagram of the actual file/call structure — not curated, whatever the
+source currently is — see
+[`docs/architecture/story_simulator.md`](architecture/story_simulator.md)
+(the whole-project overview: one node per file, `core` as the hub now --
+it calls into `config` and imports `resolve`, and `mcp_server` calls into
+`core` alone, a thin MCP-protocol wrapper around it (see
+`docs/architecture/advance_simulation.md` for why); that's the whole file
+list now that the character/npc/physics/terrain/spatial modules are
+shelved — see below) or
+[`docs/architecture/advance_simulation.md`](architecture/advance_simulation.md)
+(the same thing traced outward from one specific entry point instead of
+collapsed to the whole-project overview).
 
-    Caller->>Tool: advance_npc_turn(npc_alias)
-    Tool->>Tool: perceive(npc_alias) — in-process
-    Tool->>Decide: what does npc_alias do?
-    Decide-->>Tool: decided action text
-    Tool->>Narrate: resolve this action
-    alt narration needs terrain
-        Narrate->>Tool: generate_terrain(description)
-    end
-    alt narration needs physics
-        Narrate->>Tool: resolve_physics(scenario)
-    end
-    Narrate->>Tool: update_registry(yaml_string)
-    Narrate-->>Tool: summary text
-    Tool-->>Caller: "npc_alias: <action>\n<summary>"
-```
+Both are produced by `iacs generate-architecture-diagram`, a capability
+that lives on [`zhafen/iacs#claude/architecture-diagrams`](https://github.com/zhafen/iacs/tree/claude/architecture-diagrams),
+not yet on iacs's `main` — regenerating in place isn't possible until that
+branch merges and the submodule pointer bumps. `story_simulator.md` is
+kept as *exactly* that command's raw output (safe to overwrite wholesale
+on every regenerate); commentary about it lives here instead, precisely so
+regenerating never clobbers hand-written explanation the way mixing the
+two in one file would.
+`mcp_client.py` has no edges in that diagram because none of its own
+entities have a docstring yet (see `load_python`'s own docstring for why
+undocumented code is excluded rather than shown as noise) — it isn't
+disconnected from the real system, just from what's currently documented.

@@ -1,8 +1,4 @@
-"""Async MCP stdio client wrapper for talking to the iacs MCP server.
-
-Kept separate from world.py so the tool-loop plumbing can be mocked in
-non-live unit tests without touching the archivist logic itself.
-"""
+"""Async MCP stdio client wrapper for talking to the iacs MCP server."""
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
@@ -22,8 +18,7 @@ def tool_to_openai_schema(tool: Any) -> dict[str, Any]:
     """Translate an MCP tool listing into an OpenAI-style `tools=[...]` entry.
 
     LiteLLM normalizes tool calling to this shape across every provider it
-    supports, so this is what `story_simulator.agents.run_tool_loop` needs
-    for any agent that attaches the iacs MCP server's tools.
+    supports.
     """
     return {
         "type": "function",
@@ -60,7 +55,6 @@ async def open_iacs_mcp_session(manifest_dir: str | Path) -> AsyncIterator[McpTo
         async with ClientSession(read, write) as session:
             await session.initialize()
             tools_result = await session.list_tools()
-            # OpenAI-style schemas: what agents.run_tool_loop's LiteLLM calls
-            # expect, regardless of which provider a given agent uses.
+            # OpenAI-style schemas, regardless of provider.
             tools = [tool_to_openai_schema(t) for t in tools_result.tools]
             yield McpToolSession(session, tools)

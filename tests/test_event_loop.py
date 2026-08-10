@@ -1,17 +1,19 @@
-"""Tests for the base event-driven simulation: advance_simulation with the
-character module disabled (story_simulator.config.enabled_modules) -- no
-characters, no NPCs, no physics/terrain modules, just whatever's been
-scheduled via next_due, resolved by responder="host" each time it comes due.
+"""Tests for the event-driven simulation: advance_simulation resolving
+whatever's been scheduled via next_due, one due entity at a time, by
+responder="host" (default) or "subagent" (STORY_SIM_RESPONDER) each
+time it comes due.
 
-These are the kind of scenario a base-module world can resolve without any
-detailed physics: a chain of events that needs walking through step by
-step, where "what happens next" is a plausible narrative judgment rather
-than a calculation -- a Rube Goldberg machine (ball -> domino -> lever ->
-switch) being the canonical example.
+These are the kind of scenario this loop can resolve without any detailed
+physics: a chain of events that needs walking through step by step, where
+"what happens next" is a plausible narrative judgment rather than a
+calculation -- a Rube Goldberg machine (ball -> domino -> lever -> switch)
+being the canonical example.
 """
 
 import asyncio
 from unittest.mock import MagicMock
+
+import pytest
 
 from story_simulator.mcp_server import advance_simulation, start_world, update_registry
 
@@ -23,12 +25,9 @@ def _make_ctx():
     return ctx
 
 
-def _base_world(tmp_path, monkeypatch, name="save"):
+def _world(tmp_path, name="save"):
     """Open a save seeded from nothing -- no player, no default scenario,
-    no characters at all -- with the character module disabled, so
-    advance_simulation runs its base branch (core.pop_event/
-    process_base_event) instead of the character-ful one."""
-    monkeypatch.setenv("STORY_SIM_MODULES", "")
+    no characters at all."""
     ctx = _make_ctx()
     scenario_dir = tmp_path / "empty_scenario"
     scenario_dir.mkdir(exist_ok=True)
@@ -36,17 +35,16 @@ def _base_world(tmp_path, monkeypatch, name="save"):
     return ctx
 
 
-def test_nothing_scheduled_returns_done_immediately(tmp_path, monkeypatch):
-    ctx = _base_world(tmp_path, monkeypatch)
+def test_nothing_scheduled_returns_done_immediately(tmp_path):
+    ctx = _world(tmp_path)
     result = asyncio.run(advance_simulation(ctx))
     assert result == {"status": "done", "narration": "Nothing scheduled."}
 
 
-def test_responder_is_always_host(tmp_path, monkeypatch):
-    """No character.interaction_type exists to branch on, and there's no
-    subagent persona for a base-module event to fall back from -- unlike
-    the character-ful branch, only "host" is ever possible here."""
-    ctx = _base_world(tmp_path, monkeypatch)
+def test_responder_defaults_to_host(tmp_path):
+    """No STORY_SIM_RESPONDER override -- "host" is config.event_responder()'s
+    default, so that's what a due base event asks."""
+    ctx = _world(tmp_path)
     update_registry("gizmo:\n    - next_due:\n        value: 0\n", ctx)
     result = asyncio.run(advance_simulation(ctx))
     assert result["status"] == "input_required"
@@ -54,12 +52,35 @@ def test_responder_is_always_host(tmp_path, monkeypatch):
     assert "gizmo is due" in result["prompt"]
 
 
-def test_self_rescheduling_chain_runs_to_completion(tmp_path, monkeypatch):
+def test_responder_can_be_configured_to_subagent(tmp_path, monkeypatch):
+    """STORY_SIM_RESPONDER=subagent makes a due base event ask via
+    responder="subagent" instead, with a prompt that tells the connected
+    host to delegate rather than answer inline -- see
+    story_simulator.resolve._frame_for_responder."""
+    monkeypatch.setenv("STORY_SIM_RESPONDER", "subagent")
+    ctx = _world(tmp_path)
+    update_registry("gizmo:\n    - next_due:\n        value: 0\n", ctx)
+    result = asyncio.run(advance_simulation(ctx))
+    assert result["status"] == "input_required"
+    assert result["responder"] == "subagent"
+    assert "own subagent mechanism" in result["prompt"]
+    assert "gizmo is due" in result["prompt"]
+
+
+def test_invalid_responder_env_var_raises(tmp_path, monkeypatch):
+    monkeypatch.setenv("STORY_SIM_RESPONDER", "orchestrator")
+    ctx = _world(tmp_path)
+    update_registry("gizmo:\n    - next_due:\n        value: 0\n", ctx)
+    with pytest.raises(ValueError, match="STORY_SIM_RESPONDER"):
+        asyncio.run(advance_simulation(ctx))
+
+
+def test_self_rescheduling_chain_runs_to_completion(tmp_path):
     """A single entity resolving itself repeatedly, walking through several
     steps of a Rube Goldberg machine, until an answer with no next_due_in
     line ends the chain -- core.pop_event then correctly never sees it
     again (pushed at due_at=inf)."""
-    ctx = _base_world(tmp_path, monkeypatch)
+    ctx = _world(tmp_path)
     update_registry("ball:\n    - next_due:\n        value: 0\n", ctx)
 
     answers = [
@@ -78,20 +99,24 @@ def test_self_rescheduling_chain_runs_to_completion(tmp_path, monkeypatch):
     assert result == {"status": "done", "narration": "Nothing scheduled."}
 
 
-def test_multi_entity_handoff_interleaves_by_due_time(tmp_path, monkeypatch):
+def test_multi_entity_handoff_interleaves_by_due_time(tmp_path):
     """Two independent Rube Goldberg chains, scheduled with different due
     times -- the loop must interleave them by when they're actually due,
     not exhaust one chain before ever touching the other, and a mid-chain
     handoff to a brand-new entity (chain_a_ball -> chain_a_domino) must
     slot into that same ordering correctly."""
-    ctx = _base_world(tmp_path, monkeypatch)
+    ctx = _world(tmp_path)
     update_registry("chain_a_ball:\n    - next_due:\n        value: 0\n", ctx)
     update_registry("chain_b_ball:\n    - next_due:\n        value: 5\n", ctx)
 
     order = []
     result = asyncio.run(advance_simulation(ctx))
     while result["status"] == "input_required":
-        who = result["prompt"].split(" ", 1)[0]
+        # The prompt is now framed with responder="host" instructions
+        # ahead of the actual "{alias} is due." body (see
+        # resolve._frame_for_responder) -- pull the alias out from
+        # immediately before " is due" rather than assuming it's the first word.
+        who = result["prompt"].split(" is due")[0].rsplit("\n\n", 1)[-1]
         order.append(who)
         token = result["resume_token"]
         if who == "chain_a_ball":
@@ -107,13 +132,12 @@ def test_multi_entity_handoff_interleaves_by_due_time(tmp_path, monkeypatch):
     assert result == {"status": "done", "narration": "Nothing scheduled."}
 
 
-def test_malformed_next_due_in_falls_back_to_never_due_again(tmp_path, monkeypatch):
-    """Unlike the character module's branch (default=1.0, keep going), a
-    base-module event with a malformed or missing next_due_in defaults to
-    inf -- it has no standing agenda to fall back on acting from, so a
-    model's mistake here ends the chain rather than looping it forever on
-    a hardcoded interval."""
-    ctx = _base_world(tmp_path, monkeypatch)
+def test_malformed_next_due_in_falls_back_to_never_due_again(tmp_path):
+    """An event with a malformed or missing next_due_in defaults to inf --
+    it has no standing agenda to fall back on acting from, so a model's
+    mistake here ends the chain rather than looping it forever on a
+    hardcoded interval."""
+    ctx = _world(tmp_path)
     update_registry("gizmo:\n    - next_due:\n        value: 0\n", ctx)
     result = asyncio.run(advance_simulation(ctx))
     token = result["resume_token"]
@@ -121,20 +145,4 @@ def test_malformed_next_due_in_falls_back_to_never_due_again(tmp_path, monkeypat
     result = asyncio.run(
         advance_simulation(ctx, resume_token=token, answer="Something happens.\nnext_due_in: not-a-number")
     )
-    assert result == {"status": "done", "narration": "Nothing scheduled."}
-
-
-def test_default_config_runs_the_character_branch_instead(tmp_path):
-    """Sanity check on the module toggle itself: with STORY_SIM_MODULES
-    unset (the default -- see enabled_modules), advance_simulation takes
-    the character branch, not the base one, even for a world with no
-    characters -- so it reports nothing scheduled rather than picking up a
-    bare next_due row the way the base branch would."""
-    ctx = _make_ctx()
-    scenario_dir = tmp_path / "empty_scenario"
-    scenario_dir.mkdir()
-    start_world(str(tmp_path / "save"), ctx, scenario_dir=str(scenario_dir))
-    update_registry("gizmo:\n    - next_due:\n        value: 0\n", ctx)
-
-    result = asyncio.run(advance_simulation(ctx))
     assert result == {"status": "done", "narration": "Nothing scheduled."}

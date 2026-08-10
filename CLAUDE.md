@@ -3,75 +3,68 @@
 ## Project Overview
 
 story-simulator is an MCP server exposing a text-simulation game master's
-tools (`start_world`, `perceive`, `update_registry`, ...). World state lives
-in a Postgres-backed `iacs` registry, not in this project's own process
-memory — see `docs/architecture.md` for the full picture.
+tools (`start_world`, `advance_simulation`, `update_registry`, ...). World
+state lives in a Postgres-backed `iacs` registry, not in this project's own
+process memory — see `docs/architecture.md` for the full picture.
+(Character/NPC/terrain/physics/spatial-perception tools --
+`perceive`/`advance_npc_turn`/`generate_terrain`/`resolve_physics` -- are
+currently shelved; see that doc.)
 
-Every `update_registry` call (including the NPC turn's own internal one)
-re-exports the registry's state to two directories, not the source of truth
+Every `update_registry` call re-exports the registry's state to two
+directories, not the source of truth
 but both current as of the last turn:
 - `save_dir/world/`: current state, collapsed — a time_dimension'd
   component type (`description`, `state`, `position`) shows only its
-  current row per entity, not every historical restatement of it.
+  current row per entity, not every historical restatement.
 - `save_dir/world_history/`: the same content, uncollapsed — every row
-  ever recorded for every entity, full change history. The registry itself
-  always keeps full history regardless (nothing is ever deleted, only what
-  the collapsed export shows), but that history would otherwise only exist
-  in Postgres; this is what makes it survive in the repo too.
+  ever recorded, full change history. The registry itself always keeps
+  full history (nothing is ever deleted, only what the collapsed export
+  shows), but that history would otherwise only exist in Postgres.
 
 These are directories, not fixed filenames, because `export_manifest`
-writes one EC yaml file per original source filepath — currently that's
-always exactly one file per directory (every `registrar.update()` call
-across this project shares `WORLD_FILE_ID` as its source key), but nothing
-about the save format assumes that stays true. A save can be split across
-as many files as its author wants (nested however, e.g. one per location),
-matching iacs's own principle of letting an EC source be organized however
-you wish rather than one monolithic file — `start_world`'s loader recurses
-into whichever directory it picks (see below) rather than assuming a
-single file lives there.
+writes one EC yaml file per original source filepath — currently always
+exactly one file per directory (every `registrar.update()` call shares
+`WORLD_FILE_ID` as its source key), but nothing about the save format
+assumes that stays true. A save can be split across as many files as its
+author wants, matching iacs's own principle of letting an EC source be
+organized however you wish — `start_world`'s loader recurses into
+whichever directory it picks (see below) rather than assuming a single
+file lives there.
 
 The save's original seed (`scenario.yaml`, or wherever `scenario_dir`
-pointed) is still frozen turn-zero data and never updated by either export
-— if you're reading a save's current state, read `save_dir/world/`, not
-the seed file (and not `save_dir/world_history/`, unless you actually want
-the full change log rather than what's current).
+pointed) is still frozen turn-zero data and never updated by either
+export — if you're reading a save's current state, read
+`save_dir/world/`, not the seed file (and not `save_dir/world_history/`,
+unless you actually want the full change log).
 
 `start_world`'s first-open loader picks exactly one of `world_history/` /
 `world/` / a recursive glob of everything under `save_dir`, in that
-explicit preference order, rather than combining more than one at once:
-concatenating redundant sources risks silently discarding data (YAML's
-last-key-wins on the resulting duplicate top-level keys picks whichever
-row happened to sort last, replacing rather than merging). `world_history/`
-is a strict superset of `world/`'s rows, which are in turn a strict
-superset of the original seed's own content (still present as each
-entity's earliest historical row), so preferring the fullest one loses
-nothing. The final fallback — recursing the whole `save_dir` when neither
-export directory exists yet — is what still lets a pristine,
-never-yet-opened `scenario_dir` be organized across multiple files at
-arbitrary depth (not just one flat `scenario.yaml`), same as before this
-directory-based redesign.
+preference order, rather than combining more than one: concatenating
+redundant sources risks silently discarding data (YAML's last-key-wins
+on duplicate top-level keys replaces rather than merges). `world_history/`
+is a strict superset of `world/`, which is in turn a strict superset of
+the original seed, so preferring the fullest one loses nothing. The final
+fallback — recursing the whole `save_dir` when neither export directory
+exists yet — still lets a pristine, never-yet-opened `scenario_dir` be
+organized across multiple files at arbitrary depth.
 
-(Earlier revision of this same fix used single fixed filenames,
-`world.yaml`/`world_history.yaml`, instead of directories — replaced
-because a fixed filename can't be split across multiple files, which
-defeated the point of a save being freely organizable EC data in the first
-place, and because a genuinely multi-file `scenario_dir` would have lost
-that freedom the moment it was first opened and re-exported back to a
-single file.)
+(Earlier revision of this same fix used single fixed filenames instead of
+directories — see docs/manifest/history.yaml:
+project_history.world_save_format_switched_from_fixed_filenames_to_directories
+for why.)
 
 **`data/living_world` is still not a pristine `scenario_dir` template.**
 It holds `scenario.yaml` (the original turn-zero seed) plus
 `world/`/`world_history/` (a real playthrough's accumulated state,
-committed deliberately so that progress wasn't only living in this
-session's ephemeral Postgres). To **continue** that playthrough, open
+committed deliberately so progress wasn't only living in this session's
+ephemeral Postgres). To **continue** that playthrough, open
 `data/living_world` as `save_dir` itself, with no separate `scenario_dir`.
-Do **not** pass it as `scenario_dir` to seed a different, new `save_dir` —
-`_seed_save_dir` would copy `scenario.yaml` and both export directories
-into the new location, and the loader would then deterministically pick
-`world_history/` there too, so the new "fresh" save would still start with
-this playthrough's full history already merged in. A genuinely fresh
-living-world playthrough needs a different, currently-nonexistent pristine
-source.
+Do **not** pass it as `scenario_dir` to seed a different, new `save_dir`
+— `_seed_save_dir` would copy `scenario.yaml` and both export directories
+into the new location, and the loader would then pick `world_history/`
+there too, so the "fresh" save would still start with this playthrough's
+full history already merged in. A genuinely fresh living-world
+playthrough needs a different, currently-nonexistent pristine source.
 
 ## Prefix in-world narration with `> narrator:`
 
@@ -101,16 +94,13 @@ tool call, picking up current source. World state is untouched (it lives in
 Postgres, not this process), but the session-scoped registrar cache resets,
 so call `start_world` again once after killing it.
 
-Confirmed live: killed the subprocess, stopped Postgres, then called
-`start_world` through the reloaded connection with no manual `service
-postgresql start` — it self-healed via the (freshly loaded)
-`_ensure_postgres_running()` fix, proving the kill actually picks up new
-code rather than just timing out to the same behavior.
+(Verified end-to-end with Postgres itself stopped — see
+docs/manifest/history.yaml:
+project_history.mcp_reload_trick_confirmed_working_with_postgres_down.)
 
 For validating plain Python logic changes (not the live MCP tool surface
-itself), prefer `pytest`/a fresh `python -c` invocation over this — it's
-lower-friction and always reads current disk state, same reasoning, less
-ceremony.
+itself), prefer `pytest`/a fresh `python -c` invocation — lower-friction
+and always reads current disk state.
 
 ## Recovering from an idle-triggered MCP disconnect mid-play
 
@@ -128,11 +118,11 @@ they don't need to know any of this happened.
   session's first-ever open) already established earlier in the
   conversation, then retry the action that failed.
 - The server disconnects entirely (its tools vanish from the deferred
-  list; a system notice says the MCP server disconnected). There's no tool
-  to force a reconnect — just wait. It comes back on its own (confirmed
-  repeatedly, sometimes within the same exchange); the moment a "deferred
-  tools available again" notice arrives, resume the pending player action
-  immediately in the same turn instead of waiting for them to re-prompt.
+  list; a system notice says the MCP server disconnected). There's no
+  tool to force a reconnect — just wait; it comes back on its own. The
+  moment a "deferred tools available again" notice arrives, resume the
+  pending player action immediately in the same turn instead of waiting
+  for them to re-prompt.
 
 Keep the save's `save_dir` (and `scenario_dir`) in mind for exactly this
 reason — the whole recovery path depends on being able to reopen the same
@@ -142,24 +132,21 @@ save without asking the player to repeat it.
 
 iacs doesn't require pre-registering a component type — `update_registry`
 will happily accept a component name nobody ever declared, typing its
-fields from whatever the YAML shorthand implies. That's how `state` (a
-door's open/closed status) ended up undefined for most of a playtest
-session: real, working gameplay data with no `description`, no field
-types, and critically no `time_dimension` flag, so it silently
-accumulated an ever-growing, undifferentiable history instead of
-resolving to one current value the way `position`/`description` do.
+fields from whatever the YAML shorthand implies. That's what let `state`
+go undefined for most of a playtest session before anyone noticed — see
+docs/manifest/history.yaml:
+project_history.state_component_schema_undefined_during_playtest.
 
 If a turn's narration needs a component type that isn't already in
-`manifest/builtins.yaml` (check there and in `iacs/iacs/builtins/
-components.yaml` first — most needs are already covered, e.g. `state` for
-a short current-status word/phrase, `description`/`appearance` for
-current-look text, `size` for perceptibility), define it properly in
-`manifest/builtins.yaml` before using it: a top-level entry with its own
-`description` explaining what it's for, a `component_type` tag, and a
-`field:` block declaring each field's name/type/description — and, if it's
-a "current value" kind of fact rather than an accumulating log, a nullable
-`time` field flagged `time_dimension: true`, matching `position.time`'s/
-`state.time`'s pattern. This only applies when you actually have write
-access to the repo (a Claude Code session like this one); a narrator
-connected only through the MCP tool surface has no way to act on it and
-should just use what's already defined.
+`manifest/builtins.yaml` (check there and in
+`iacs/iacs/builtins/components.yaml` first — most needs are covered,
+e.g. `state` for a short current-status phrase, `description`/
+`appearance` for current-look text, `size` for perceptibility), define it
+in `manifest/builtins.yaml` before using it: a top-level entry with its
+own `description`, a `component_type` tag, and a `field:` block declaring
+each field's name/type/description — and, if it's a "current value" fact
+rather than an accumulating log, a nullable `time` field flagged
+`time_dimension: true`, matching `position.time`'s/`state.time`'s
+pattern. Only applies with repo write access (a Claude Code session like
+this one); a narrator connected only through the MCP tool surface should
+just use what's already defined.

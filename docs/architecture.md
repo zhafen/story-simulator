@@ -123,3 +123,12 @@ sequenceDiagram
     Narrate-->>Tool: summary text
     Tool-->>Caller: "npc_alias: <action>\n<summary>"
 ```
+
+## Generated file/call-structure diagram
+
+The diagrams above are hand-drawn, each making one specific point. For a
+diagram of the actual file/call structure — not curated, whatever the
+source currently is — see
+[`docs/architecture/story_simulator.md`](architecture/story_simulator.md),
+parsed straight out of `story_simulator/`'s source via a new iacs
+capability (not yet merged upstream — see that page for the caveat).

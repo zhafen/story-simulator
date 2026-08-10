@@ -55,11 +55,11 @@ same operation, not two.
 `story_simulator/core.py` holds this event-loop kernel (`pop_event`,
 `is_event_valid`, `advance_clock`, `predict_event`, `push_event`).
 `story_simulator/mcp_server.py`'s `_run_event_loop` drives it, dispatching
-each popped entity through `_process_due_entity` to `process_base_event`
+each popped entity through `_process_due_entity` to `process_event`
 (`resolve_event` asks the connected host what happens via
 `story_simulator.resolve.TurnReplay`, `responder="host"` by default or
-`"subagent"` if `STORY_SIM_BASE_RESPONDER=subagent` is set — see
-`story_simulator.config.base_event_responder` — then predicts/pushes the
+`"subagent"` if `STORY_SIM_RESPONDER=subagent` is set — see
+`story_simulator.config.event_responder` — then predicts/pushes the
 next event) — kept as its own step specifically as the seam a
 character-aware branch returns to, not because there's anything left to
 branch on right now.
@@ -87,7 +87,7 @@ generated version and how the two were reconciled.
 flowchart TD
     subgraph Turn["Process due entity"]
         direction TB
-        RBE[Resolve base event] --> PRED2[Predict event] --> PUSH2[Push event]
+        RBE[Resolve event] --> PRED2[Predict event] --> PUSH2[Push event]
     end
 
     subgraph Event["Event-driven simulation (Sedgewick & Wayne)"]
@@ -111,7 +111,7 @@ flowchart TD
 
 Pausing/resuming (`NeedsExternalInput`, `resume_token`, MRTR — Multi
 Round-Trip Requests, MCP spec 2026-07-28) isn't drawn here, same as
-before: it's not a step in the loop's own shape, it's how "Resolve base
+before: it's not a step in the loop's own shape, it's how "Resolve
 event" reaches back out to the connected host without every intervening
 function needing to be a generator — see
 `story_simulator/resolve.py`'s own docstring, or the sequence-style trace

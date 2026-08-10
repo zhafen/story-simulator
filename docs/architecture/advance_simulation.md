@@ -46,7 +46,7 @@ uv run --project iacs iacs --manifest story_simulator generate-architecture-diag
 ```mermaid
 flowchart TD
     subgraph sg0["config"]
-        n19["base_event_responder"]
+        n19["event_responder"]
     end
     subgraph sg1["core"]
         n8["is_event_valid"]
@@ -65,7 +65,7 @@ flowchart TD
         n4["_run_event_loop"]
         n6["_encode_token"]
         n7["_process_due_entity"]
-        n11["process_base_event"]
+        n11["process_event"]
         n15["resolve_event"]
         n16["_next_time_stamp"]
         n18["_parse_next_due_in"]
@@ -112,8 +112,10 @@ smoothed over:
    `.py`-sourced entity — Python code never calls a YAML-described entity,
    so this is a categorically correct rule, not a special case.
 2. **A real gap in this codebase.** `_run_event_loop`'s actual dispatch to
-   `process_event`/`process_base_event` happened through a nested closure,
-   `_process` (no docstring of its own) — so per `load_python`'s own rule
+   `process_event` (then still named `process_base_event`, alongside a
+   character-path `process_event` since renamed away when that path was
+   shelved) happened through a nested closure, `_process` (no docstring of
+   its own) — so per `load_python`'s own rule
    (only docstring'd/`__iacs__`-tagged constructs become entities), those
    calls were attributed to nothing and vanished from the graph. **Fixed**
    by extracting it to a top-level function with a docstring,
@@ -169,7 +171,7 @@ flowchart TD
         PROC -- resolved fully --> L1
     end
 
-    subgraph PBE_detail["_process_due_entity -> process_base_event"]
+    subgraph PBE_detail["_process_due_entity -> process_event"]
         direction TB
         RBE["resolve_event<br/><small>(may raise NeedsExternalInput,<br/>responder=\"host\" or \"subagent\")</small>"] --> PRED2[predict_event] --> PUSH2[push_event]
     end
@@ -182,7 +184,7 @@ flowchart TD
 `NeedsExternalInput` (raised by `TurnReplay.resolve` whenever this turn's
 replay has no cached answer yet for that judgment call) is what makes the
 pause/resume contract work: it unwinds straight to `_run_event_loop`'s own
-`try`/`except`, skipping over `_process_due_entity`/`process_base_event`/
+`try`/`except`, skipping over `_process_due_entity`/`process_event`/
 `resolve_event` in between, not caught anywhere along the way.
 
 ## Comparison against `docs/architecture.md`

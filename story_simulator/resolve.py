@@ -6,13 +6,13 @@ Same request shape (`JudgmentRequest`) at every call site, dispatched by
 
 - "host" -- the connected agent decides inline, from its own accumulated
   context. `resolve_event`'s default (see
-  `story_simulator.config.base_event_responder`).
+  `story_simulator.config.event_responder`).
 - "subagent" -- also the connected agent, but asked (via `_frame_for_responder`)
   to answer through its own isolated subagent mechanism (e.g. Claude Code's
   Agent/Task tool) instead of from its own accumulated context, giving a
   base event's judgment call subagent-shaped context isolation without
   story-simulator needing an API key of its own. Opt into it via
-  `STORY_SIM_BASE_RESPONDER=subagent`. Nothing here verifies the connected
+  `STORY_SIM_RESPONDER=subagent`. Nothing here verifies the connected
   agent actually delegated rather than just answering inline -- see the
   TODO in `_frame_for_responder`.
 - "human" (a real player's answer) still exists here as a responder value
@@ -71,7 +71,7 @@ class JudgmentRequest:
     """One judgment ask, in the same shape no matter which responder answers it.
 
     Swapping a call site from `responder="host"` to `responder="subagent"`
-    (see `story_simulator.config.base_event_responder`) is then a one-word
+    (see `story_simulator.config.event_responder`) is then a one-word
     change at the call site, not a rewrite of the request itself.
     """
 
@@ -113,8 +113,8 @@ def _frame_for_responder(request: JudgmentRequest, responder: str) -> str:
 
     "host" gets no framing at all -- the bare `request.render()` text,
     unchanged from before "subagent" existed -- specifically so that
-    `STORY_SIM_BASE_RESPONDER`'s "host" default (see
-    `story_simulator.config.base_event_responder`) changes nothing about
+    `STORY_SIM_RESPONDER`'s "host" default (see
+    `story_simulator.config.event_responder`) changes nothing about
     what a base event's prompt looks like.
     """
     body = request.render()

@@ -122,10 +122,10 @@ def resolve_anthropic_api_key() -> str | None:
 # optional-module toggle) removed along with the code it gated -- see
 # docs/architecture.md and git history for what it looked like.
 
-_BASE_EVENT_RESPONDERS = ("host", "subagent")
+_EVENT_RESPONDERS = ("host", "subagent")
 
 
-def base_event_responder() -> str:
+def event_responder() -> str:
     """Which responder `mcp_server.resolve_event` should ask each time
     a base event comes due: "host" (default -- the connected agent decides
     inline, from its own accumulated context) or "subagent" (ask it to
@@ -133,7 +133,7 @@ def base_event_responder() -> str:
     Code's Agent/Task tool -- see `story_simulator.resolve`'s module
     docstring for what that buys and its one known gap).
 
-    Read from STORY_SIM_BASE_RESPONDER rather than a `start_world`
+    Read from STORY_SIM_RESPONDER rather than a `start_world`
     argument -- a deployment-wide choice about how its connected agent
     should be used, not something that varies save to save. Defaults to
     "host" (today's only behavior) so nothing changes for a deployment
@@ -141,7 +141,7 @@ def base_event_responder() -> str:
     silently falling back to "host", so a typo'd env var fails loud
     instead of quietly never delegating.
     """
-    value = os.environ.get("STORY_SIM_BASE_RESPONDER", "host")
-    if value not in _BASE_EVENT_RESPONDERS:
-        raise ValueError(f"STORY_SIM_BASE_RESPONDER must be one of {_BASE_EVENT_RESPONDERS}, got {value!r}")
+    value = os.environ.get("STORY_SIM_RESPONDER", "host")
+    if value not in _EVENT_RESPONDERS:
+        raise ValueError(f"STORY_SIM_RESPONDER must be one of {_EVENT_RESPONDERS}, got {value!r}")
     return value

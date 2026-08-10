@@ -17,7 +17,7 @@ similar) to the server below and talking to it; that client's own replies *are* 
 > `start_world`, `advance_simulation`, `view_registry`, `view_entity`, `update_registry` — every
 > due entity resolves via the connected host deciding directly (`responder="host"`, the default)
 > or delegating to its own isolated subagent (`responder="subagent"`, opt in with
-> `STORY_SIM_BASE_RESPONDER=subagent`) — no separate model call of story-simulator's own either way.
+> `STORY_SIM_RESPONDER=subagent`) — no separate model call of story-simulator's own either way.
 
 ## Quick start
 

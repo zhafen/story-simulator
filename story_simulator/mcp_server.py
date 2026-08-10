@@ -12,7 +12,7 @@ whatever MCP-aware host is connected (a human's chat agent, an automated
 harness, ...). That host decides what happens itself (`responder="host"`,
 the default) or is asked to delegate to its own isolated subagent
 mechanism instead (`responder="subagent"`, opt in via
-STORY_SIM_BASE_RESPONDER -- see `story_simulator.config.base_event_responder`)
+STORY_SIM_RESPONDER -- see `story_simulator.config.event_responder`)
 -- see `advance_simulation`'s own `responder` field -- then calls
 `advance_simulation` again with its decision (recorded via `update_registry`) and
 the `resume_token` it was given, to resume the loop -- Multi Round-Trip
@@ -61,7 +61,7 @@ from story_simulator.config import (
     DEFAULT_WORLD_DIR,
     MANIFEST_DIR,
     WORLD_FILE_ID,
-    base_event_responder,
+    event_responder,
     registry_schema_name,
     registry_url,
     resolve_database_dsn,
@@ -102,7 +102,7 @@ _TIE_EPSILON = 1
 # It's how a base-module event tells the loop it's done (see
 # resolve_event's default=inf) when the next_due_in line is omitted,
 # not a mistake to fall back from with a hardcoded interval.
-_BASE_NEXT_DUE_IN_INSTRUCTION = (
+_NEXT_DUE_IN_INSTRUCTION = (
     "If there's more to happen, end your answer with a line formatted "
     "exactly as `next_due_in: <seconds>` stating how long from now. Omit "
     "that line entirely if this is finished and shouldn't happen again."
@@ -517,7 +517,7 @@ def _parse_next_due_in(answer: str, default: float = 1.0) -> tuple[str, float]:
     """Split a resolve_event answer into (narration, next_due_in).
 
     Looks for a trailing `next_due_in: <seconds>` line (see
-    `_BASE_NEXT_DUE_IN_INSTRUCTION`) and falls back to `default` rather
+    `_NEXT_DUE_IN_INSTRUCTION`) and falls back to `default` rather
     than raising if it's missing or malformed -- a model's mistake here
     shouldn't crash the turn.
     """
@@ -542,16 +542,16 @@ async def resolve_event(alias: str, replay: TurnReplay) -> tuple[str, float]:
     no `character.interaction_type` to branch on, since the character
     module isn't what's driving this popped entity). Between "host" and
     "subagent" -- see `story_simulator.resolve`'s module docstring for what
-    "subagent" buys -- `config.base_event_responder()` decides, defaulting
+    "subagent" buys -- `config.event_responder()` decides, defaulting
     to "host" so nothing changes unless a deployment opts in via
-    STORY_SIM_BASE_RESPONDER.
+    STORY_SIM_RESPONDER.
     """
-    request = JudgmentRequest(prompt=f"{alias} is due.\n\n{_BASE_NEXT_DUE_IN_INSTRUCTION}")
-    answer = await replay.resolve(request, responder=base_event_responder())
+    request = JudgmentRequest(prompt=f"{alias} is due.\n\n{_NEXT_DUE_IN_INSTRUCTION}")
+    answer = await replay.resolve(request, responder=event_responder())
     return _parse_next_due_in(answer, default=float("inf"))
 
 
-async def process_base_event(registrar: Registrar, alias: str, replay: TurnReplay, ctx: Context) -> str:
+async def process_event(registrar: Registrar, alias: str, replay: TurnReplay, ctx: Context) -> str:
     """Base module's process event box: Resolve event -> Predict event ->
     Push event -- no character-communication step first: a base event has
     no agency to ask "what do you do" of, it just resolves.
@@ -574,7 +574,7 @@ async def _run_event_loop(
     clock -> Process event, looping until either a NeedsExternalInput pauses it
     (returned to the caller, not raised further) or the queue empties.
 
-    Always the base path today (`core.pop_event`/`process_base_event`, no
+    Always the base path today (`core.pop_event`/`process_event`, no
     notion of character at all, what `core.py`'s own docstring promises
     works with nothing layered on top) -- `_process_due_entity` used to
     also branch to a character-aware pair (`spatial.pop_event`/
@@ -622,7 +622,7 @@ async def _run_event_loop(
             return alias, replay, e.prompt, e.responder
         # No exception: this turn resolved fully -- loop back and pop
         # whatever's due next. A base event always pauses (responder="host"
-        # or "subagent", per config.base_event_responder() -- never
+        # or "subagent", per config.event_responder() -- never
         # "human", see resolve_event) unless this exact call was
         # already answered by a prior replay.
 
@@ -644,7 +644,7 @@ async def _process_due_entity(
     single-branch step even now that there's only one module to dispatch
     to, since it's the seam a character-aware branch returns to.
     """
-    return await process_base_event(registrar, alias, replay, ctx)
+    return await process_event(registrar, alias, replay, ctx)
 
 
 def _encode_token(alias: str, answers: list[str]) -> str:
@@ -697,7 +697,7 @@ async def advance_simulation(ctx: Context, resume_token: str | None = None, answ
 
     The base event-driven simulation (see `core.py`) -- every due entity
     resolves via responder="host" or "subagent" (see
-    `config.base_event_responder`), no character/NPC concept at all.
+    `config.event_responder`), no character/NPC concept at all.
     (A character-aware branch used to layer player/NPC turns on top of
     this; moved out to `shelved/` pending a rewrite -- see
     `docs/architecture.md`.)

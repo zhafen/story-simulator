@@ -28,22 +28,52 @@ appearance:
 state:
     - description: The entity's current state, as a single freeform word or short
         phrase (e.g. a door being "open" or "closed"). Exactly one value counts
-        as current per entity -- see `turn`.
+        as current per entity -- see `time`.
     - component_type
     - field:
         value:
             description: The current state, e.g. "open" or "closed".
             type: str
-        turn:
-            description: Ordering stamp backfilled on merge (see
+        time:
+            description: World time (seconds since world creation) this state
+                was recorded at, backfilled on merge (see
                 story_simulator.spatial.merge_yaml_string), not authored
                 directly, so it stays nullable for hand-authored rows.
                 Entities can accumulate multiple state rows over time;
                 flagged time_dimension so Registry.view_current resolves
-                the row with the highest turn as the current state.
-            type: int
+                the row with the highest time as the current state.
+            type: float
             nullable: true
             time_dimension: true
+            units: seconds
+
+next_due:
+    - description: The next in-world time this entity should be processed by
+        the event loop (see story_simulator.spatial.next_due_entity). No row
+        yet means due immediately -- a brand-new entity always goes before
+        anything already scheduled into the future. Exactly one value counts
+        as current per entity -- see `time`.
+    - component_type
+    - field:
+        value:
+            description: The next due time, in seconds since world creation --
+                the same world-time axis `time` (below) stamps every other
+                write with, so "when is X next due" and "how recent is this
+                row" share one clock.
+            type: float
+            units: seconds
+        time:
+            description: World time (seconds since world creation) this
+                next_due row was recorded at, backfilled on merge (see
+                story_simulator.spatial.merge_yaml_string), not authored
+                directly, so it stays nullable for hand-authored rows.
+                Entities can accumulate multiple next_due rows over time;
+                flagged time_dimension so Registry.view_current resolves
+                the row with the highest time as the current one.
+            type: float
+            nullable: true
+            time_dimension: true
+            units: seconds
 
 physics_components:
     position:
@@ -65,16 +95,18 @@ physics_components:
                 type: float
                 nullable: false
                 default: 0
-            turn:
-                description: Ordering stamp backfilled on merge (see
+            time:
+                description: World time (seconds since world creation) this
+                    position was recorded at, backfilled on merge (see
                     story_simulator.spatial.merge_yaml_string), not authored
                     directly, so it stays nullable for hand-authored rows.
                     Entities can accumulate multiple position rows over time;
                     flagged time_dimension so Registry.view_current resolves
-                    the row with the highest turn as the current position.
-                type: int
+                    the row with the highest time as the current position.
+                type: float
                 nullable: true
                 time_dimension: true
+                units: seconds
     origin:
         - description: A tag component indicating that the associated entity is at the
             origin of the coordinate system.

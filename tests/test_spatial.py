@@ -4,6 +4,7 @@ from iacs.registrar import Registrar
 
 from story_simulator import game_config
 from story_simulator.config import MANIFEST_DIR, WORLD_FILE_ID
+from story_simulator.core import merge_yaml_string
 from story_simulator.spatial import (
     active_aliases,
     distance,
@@ -12,7 +13,6 @@ from story_simulator.spatial import (
     entity_position,
     latest_positions,
     memory_aliases,
-    merge_yaml_string,
     perceptible_entities,
     record_memory,
     sync_active_tags,
@@ -130,7 +130,7 @@ def test_entity_descriptions_empty_for_no_aliases():
 
 def test_entity_descriptions_shows_only_current_description():
     registrar = _registrar_from_yaml("door:\n    - description: first\n    - position: {x: 0, y: 0}\n")
-    merge_yaml_string(registrar, "door:\n    - description: second\n", turn=2)
+    merge_yaml_string(registrar, "door:\n    - description: second\n", time=2)
     result = entity_descriptions(registrar, {"door"})
     assert result == "door: second"
 
@@ -145,7 +145,7 @@ def test_entity_descriptions_includes_current_state():
 
 def test_entity_descriptions_shows_only_current_state():
     registrar = _registrar_from_yaml("door:\n    - state: open\n    - position: {x: 0, y: 0}\n")
-    merge_yaml_string(registrar, "door:\n    - state: closed\n", turn=2)
+    merge_yaml_string(registrar, "door:\n    - state: closed\n", time=2)
     result = entity_descriptions(registrar, {"door"})
     assert result == "door: (state: closed)"
 
@@ -259,10 +259,10 @@ def test_perceptible_entities_falls_back_to_default_size_when_missing():
     assert "no_size_far" not in perceptible_entities(registrar, "observer")
 
 
-def test_latest_positions_resolves_to_highest_turn():
+def test_latest_positions_resolves_to_highest_time():
     registrar = Registrar()
-    merge_yaml_string(registrar, "player:\n    - position: {x: 0.0, y: 0.0}\n", turn=1)
-    merge_yaml_string(registrar, "player:\n    - position: {x: 5.0, y: 5.0}\n", turn=2)
+    merge_yaml_string(registrar, "player:\n    - position: {x: 0.0, y: 0.0}\n", time=1)
+    merge_yaml_string(registrar, "player:\n    - position: {x: 5.0, y: 5.0}\n", time=2)
     latest = latest_positions(registrar)
     row = latest[latest["entity_id.alias"] == "player"].iloc[0]
     assert (float(row["position.x"]), float(row["position.y"])) == (5.0, 5.0)

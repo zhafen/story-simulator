@@ -1,12 +1,16 @@
 """Position/distance/perception helpers shared by the MCP server's tools.
 
-Ported from the old per-turn `MapSystem` into plain functions any tool can
-call on demand: there's no more automatic per-turn pass recomputing "what's
-active" for a fixed reference character, since there's no more per-turn
-pipeline at all. `perceive` (in `mcp_server.py`) calls these when a caller
-actually asks who/what a given character can perceive, for whichever
-character it names — there's no single privileged "the player" anymore, so
-every function here takes its reference character explicitly.
+The spatial module: optional, layered on top of `story_simulator.core`'s
+base event loop, not part of it -- a world with no position/distance/
+perception concept at all still runs the base simulation fine (see
+`core.py`'s own docstring). Ported from the old per-turn `MapSystem` into
+plain functions any tool can call on demand: there's no more automatic
+per-turn pass recomputing "what's active" for a fixed reference character,
+since there's no more per-turn pipeline at all. `perceive` (in
+`mcp_server.py`) calls these when a caller actually asks who/what a given
+character can perceive, for whichever character it names — there's no
+single privileged "the player" anymore, so every function here takes its
+reference character explicitly.
 """
 
 from __future__ import annotations
@@ -20,57 +24,15 @@ import yaml
 from iacs.registrar import Registrar
 
 from story_simulator import game_config
-from story_simulator.config import MANIFEST_DIR, WORLD_FILE_ID
-
-
-def merge_yaml_string(registrar: Registrar, yaml_text: str, turn: int | None = None) -> None:
-    """Run the ETL pipeline on a raw YAML string and merge the result into `registrar`.
-
-    Same mechanism every write in this project uses (see the old
-    `story_simulator.systems._merge_yaml_string`): `turn`, when given, backfills
-    the `position.turn` time-dimension field so `latest_positions` can resolve
-    which of an entity's accumulated position rows is current.
-    """
-    registrar.update(input_dirs=[str(MANIFEST_DIR)], yaml_strings={WORLD_FILE_ID: yaml_text}, time=turn)
-
-
-def safe_view(registrar: Registrar, fields: str | list[str]) -> pd.DataFrame | None:
-    """Execute `registrar.view(fields)`, or None if that component type isn't loaded yet."""
-    names = [fields] if isinstance(fields, str) else fields
-    tables = {name.split(".", 1)[0] for name in names}
-    if not tables <= set(registrar.registry.component_types):
-        return None
-    try:
-        return registrar.view(fields).execute()
-    except KeyError:
-        return None
-
-
-def safe_view_current(registrar: Registrar, fields: str | list[str]) -> pd.DataFrame | None:
-    """Like `safe_view`, but resolves each field's current row per entity.
-
-    Uses `registrar.view_current` (see `Registry.view_current`) instead of
-    `view` -- the right choice for anything meant to show an entity's
-    *current* state (`perceive`, narration) rather than its full change
-    history. A component type with no `time_dimension` field behaves
-    exactly like `safe_view` (every row is "current").
-    """
-    names = [fields] if isinstance(fields, str) else fields
-    tables = {name.split(".", 1)[0] for name in names}
-    if not tables <= set(registrar.registry.component_types):
-        return None
-    try:
-        return registrar.view_current(fields).execute()
-    except KeyError:
-        return None
+from story_simulator.core import due_by_entity, merge_yaml_string, safe_view, safe_view_current
 
 
 def latest_positions(registrar: Registrar) -> pd.DataFrame:
-    """Return one row per entity: its highest-turn `position` (resolves accumulated history)."""
-    columns = ["entity_id", "entity_id.alias", "position.x", "position.y", "position.z", "position.turn"]
+    """Return one row per entity: its highest-time `position` (resolves accumulated history)."""
+    columns = ["entity_id", "entity_id.alias", "position.x", "position.y", "position.z", "position.time"]
     if "position" not in registrar.registry.component_types:
         return pd.DataFrame(columns=columns)
-    return registrar.view_current(["position.x", "position.y", "position.z", "position.turn"]).execute()[columns]
+    return registrar.view_current(["position.x", "position.y", "position.z", "position.time"]).execute()[columns]
 
 
 def entity_position(registrar: Registrar, alias: str) -> tuple[float, float] | None:
@@ -172,7 +134,18 @@ def perceptible_entities(registrar: Registrar, center: "str | tuple[float, float
     cx, cy = _resolve_point(registrar, center)
 
     positions = registrar.view_current(["position.x", "position.y"])
-    sizes = registrar.get("size").group_by("entity_id").aggregate(size=lambda t: t["value"].max())
+    # Cast to the manifest-declared `size.value: float` type explicitly rather than
+    # trusting whatever dtype `registrar.get` infers: when no entity anywhere in the
+    # save has ever had a `size` component, reopening the save (a plain DB reconnect,
+    # not a manifest re-merge) leaves that schema undeclared, so `get` falls back to
+    # a generic `value: string` empty table -- and `.max()` over a string column
+    # produces a string `size` column that then fails to coalesce with the float
+    # `DEFAULT_ENTITY_SIZE` fallback below.
+    sizes = (
+        registrar.get("size")
+        .group_by("entity_id")
+        .aggregate(size=lambda t: t["value"].cast("float64").max())
+    )
     joined = positions.left_join(sizes, positions["entity_id"] == sizes["entity_id"])
 
     size_col = joined["size"].fill_null(game_config.DEFAULT_ENTITY_SIZE)
@@ -267,3 +240,91 @@ def active_aliases(registrar: Registrar) -> set[str]:
     if df is None:
         return set()
     return set(df["entity_id.alias"])
+
+
+def character_interaction_type(registrar: Registrar, alias: str) -> str | None:
+    """Return `alias`'s `character.interaction_type` ("player"/"npc"), or None if unset.
+
+    Used by `get_character_input`/`resolve_event` (mcp_server.py) to branch
+    between the player-voiced path (responder="human" -- only a real human
+    can answer) and the NPC path (responder="subagent" -- nobody real is
+    behind it).
+    """
+    entity_id = registrar.get_entity_id(alias)
+    if entity_id is None:
+        return None
+    df = safe_view(registrar, "character.interaction_type")
+    if df is None:
+        return None
+    match = df[df["entity_id"] == entity_id]
+    return None if match.empty else str(match.iloc[0]["character.interaction_type"])
+
+
+# ---------------------------------------------------------------------------
+# The character module's own scheduling: layers "only characters, and a
+# brand-new one sorts first" on top of core.py's plain next_due data --
+# see core.pop_event's docstring for the base version this specializes.
+# ---------------------------------------------------------------------------
+
+
+def next_due_entity(registrar: Registrar) -> str | None:
+    """Return the alias of whichever character is due soonest, or None if there are none.
+
+    A character with no `next_due` row yet sorts as due immediately
+    (-inf), so a brand-new character always goes before anything already
+    scheduled into the future -- unlike `core.pop_event`'s base rule
+    (nothing is a candidate without an explicit `next_due` row), which
+    this deliberately overrides for characters specifically. Only
+    characters are scheduled -- non-character entities (objects, terrain)
+    don't take turns this way; see `core.pop_event` for those instead. A
+    plain read, not a destructive dequeue: `story_simulator.resolve`'s
+    replay-from-the-top mechanism depends on this being safe to call again
+    and again and get the same answer for the same registry state.
+    """
+    if "character" not in registrar.registry.component_types:
+        return None
+    characters = registrar.view_current(["character.interaction_type"]).execute()
+    if characters.empty:
+        return None
+    due_df = due_by_entity(registrar)
+    merged = characters.merge(due_df, on="entity_id", how="left")
+    merged["due"] = merged["due"].fillna(float("-inf"))
+    return merged.sort_values("due").iloc[0]["entity_id.alias"]
+
+
+def pop_event(registrar: Registrar) -> str | None:
+    """Pop event box: identify (not destructively dequeue) whichever character is due next."""
+    return next_due_entity(registrar)
+
+
+def select_character(registrar: Registrar, alias: str) -> str:
+    """Select character box: resolve/validate the alias `process_event` was already handed.
+
+    Not a "pick among many" step -- `pop_event` already chose which entity
+    is due. This just confirms `alias` still resolves to a real entity.
+    """
+    if registrar.get_entity_id(alias) is None:
+        raise ValueError(f"No such character: {alias!r}")
+    return alias
+
+
+def narrate_to_character(registrar: Registrar, alias: str) -> str:
+    """Narrate to character box: what `alias` can currently perceive, and record it.
+
+    Tags each perceived entity `active` (replacing whatever was previously
+    tagged active) and merges them into `alias`'s permanent `memory`, the
+    same way the old per-turn MapSystem did -- just on demand instead of
+    automatically every turn. This is the `perceive` tool's own body,
+    factored out here so `character_communication` (mcp_server.py) can
+    call it directly instead of going through a second MCP round-trip.
+    """
+    nearby = perceptible_entities(registrar, alias)
+    sync_active_tags(registrar, nearby)
+    record_memory(registrar, alias, nearby)
+    if not nearby:
+        return f"Nothing else is within perceptible range of {alias}."
+    details = entity_descriptions(registrar, nearby)
+    parts = [f"Entities near {alias}: {', '.join(sorted(nearby))}"]
+    if details:
+        parts.append(details)
+    return "\n".join(parts)

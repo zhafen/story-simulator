@@ -1,3 +1,4 @@
+import asyncio
 from unittest.mock import MagicMock
 
 import pytest
@@ -45,8 +46,10 @@ class TestMcpToolRegistration:
             "generate_terrain",
             "resolve_physics",
             "advance_npc_turn",
+            "advance_simulation",
         }
         assert expected <= self._tool_names()
+        assert "advance_bare_simulation" not in self._tool_names()
 
     def test_generate_terrain_has_no_ctx_parameter(self):
         """generate_terrain/resolve_physics don't touch the registry, so no ctx is needed."""
@@ -312,7 +315,7 @@ class TestAdvanceNpcTurn:
         mock_completion = MagicMock(side_effect=[decide_response, narrate_response])
         monkeypatch.setattr("story_simulator.agents.litellm.completion", mock_completion)
 
-        result = advance_npc_turn("traveler", ctx)
+        result = asyncio.run(advance_npc_turn("traveler", ctx))
 
         assert "I look around." in result
         assert "traveler" in result

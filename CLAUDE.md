@@ -73,6 +73,14 @@ this playthrough's full history already merged in. A genuinely fresh
 living-world playthrough needs a different, currently-nonexistent pristine
 source.
 
+## Prefix in-world narration with `> narrator:`
+
+When narrating a turn's outcome directly to the player (step 3 of the
+per-action loop below), prefix that in-world text with `> narrator:` so
+it's visually distinguishable from ordinary conversational replies. This
+applies only to the actual narration text, not to out-of-character asides
+or status updates.
+
 ## Reloading `story-simulator-mcp` after editing its code
 
 `.mcp.json` spawns `story-simulator-mcp` once, as a long-lived stdio
@@ -150,8 +158,8 @@ current-look text, `size` for perceptibility), define it properly in
 `description` explaining what it's for, a `component_type` tag, and a
 `field:` block declaring each field's name/type/description — and, if it's
 a "current value" kind of fact rather than an accumulating log, a nullable
-`turn` field flagged `time_dimension: true`, matching `position.turn`'s/
-`state.turn`'s pattern. This only applies when you actually have write
+`time` field flagged `time_dimension: true`, matching `position.time`'s/
+`state.time`'s pattern. This only applies when you actually have write
 access to the repo (a Claude Code session like this one); a narrator
 connected only through the MCP tool surface has no way to act on it and
 should just use what's already defined.

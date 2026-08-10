@@ -36,7 +36,7 @@ The judgment resolver behind all of this (`story_simulator.resolve`) is
 what lets `character_communication`/`resolve_event`/`resolve_base_event`
 reach a real decision from any nesting depth without every intervening
 function having to be a generator -- see that module's own docstring for
-its four responders (`keyed_subagent`/`subagent`/`human`/`orchestrator`)
+its four responders (`keyed_subagent`/`subagent`/`human`/`host`)
 and why each exists.
 
 Structurally mirrors `iacs/iacs/mcp_server.py`: a session-scoped `Registrar`
@@ -385,7 +385,7 @@ server = FastMCP(
         "reply, not your own; \"subagent\" when it should be answered by a fresh, isolated "
         "subagent call of your own (e.g. the Agent/Task tool) rather than from your "
         "accumulated context here -- pass the prompt text as that subagent's entire input, "
-        "run it in the foreground, and resume with its result verbatim; or \"orchestrator\" "
+        "run it in the foreground, and resume with its result verbatim; or \"host\" "
         "when nothing else is behind this and you should just decide the answer yourself "
         "(e.g. as that NPC would act, standing in for a missing subagent key).\n\n"
         "Decide what happens to whatever it's asking about -- call generate_terrain if the "
@@ -738,7 +738,7 @@ async def get_character_input(
     """Get character input box.
 
     NPC path prefers keyed_subagent (nobody real is behind an NPC) but
-    falls back to responder="orchestrator" if it fails -- e.g. no
+    falls back to responder="host" if it fails -- e.g. no
     keyed_subagent key configured, not something every deployment can be
     assumed to have (see `TurnReplay.resolve_preferring_keyed_subagent`).
     Player-voiced path always needs a human (responder="human"): only the
@@ -847,7 +847,7 @@ async def resolve_base_event(alias: str, replay: TurnReplay) -> tuple[str, float
     the character module's 1-second default. A base event has no standing
     agenda to keep acting on; it's done unless told otherwise.
 
-    Always responder="orchestrator": no player is ever behind a base event
+    Always responder="host": no player is ever behind a base event
     (there's no `character.interaction_type` to branch on, since the
     character module isn't what's driving this popped entity), and
     there's no keyed_subagent persona for one to fall back from either --
@@ -855,7 +855,7 @@ async def resolve_base_event(alias: str, replay: TurnReplay) -> tuple[str, float
     has one.
     """
     request = JudgmentRequest(prompt=f"{alias} is due.\n\n{_BASE_NEXT_DUE_IN_INSTRUCTION}")
-    answer = await replay.resolve(request, responder="orchestrator")
+    answer = await replay.resolve(request, responder="host")
     return _parse_next_due_in(answer, default=float("inf"))
 
 
@@ -905,7 +905,7 @@ async def _run_event_loop(
     are None only when the queue is empty (nothing left to stash);
     otherwise `alias`/`replay` are exactly what `advance_simulation` needs
     to encode into a `resume_token` for resuming this same pause point, and
-    `responder` ("human", "subagent", or "orchestrator") says who it's asking.
+    `responder` ("human", "subagent", or "host") says who it's asking.
     """
     character_enabled = "character" in enabled_modules()
 
@@ -939,8 +939,8 @@ async def _run_event_loop(
         # whatever's due next. A character turn usually completes here
         # without ever pausing (responder="keyed_subagent" succeeding), but
         # can pause the same as a player-voiced one if it falls back to
-        # responder="orchestrator" (see resolve_preferring_keyed_subagent).
-        # A base event always pauses (responder="orchestrator" is its only
+        # responder="host" (see resolve_preferring_keyed_subagent).
+        # A base event always pauses (responder="host" is its only
         # path) unless this exact call was already answered by a prior
         # replay.
 
@@ -999,7 +999,7 @@ async def advance_simulation(ctx: Context, resume_token: str | None = None, answ
     key is configured, see `TurnReplay.resolve_preferring_keyed_subagent`)
     an NPC's own decision. With it disabled: the base event-driven
     simulation (see `core.py`) -- every due entity resolves via
-    responder="orchestrator", no character/NPC concept at all.
+    responder="host", no character/NPC concept at all.
 
     Call with neither argument to start (or continue after a prior call
     finished with nothing left scheduled). That, and every later call,
@@ -1008,7 +1008,7 @@ async def advance_simulation(ctx: Context, resume_token: str | None = None, answ
     On the latter, `responder` is "human" (relay `prompt` to the actual
     player and use their answer), "subagent" (answer it via your own
     isolated subagent call, e.g. the Agent/Task tool, and use its result),
-    or "orchestrator" (decide it yourself, e.g. as that NPC would act, or
+    or "host" (decide it yourself, e.g. as that NPC would act, or
     what a base-module entity that's come due does) -- then call again
     with that exact `resume_token` and your `answer` -- no separate tool,
     and no server-side state to lose: `resume_token` carries everything

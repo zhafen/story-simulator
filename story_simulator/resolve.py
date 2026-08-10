@@ -15,14 +15,14 @@ Same request shape (`JudgmentRequest`) at every call site, dispatched by
 
 2. "subagent" -- also a specialist's answer, but without story-simulator
    needing its own key: the connected host is asked, via the same MRTR
-   pause as "human"/"orchestrator" below, to answer using its OWN subagent
+   pause as "human"/"host" below, to answer using its OWN subagent
    mechanism (e.g. Claude Code's Agent/Task tool) instead of from its own
    accumulated conversation context -- see `_render_for_host`'s "subagent"
    branch for the exact wording asked of it. This is what actually gets
    story-sim "subagent-shaped" context isolation without requiring every
    deployment to configure its own key: whatever model access the
    connected host already has gets reused for free, the same way
-   responder="orchestrator" already does, just framed to ask for a fresh,
+   responder="host" already does, just framed to ask for a fresh,
    isolated subagent call instead of an inline decision. Nothing currently
    verifies the host actually did that rather than just answering inline
    -- see the TODO in `_render_for_host`.
@@ -39,21 +39,24 @@ Same request shape (`JudgmentRequest`) at every call site, dispatched by
    human actually answered, and the only one that tolerates the player
    disappearing indefinitely between rounds.
 
-4. "orchestrator" -- the connected host itself decides, inline, from its
-   own accumulated context, no real human and no isolated subagent call
+4. "host" -- the connected host itself decides, inline, from its own
+   accumulated context, no real human and no isolated subagent call
    involved -- same MRTR mechanism as "human"/"subagent" (same exception,
    same pause/resume), but standing in for "keyed_subagent" wherever we
    can't assume the deployment has its own key configured, rather than
    standing in for a real player. See
-   `TurnReplay.resolve_preferring_keyed_subagent`. (This specific
-   responder value used to just be called "host" too -- renamed to
-   "orchestrator" once "host" was already doing double duty as this
-   project's general term for the connected entity, which every responder
-   value routes through one way or another. "host" stays the general term;
-   "orchestrator" now names only this one inline-decide mode, removing
-   that overlap.)
+   `TurnReplay.resolve_preferring_keyed_subagent`. Named after the entity
+   answering it, not the role it's playing: nothing here can verify that
+   whatever answers this is actually orchestrating anything (deciding on
+   its own initiative, as opposed to relaying to a human or delegating to
+   a subagent) -- "host" only claims what's actually guaranteed, that
+   *some* connected host answered. In practice this is expected to be the
+   same orchestrating entity described throughout this module and
+   `mcp_server.py` (the one juggling "human"/"subagent"/"host" in the
+   first place), just with no enforcement of that expectation baked in
+   anywhere.
 
-"human"/"subagent"/"orchestrator" are reached by raising, not by every
+"human"/"subagent"/"host" are reached by raising, not by every
 intervening function being a generator (`yield from` chains would work
 too, but would require `character_communication`, `process_event`, and
 everything between a deep nested call and the tool boundary to *all* be
@@ -69,7 +72,7 @@ one, the stack already unwound. It means re-running the whole turn from
 the top of the event loop with the answers-so-far now available (see
 `TurnReplay`), replaying each already-answered judgment call (of any
 responder -- a "keyed_subagent" call isn't re-issued, it's replayed from
-cache same as "human"/"subagent"/"orchestrator") instead of re-asking it.
+cache same as "human"/"subagent"/"host") instead of re-asking it.
 That's only correct because everything upstream of a judgment call is a
 pure registry read -- the same idempotence already required for a paused
 turn to survive an MCP disconnect without losing anything but the
@@ -116,7 +119,7 @@ class NeedsExternalInput(Exception):
 
     `responder` is "human" (a real human), "subagent" (the connected
     host should answer via its own isolated subagent mechanism,
-    not its own accumulated context), or "orchestrator" (the connected
+    not its own accumulated context), or "host" (the connected
     host decides inline itself, e.g. standing in for a missing
     keyed_subagent) -- carried through to `mcp_server.advance_simulation`'s
     returned result so whichever host answers it knows what's
@@ -143,7 +146,7 @@ async def _via_keyed_subagent(request: JudgmentRequest, spec: AgentSpec) -> str:
 
 
 def _render_for_host(request: JudgmentRequest, responder: str) -> str:
-    """Frame `request` for whichever of "human"/"subagent"/"orchestrator" is
+    """Frame `request` for whichever of "human"/"subagent"/"host" is
     about to read it, so the instructions travel with the prompt text
     itself (survives an MRTR pause/resume, an MCP disconnect, a different
     host entirely reconnecting) rather than living only in
@@ -180,7 +183,10 @@ def _render_for_host(request: JudgmentRequest, responder: str) -> str:
             "you can resume), and resume with its answer verbatim as your "
             "own answer.\n\n" + body
         )
-    if responder == "orchestrator":
+    if responder == "host":
+        # Framed as "decide it yourself" rather than naming a role
+        # (e.g. "orchestrator") this call expects but can't actually
+        # confirm -- see this module's own docstring, responder 4.
         return (
             "No human and no subagent is behind this -- decide the answer "
             "yourself, standing in for whichever role this call needed "
@@ -221,27 +227,27 @@ class TurnReplay:
             if spec is None:
                 raise ValueError("responder='keyed_subagent' requires spec")
             return await _via_keyed_subagent(request, spec)
-        if responder in ("human", "subagent", "orchestrator"):
+        if responder in ("human", "subagent", "host"):
             raise NeedsExternalInput(prompt=_render_for_host(request, responder), responder=responder)
         raise ValueError(f"unknown responder {responder!r}")
 
     async def resolve_preferring_keyed_subagent(self, request: JudgmentRequest, spec: AgentSpec) -> str:
         """Try responder="keyed_subagent" first, falling back to
-        responder="orchestrator" if it fails -- e.g. no API key configured
+        responder="host" if it fails -- e.g. no API key configured
         (see `story_simulator.config.resolve_anthropic_api_key`). We can't
         rely on every deployment having story-simulator's own subagent key
         set up, so an NPC-facing call site should reach for this instead of
         committing to "keyed_subagent" outright.
 
-        Falls back to "orchestrator", not the newer "subagent" -- this
-        method's own behavior is deliberately unchanged by that addition,
-        so existing call sites keep their existing fallback shape. A call
+        Falls back to "host", not the newer "subagent" -- this method's
+        own behavior is deliberately unchanged by that addition, so
+        existing call sites keep their existing fallback shape. A call
         site that wants isolated-context delegation instead of an inline
         host decision can already reach for responder="subagent"
         directly via `resolve`, without going through this method at all.
 
         Safe across a replay: a failed keyed_subagent attempt is never
-        cached (only a successful return, or an "orchestrator"/"subagent"
+        cached (only a successful return, or a "host"/"subagent"
         pause's eventual answer, ever lands in `TurnReplay.answers`), so a
         resumed replay's same call finds its answer already cached at this
         call's index -- via the ordinary `resolve` cache check -- and
@@ -251,4 +257,4 @@ class TurnReplay:
         try:
             return await self.resolve(request, responder="keyed_subagent", spec=spec)
         except Exception:
-            return await self.resolve(request, responder="orchestrator")
+            return await self.resolve(request, responder="host")

@@ -94,9 +94,31 @@ flowchart TD
     n14 --> n17
     n15 --> n18
     n15 --> n19
+    n15 -.-> n13
+    n13 -.-> n14
+    n14 -.-> n16
+    n19 -.-> n18
+    n7 -.-> n10
+    n10 -.-> n8
+    n8 -.-> n9
+    n9 -.-> n5
+    n2 -.-> n1
+    n1 -.-> n4
+    n4 -.-> n3
     class n0 rootNode
     classDef rootNode fill:#f96,stroke:#333,stroke-width:3px
 ```
+
+Solid arrows are calls; dotted arrows are new -- they connect one
+entity's own call targets in the order it actually calls them (e.g.
+`n15 -.-> n13 -.-> n14 -.-> n16`/`resolve_event -.-> predict_event -.->
+push_event -.-> _next_time_stamp` traces `process_event`'s own body top to
+bottom, since those four are exactly what it calls and in that order),
+skipping over any unresolved call in between rather than breaking the
+chain there. `load_python` now records each `calls` row's first-occurrence
+order as a `seq` field; `build_call_reachability`/`_order_edges` turns
+consecutive `seq` values from the same caller into these edges — see that
+module's docstring.
 
 This traces cleanly end to end today — every real call from
 `advance_simulation` down through `resolve_event`/`predict_event`/

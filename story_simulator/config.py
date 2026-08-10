@@ -123,7 +123,7 @@ def resolve_anthropic_api_key() -> str | None:
 # see core.py's own docstring for what "base" guarantees regardless of
 # which of these are active. "character" is the only one advance_simulation
 # itself branches on today (whether a due entity gets resolved by a real
-# human/orchestrator via character_communication+resolve_event, or generically via
+# human/host via character_communication+resolve_event, or generically via
 # resolve_base_event); the rest (npc, physics, terrain, spatial) don't
 # change the loop's own control flow yet -- they're already reachable as
 # separately-callable tools (advance_npc_turn, resolve_physics,

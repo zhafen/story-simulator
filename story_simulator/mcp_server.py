@@ -11,12 +11,12 @@ character module, `process_event`/`character_communication`/
 `pop_event`/`predict_event`/`push_event` -- see `core.py`'s own docstring
 for what "base" guarantees with nothing layered on top. Either way, the
 loop fast-forwards through anything it can resolve on its own, and pauses
-whenever a turn needs input only the connected orchestrator can supply --
+whenever a turn needs input only the connected host can supply --
 the player-voiced character's action/resolution, an NPC's decision (if no
 keyed_subagent key is configured -- not something every deployment can be
 assumed to have), or a base-module entity's own resolution -- handing
-control back to whatever MCP-aware orchestrator is connected (a human's
-chat agent, an automated harness, ...). That orchestrator IS the narrator:
+control back to whatever MCP-aware host is connected (a human's
+chat agent, an automated harness, ...). That host IS the narrator:
 it perceives what's going on from the returned prompt, either relays it to
 the actual human, delegates it to its own isolated subagent mechanism, or
 decides it itself (see `advance_simulation`'s own `responder` field),
@@ -948,7 +948,7 @@ async def _run_event_loop(
 def _encode_token(alias: str, answers: list[str]) -> str:
     """Serialize a paused turn's resumption state into an opaque token.
 
-    Self-contained, not a lookup key into server memory -- the orchestrator
+    Self-contained, not a lookup key into server memory -- the host
     round-trips this same string back via `advance_simulation`'s own
     `resume_token` argument, so whichever subprocess decodes it (even a
     fresh one after a restart) can resume identically. No `_pending_turns`-

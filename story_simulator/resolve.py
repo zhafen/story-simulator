@@ -14,22 +14,21 @@ Same request shape (`JudgmentRequest`) at every call site, dispatched by
    see below.)
 
 2. "subagent" -- also a specialist's answer, but without story-simulator
-   needing its own key: the connected orchestrator is asked, via the same
-   MRTR pause as "human"/"orchestrator" below, to answer using its OWN
-   subagent mechanism (e.g. Claude Code's Agent/Task tool) instead of from
-   its own accumulated conversation context -- see
-   `_render_for_orchestrator`'s "subagent" branch for the exact wording
-   asked of it. This is what actually gets story-sim "subagent-shaped"
-   context isolation without requiring every deployment to configure its
-   own key: whatever model access the connected orchestrator already has
-   gets reused for free, the same way "orchestrator" already does, just
-   framed to ask for a fresh, isolated subagent call instead of an inline
-   decision. Nothing currently verifies the orchestrator actually did
-   that rather than just answering inline -- see the TODO in
-   `_render_for_orchestrator`.
+   needing its own key: the connected host is asked, via the same MRTR
+   pause as "human"/"orchestrator" below, to answer using its OWN subagent
+   mechanism (e.g. Claude Code's Agent/Task tool) instead of from its own
+   accumulated conversation context -- see `_render_for_host`'s "subagent"
+   branch for the exact wording asked of it. This is what actually gets
+   story-sim "subagent-shaped" context isolation without requiring every
+   deployment to configure its own key: whatever model access the
+   connected host already has gets reused for free, the same way
+   responder="orchestrator" already does, just framed to ask for a fresh,
+   isolated subagent call instead of an inline decision. Nothing currently
+   verifies the host actually did that rather than just answering inline
+   -- see the TODO in `_render_for_host`.
 
 3. "human" -- a real human's answer, needed. Hand control back to the
-   connected orchestrator entirely, via the `NeedsExternalInput` exception
+   connected host entirely, via the `NeedsExternalInput` exception
    below, resumed through MRTR (Multi Round-Trip Requests, MCP spec
    2026-07-28) rather than MCP sampling. Sampling would have offered a
    third option -- the connected client's own model/provider, not ours --
@@ -40,17 +39,19 @@ Same request shape (`JudgmentRequest`) at every call site, dispatched by
    human actually answered, and the only one that tolerates the player
    disappearing indefinitely between rounds.
 
-4. "orchestrator" -- the connected orchestrator itself decides, inline,
-   from its own accumulated context, no real human and no isolated
-   subagent call involved -- same MRTR mechanism as "human"/"subagent"
-   (same exception, same pause/resume), but standing in for
-   "keyed_subagent" wherever we can't assume the deployment has its own
-   key configured, rather than standing in for a real player. See
-   `TurnReplay.resolve_preferring_keyed_subagent`. (Formerly "host" --
-   which is also the MCP spec's own term for this same connected entity;
-   this project's general prose still says "orchestrator" for that entity
-   too now, purely for consistency with this one name, even though the
-   spec's own word for it remains "host".)
+4. "orchestrator" -- the connected host itself decides, inline, from its
+   own accumulated context, no real human and no isolated subagent call
+   involved -- same MRTR mechanism as "human"/"subagent" (same exception,
+   same pause/resume), but standing in for "keyed_subagent" wherever we
+   can't assume the deployment has its own key configured, rather than
+   standing in for a real player. See
+   `TurnReplay.resolve_preferring_keyed_subagent`. (This specific
+   responder value used to just be called "host" too -- renamed to
+   "orchestrator" once "host" was already doing double duty as this
+   project's general term for the connected entity, which every responder
+   value routes through one way or another. "host" stays the general term;
+   "orchestrator" now names only this one inline-decide mode, removing
+   that overlap.)
 
 "human"/"subagent"/"orchestrator" are reached by raising, not by every
 intervening function being a generator (`yield from` chains would work
@@ -105,7 +106,7 @@ class JudgmentRequest:
         """Flatten to plain text -- no separate system/user split outside
         "keyed_subagent"'s own direct API call. Every other responder gets
         this same flattened text, then framed differently per responder by
-        `_render_for_orchestrator` before it ever leaves this process."""
+        `_render_for_host` before it ever leaves this process."""
         return f"{self.system_prompt}\n\n{self.prompt}" if self.system_prompt else self.prompt
 
 
@@ -114,11 +115,11 @@ class NeedsExternalInput(Exception):
     outside story-simulator's own process.
 
     `responder` is "human" (a real human), "subagent" (the connected
-    orchestrator should answer via its own isolated subagent mechanism,
+    host should answer via its own isolated subagent mechanism,
     not its own accumulated context), or "orchestrator" (the connected
-    orchestrator decides inline itself, e.g. standing in for a missing
+    host decides inline itself, e.g. standing in for a missing
     keyed_subagent) -- carried through to `mcp_server.advance_simulation`'s
-    returned result so whichever orchestrator answers it knows what's
+    returned result so whichever host answers it knows what's
     actually being asked of it.
     """
 
@@ -141,11 +142,11 @@ async def _via_keyed_subagent(request: JudgmentRequest, spec: AgentSpec) -> str:
     return response.choices[0].message.content or ""
 
 
-def _render_for_orchestrator(request: JudgmentRequest, responder: str) -> str:
+def _render_for_host(request: JudgmentRequest, responder: str) -> str:
     """Frame `request` for whichever of "human"/"subagent"/"orchestrator" is
     about to read it, so the instructions travel with the prompt text
     itself (survives an MRTR pause/resume, an MCP disconnect, a different
-    orchestrator entirely reconnecting) rather than living only in
+    host entirely reconnecting) rather than living only in
     `mcp_server`'s static tool descriptions, which a given client may or
     may not still have in view by the time it matters.
     """
@@ -157,20 +158,20 @@ def _render_for_orchestrator(request: JudgmentRequest, responder: str) -> str:
             "their behalf.\n\n" + body
         )
     if responder == "subagent":
-        # TODO: this is trust-based -- nothing here verifies the
-        # orchestrator actually spawned an isolated subagent rather than
-        # just answering inline itself. A real check would need the
-        # resumed `answer` to prove a subagent ran it: e.g. mint a
-        # single-use nonce per call, embed it in this rendered prompt with
-        # an instruction that the subagent's own response must begin with
-        # it verbatim, then have the caller that receives the resumed
-        # `answer` (mcp_server.advance_simulation) verify the nonce is
-        # present and strip it before treating the rest as the real
-        # answer. On a missing/wrong nonce, don't advance the turn --
-        # raise NeedsExternalInput again with a corrective prompt (same
-        # resume_token/nonce) so the orchestrator gets re-prompted to
-        # actually delegate this time, instead of silently accepting an
-        # inline answer wearing a "subagent" label.
+        # TODO: this is trust-based -- nothing here verifies the host
+        # actually spawned an isolated subagent rather than just answering
+        # inline itself. A real check would need the resumed `answer` to
+        # prove a subagent ran it: e.g. mint a single-use nonce per call,
+        # embed it in this rendered prompt with an instruction that the
+        # subagent's own response must begin with it verbatim, then have
+        # the caller that receives the resumed `answer`
+        # (mcp_server.advance_simulation) verify the nonce is present and
+        # strip it before treating the rest as the real answer. On a
+        # missing/wrong nonce, don't advance the turn -- raise
+        # NeedsExternalInput again with a corrective prompt (same
+        # resume_token/nonce) so the host gets re-prompted to actually
+        # delegate this time, instead of silently accepting an inline
+        # answer wearing a "subagent" label.
         return (
             "Answer this via your own subagent mechanism (e.g. Claude "
             "Code's Agent/Task tool), not from your own accumulated "
@@ -221,7 +222,7 @@ class TurnReplay:
                 raise ValueError("responder='keyed_subagent' requires spec")
             return await _via_keyed_subagent(request, spec)
         if responder in ("human", "subagent", "orchestrator"):
-            raise NeedsExternalInput(prompt=_render_for_orchestrator(request, responder), responder=responder)
+            raise NeedsExternalInput(prompt=_render_for_host(request, responder), responder=responder)
         raise ValueError(f"unknown responder {responder!r}")
 
     async def resolve_preferring_keyed_subagent(self, request: JudgmentRequest, spec: AgentSpec) -> str:
@@ -236,7 +237,7 @@ class TurnReplay:
         method's own behavior is deliberately unchanged by that addition,
         so existing call sites keep their existing fallback shape. A call
         site that wants isolated-context delegation instead of an inline
-        orchestrator decision can already reach for responder="subagent"
+        host decision can already reach for responder="subagent"
         directly via `resolve`, without going through this method at all.
 
         Safe across a replay: a failed keyed_subagent attempt is never

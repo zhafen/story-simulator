@@ -95,7 +95,7 @@ def test_multi_entity_handoff_interleaves_by_due_time(tmp_path, monkeypatch):
     while result["status"] == "input_required":
         # The prompt is now framed with responder="orchestrator" instructions
         # ahead of the actual "{alias} is due." body (see
-        # resolve._render_for_orchestrator) -- pull the alias out from
+        # resolve._render_for_host) -- pull the alias out from
         # immediately before " is due" rather than assuming it's the first word.
         who = result["prompt"].split(" is due")[0].rsplit("\n\n", 1)[-1]
         order.append(who)

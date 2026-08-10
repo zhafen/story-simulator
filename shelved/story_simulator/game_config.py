@@ -20,3 +20,12 @@ PERCEPTIBLE_FOV_FRACTION = 0.01
 # Fallback characteristic size (meters) for an entity with no `size`
 # component of its own.
 DEFAULT_ENTITY_SIZE = 2.0
+
+# Coefficient of restitution used by story_simulator.collision.resolve_collision
+# when resolve_interaction (story_simulator/interaction.py) works out a
+# surviving collision's post-impact velocities -- 1.0 is perfectly elastic
+# (no kinetic energy lost), 0.0 is perfectly inelastic (objects move
+# together afterward). 0.9 is a gameplay default (most interactions stay
+# lively, but every hit an object survives still measurably erodes its
+# binding energy via the lost energy), not a measured material property.
+DEFAULT_COEFFICIENT_OF_RESTITUTION = 0.9

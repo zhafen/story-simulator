@@ -217,6 +217,50 @@ def entity_descriptions(registrar: Registrar, aliases: set[str]) -> str:
     return "\n".join(f"{alias}: {' '.join(parts)}" for alias, parts in sorted(parts_by_alias.items()))
 
 
+def entity_label(registrar: Registrar, alias: str) -> str:
+    """A short label for `alias` to use in a prompt -- its `description` if known, else just the alias."""
+    df = safe_view(registrar, "description.value")
+    if df is not None:
+        entity_id = registrar.get_entity_id(alias)
+        if entity_id is not None:
+            match = df[df["entity_id"] == entity_id]
+            if not match.empty:
+                return f"{alias} ({match.iloc[-1]['description.value']})"
+    return alias
+
+
+def latest_value(registrar: Registrar, component_type: str, alias: str) -> float | None:
+    """Return the latest `component_type.value` recorded for `alias`, or None if it has none yet.
+
+    Generic version of what `entity_position` does for `position`
+    specifically -- for any single-valued component (`mass`,
+    `kinetic_energy`, `binding_energy`, ...), time-dimensioned or not.
+    """
+    df = safe_view_current(registrar, f"{component_type}.value")
+    if df is None:
+        return None
+    entity_id = registrar.get_entity_id(alias)
+    if entity_id is None:
+        return None
+    match = df[df["entity_id"] == entity_id]
+    if match.empty:
+        return None
+    return float(match.iloc[-1][f"{component_type}.value"])
+
+
+def value_update(alias: str, component_type: str, value: float, time: float | None = None) -> dict:
+    """One entity's update block for a single-valued `component_type`, merged via dict.update.
+
+    Generic building block for any scalar component write, the same way
+    `sync_active_tags`/`record_memory` build their own merge blocks for
+    `active`/`memory`.
+    """
+    fields = {"value": value}
+    if time is not None:
+        fields["time"] = time
+    return {f"{alias}_{component_type}_update": [{"same_as": {"value": alias}}, {component_type: [fields]}]}
+
+
 def active_aliases(registrar: Registrar) -> set[str]:
     """Return the aliases of every entity currently tagged `active`."""
     df = safe_view(registrar, "active")

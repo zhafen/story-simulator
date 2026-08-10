@@ -4,6 +4,10 @@ Every other story_simulator module imports from here rather than
 hardcoding these paths/constants itself.
 """
 
+__iacs__ = {
+    "todo": "Evaluate moving as much config as possible to EC files."
+}
+
 import hashlib
 import os
 import urllib.parse
@@ -68,7 +72,7 @@ def registry_url(save_dir: Path) -> str:
     Scoped to that save's own schema via the `schema` query param.
     Connecting doesn't create the schema -- an unknown schema is silently
     skipped rather than erroring, so callers must create it first (see
-    mcp_server._ensure_postgres_schema).
+    core._ensure_postgres_schema).
 
     Postgres specifically: a live MCP session needs its connection to stay
     open for the whole session while other processes read/write
@@ -95,24 +99,30 @@ def resolve_anthropic_api_key() -> str | None:
     """
     return os.environ.get("STORY_SIM_ANTHROPIC_API_KEY") or None
 
+# ALL_MODULES/enabled_modules() (the character/npc/physics/terrain/spatial
+# optional-module toggle) removed along with the code it gated -- see
+# docs/architecture.md and git history for what it looked like.
 
-# Every module layered on top of story_simulator.core's base event loop.
-# "character" is the only one advance_simulation branches on today (real
-# human/host resolution vs. resolve_base_event); the rest are already
-# reachable as separately-callable tools regardless of this set, and are
-# only tracked here so a deployment can describe/discover which are meant
-# to be in play.
-ALL_MODULES = frozenset({"character", "npc", "physics", "terrain", "spatial"})
+_EVENT_RESPONDERS = ("host", "subagent")
 
 
-def enabled_modules() -> frozenset[str]:
-    """Which optional modules are active for this deployment.
+def event_responder() -> str:
+    """Which responder `core.resolve_event` should ask each time
+    a base event comes due: "host" (default -- the connected agent decides
+    inline, from its own accumulated context) or "subagent" (ask it to
+    delegate to its own isolated subagent mechanism instead, e.g. Claude
+    Code's Agent/Task tool -- see `story_simulator.resolve`'s module
+    docstring for what that buys and its one known gap).
 
-    Read from STORY_SIM_MODULES, a comma-separated subset of ALL_MODULES
-    (e.g. "character,spatial"). Unset means every module (backward
-    compatibility); an explicitly empty value means none.
+    Read from STORY_SIM_RESPONDER rather than a `start_world`
+    argument -- a deployment-wide choice about how its connected agent
+    should be used, not something that varies save to save. Defaults to
+    "host" (today's only behavior) so nothing changes for a deployment
+    that hasn't opted in. An unrecognized value raises rather than
+    silently falling back to "host", so a typo'd env var fails loud
+    instead of quietly never delegating.
     """
-    raw = os.environ.get("STORY_SIM_MODULES")
-    if raw is None:
-        return ALL_MODULES
-    return frozenset(m.strip() for m in raw.split(",") if m.strip())
+    value = os.environ.get("STORY_SIM_RESPONDER", "host")
+    if value not in _EVENT_RESPONDERS:
+        raise ValueError(f"STORY_SIM_RESPONDER must be one of {_EVENT_RESPONDERS}, got {value!r}")
+    return value

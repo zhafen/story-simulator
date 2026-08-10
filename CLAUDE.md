@@ -3,13 +3,16 @@
 ## Project Overview
 
 story-simulator is an MCP server exposing a text-simulation game master's
-tools (`start_world`, `perceive`, `update_registry`, ...). World state lives
-in a Postgres-backed `iacs` registry, not in this project's own process
-memory — see `docs/architecture.md` for the full picture.
+tools (`start_world`, `advance_simulation`, `update_registry`, ...). World
+state lives in a Postgres-backed `iacs` registry, not in this project's own
+process memory — see `docs/architecture.md` for the full picture.
+(Character/NPC/terrain/physics/spatial-perception tools --
+`perceive`/`advance_npc_turn`/`generate_terrain`/`resolve_physics` -- are
+currently shelved; see that doc.)
 
-Every `update_registry` call (including the NPC turn's own internal one)
-re-exports the registry's state to two directories, not the source of
-truth but both current as of the last turn:
+Every `update_registry` call re-exports the registry's state to two
+directories, not the source of truth
+but both current as of the last turn:
 - `save_dir/world/`: current state, collapsed — a time_dimension'd
   component type (`description`, `state`, `position`) shows only its
   current row per entity, not every historical restatement.

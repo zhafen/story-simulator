@@ -44,6 +44,7 @@ uv run --project iacs iacs --manifest story_simulator generate-architecture-diag
 ```
 
 ```mermaid
+%%{init: {'themeVariables': {'clusterBkg': 'transparent', 'clusterBorder': '#999999'}}}%%
 flowchart LR
     subgraph sg0["core"]
         n12["due_by_entity"]
@@ -106,7 +107,14 @@ flowchart LR
     classDef rootNode fill:#f96,stroke:#333,stroke-width:3px
 ```
 
-Solid arrows are calls; the boxed groups are new. An entity that itself
+The diagram's first line (`%%{init: ...}%%`) makes every box's
+background transparent rather than Mermaid's default solid fill --
+`mcp_server` above spans a bounding box wide enough to sit visually
+behind several unrelated boxes and edges, since its three members
+(`advance_simulation`, `_encode_token`, `process_event`) end up scattered
+far apart once everything else pulls its own nodes into their own
+sequence boxes; a filled box that size would hide whatever's underneath
+it. Solid arrows are calls; the boxed groups are new. An entity that itself
 makes two or more calls gets those targets pulled into their own box
 (labeled with just the caller's name, always laid out top-to-bottom
 internally regardless of the overall left-right flow -- a box's own

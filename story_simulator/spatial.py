@@ -247,8 +247,8 @@ def character_interaction_type(registrar: Registrar, alias: str) -> str | None:
 
     Used by `get_character_input`/`resolve_event` (mcp_server.py) to branch
     between the player-voiced path (responder="human" -- only a real human
-    can answer) and the NPC path (responder="subagent" -- nobody real is
-    behind it).
+    can answer) and the NPC path (responder="keyed_subagent" -- nobody real
+    is behind it).
     """
     entity_id = registrar.get_entity_id(alias)
     if entity_id is None:

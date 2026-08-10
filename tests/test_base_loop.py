@@ -1,7 +1,8 @@
 """Tests for the base event-driven simulation: advance_simulation with the
 character module disabled (story_simulator.config.enabled_modules) -- no
 characters, no NPCs, no physics/terrain modules, just whatever's been
-scheduled via next_due, resolved by responder="host" each time it comes due.
+scheduled via next_due, resolved by responder="orchestrator" each time it
+comes due.
 
 These are the kind of scenario a base-module world can resolve without any
 detailed physics: a chain of events that needs walking through step by
@@ -42,15 +43,16 @@ def test_nothing_scheduled_returns_done_immediately(tmp_path, monkeypatch):
     assert result == {"status": "done", "narration": "Nothing scheduled."}
 
 
-def test_responder_is_always_host(tmp_path, monkeypatch):
+def test_responder_is_always_orchestrator(tmp_path, monkeypatch):
     """No character.interaction_type exists to branch on, and there's no
-    subagent persona for a base-module event to fall back from -- unlike
-    the character-ful branch, only "host" is ever possible here."""
+    keyed_subagent persona for a base-module event to fall back from --
+    unlike the character-ful branch, only "orchestrator" is ever possible
+    here."""
     ctx = _base_world(tmp_path, monkeypatch)
     update_registry("gizmo:\n    - next_due:\n        value: 0\n", ctx)
     result = asyncio.run(advance_simulation(ctx))
     assert result["status"] == "input_required"
-    assert result["responder"] == "host"
+    assert result["responder"] == "orchestrator"
     assert "gizmo is due" in result["prompt"]
 
 
@@ -91,7 +93,11 @@ def test_multi_entity_handoff_interleaves_by_due_time(tmp_path, monkeypatch):
     order = []
     result = asyncio.run(advance_simulation(ctx))
     while result["status"] == "input_required":
-        who = result["prompt"].split(" ", 1)[0]
+        # The prompt is now framed with responder="orchestrator" instructions
+        # ahead of the actual "{alias} is due." body (see
+        # resolve._render_for_orchestrator) -- pull the alias out from
+        # immediately before " is due" rather than assuming it's the first word.
+        who = result["prompt"].split(" is due")[0].rsplit("\n\n", 1)[-1]
         order.append(who)
         token = result["resume_token"]
         if who == "chain_a_ball":

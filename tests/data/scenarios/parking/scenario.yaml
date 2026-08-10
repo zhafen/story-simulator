@@ -22,11 +22,14 @@ file_info:
 
         No `position` component anywhere in this file, deliberately: this
         puzzle is solvable purely from elapsed-time facts (each drive's
-        own starts_at/duration, on its own car_X_drive entity, read via
-        view_registry("drive")), and giving the cars spatial coordinates
-        would invite computing arrival order from distance/speed instead
-        -- exactly the physics-flavored shortcut this fixture exists to
-        rule out (see CLAUDE.md's "reasoning, not physics" framing).
+        own starts_at/duration/traveler/destination, on its own
+        car_X_drive entity, read via view_registry("drive")), and giving
+        the cars spatial coordinates would invite computing arrival order
+        from distance/speed instead -- exactly the physics-flavored
+        shortcut this fixture exists to rule out (see CLAUDE.md's
+        "reasoning, not physics" framing). `drive` (below) is declared
+        right here rather than in manifest/builtins.yaml: it's specific
+        to this one puzzle, not a general engine concept.
 
         Written for the current base event loop (no character/NPC module
         -- see docs/architecture.md and CLAUDE.md): these are plain
@@ -41,6 +44,34 @@ file_info:
         through the elapsed-time arithmetic in view_registry("drive")'s
         results to get the parking assignment right, rather than just
         reacting to whichever order the entities happen to come due in.
+
+drive:
+    - description: >
+        How long a trip takes and when it starts, stated directly as
+        world-time facts (seconds since world creation) rather than as a
+        distance or speed to be traveled at some assumed pace -- working
+        out what order several drives finish in is elapsed-time
+        arithmetic (starts_at + duration), not a physics calculation.
+        Scoped to this scenario file rather than manifest/builtins.yaml:
+        it's specific to this puzzle, not a general engine concept other
+        scenarios would need.
+    - component_type
+    - field:
+        starts_at:
+            description: World time (seconds since world creation) this
+                drive begins.
+            type: float
+            units: seconds
+        duration:
+            description: How long this drive takes once it starts, in seconds.
+            type: float
+            units: seconds
+        traveler:
+            description: The entity making this trip.
+            type: entity_ref
+        destination:
+            description: Where this trip is going.
+            type: entity_ref
 
 restaurant:
     - object:
@@ -102,6 +133,8 @@ car_a_drive:
     - drive:
         starts_at: 0
         duration: 1800
+        traveler: car_a
+        destination: restaurant
     - description:
         value: car_a's own drive to restaurant -- starts_at/duration are in seconds.
 
@@ -121,6 +154,8 @@ car_b_drive:
     - drive:
         starts_at: 300
         duration: 720
+        traveler: car_b
+        destination: restaurant
     - description:
         value: car_b's own drive to restaurant -- starts_at/duration are in seconds.
 
@@ -140,5 +175,7 @@ car_c_drive:
     - drive:
         starts_at: 480
         duration: 600
+        traveler: car_c
+        destination: restaurant
     - description:
         value: car_c's own drive to restaurant -- starts_at/duration are in seconds.

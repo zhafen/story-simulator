@@ -1,12 +1,12 @@
 door:
 - description:
-    time: 1785803711
+    time: 198370
     value: A plain door of unfinished wood, pale and slightly rough-grained. Its surface
       is cool and dry to the touch, faintly gritty in places. It has a plain round
       wooden knob, set at about waist height, that turns freely. It has swung shut
       again behind the player.
 - state:
-    time: 1785803711
+    time: 198370
     value: closed
 - object:
     type: door
@@ -16,7 +16,7 @@ door:
     z: 0.0
 door_2:
 - description:
-    time: 1785803743
+    time: 198402
     value: A second plain door, standing alone in a cracked, sunbaked field. It matches
       the first door's plain, pale, rough-grained wood on both sides. Nothing holds
       it up but its own frame -- no wall, no structure. Its hinges are visible from
@@ -24,18 +24,18 @@ door_2:
       at about waist height, that turns freely.
 - active
 - state:
-    time: 1785803711
+    time: 198370
     value: closed
 - object:
     type: door
 - position:
-    time: 1785605558.0
+    time: 217.0
     x: 0.0
     y: -998.0
     z: 0.0
 expanse:
 - description:
-    time: 1785817288
+    time: 211947
     value: An empty, quiet space, without walls or horizon.
 - object:
     type: expanse
@@ -56,7 +56,7 @@ journaling_desk:
       '
   desk:
   - description:
-      time: 1785817288
+      time: 211947
       value: A solid desk made of a deep reddish-brown wood.
   - object:
       type: desk
@@ -66,7 +66,7 @@ journaling_desk:
       z: 0.0
   journal:
   - description:
-      time: 1785817288
+      time: 211947
       value: A piece of leather bent in half around a small booklet of lined paper.
         It rests on top of the desk and next to a pen.
   - object:
@@ -78,7 +78,7 @@ journaling_desk:
   - writing: Leave a note.
   pen:
   - description:
-      time: 1785817288
+      time: 211947
       value: A capped fountain pen, jade green and faceted with a wide nib. The ink
         is black. It rests next to a journal and on a desk.
   - object:
@@ -91,12 +91,12 @@ player:
 - character:
     interaction_type: player
 - position:
-    time: 1785894168.0
+    time: 288827.0
     x: 0.0
     y: -900.0
     z: 0.0
 - description:
-    time: 1785894168
+    time: 288827
     value: A traveler walking north across the cracked, sunbaked field, the second
       door now distant behind them.
 - memory: door_2
@@ -108,7 +108,7 @@ player:
 - origin
 southern_field:
 - description:
-    time: 1785817288
+    time: 211947
     value: Packed dirt cracked in a spiderweb pattern from drought. Sparse, yellowed
       grass tufts push up through the gaps, and the air smells of dust and something
       organic long since dried out. The land is flat and featureless in every direction,
@@ -122,13 +122,13 @@ southern_field:
 - object:
     type: field
 - position:
-    time: 1785605558.0
+    time: 217.0
     x: 0.0
     y: -1000.0
     z: 0.0
 world:
 - description:
-    time: 1785817288
+    time: 211947
     value: 'The world in this setting is designed to iteratively build history.
 
       The core gimmick is that there is a door, and every time the player walks through

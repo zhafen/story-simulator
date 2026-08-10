@@ -14,6 +14,16 @@ runnable base rather than an unreachable configuration.
 
 from __future__ import annotations
 
+__iacs__ = {
+    "todo": (
+        "The pop/is_event_valid/advance_clock/predict_event/push_event "
+        "functions just live loose at module scope here. Evaluate whether "
+        "the event loop deserves a more deliberate structure (a class, a "
+        "dataclass-based state object, an explicit stage protocol) as more "
+        "modules start hooking into it, instead of a flat function bag."
+    )
+}
+
 import pandas as pd
 import yaml
 from iacs.registrar import Registrar
@@ -67,11 +77,10 @@ def safe_view_current(registrar: Registrar, fields: str | list[str]) -> pd.DataF
 # ---------------------------------------------------------------------------
 # Event-driven simulation loop -- one function per box in the turn-anatomy
 # diagram (see docs/architecture.md and the published turn-flow artifact).
-# Modeled on Sedgewick & Wayne's individual-timestep event-driven
-# simulation, but with the schedule itself living as registry data (a
-# `next_due` component) rather than an in-memory priority queue -- see
-# pop_event's docstring for why that's what makes resuming a paused turn
-# safe (see story_simulator.resolve).
+# An individual-timestep event-driven simulation, but with the schedule
+# itself living as registry data (a `next_due` component) rather than an
+# in-memory priority queue -- see pop_event's docstring for why that's
+# what makes resuming a paused turn safe (see story_simulator.resolve).
 # ---------------------------------------------------------------------------
 
 
@@ -126,10 +135,11 @@ def is_event_valid(registrar: Registrar, alias: str) -> bool:
     Always true today by construction -- `pop_event` always re-reads
     current state fresh rather than pre-computing events into a queue, so
     the classic "has this entity changed since it was scheduled" staleness
-    problem (Sedgewick & Wayne's own reason for this check) doesn't arise
-    yet. This is the seam a future lookahead/precomputed-event design
-    would extend, the same way `CollisionSystem.Event.isValid()` compares
-    a captured collision count against the current one.
+    problem this check exists for doesn't arise yet. This is the seam a
+    future lookahead/precomputed-event design would extend: an event
+    captured ahead of time would need to compare some snapshot taken when
+    it was scheduled (e.g. a version or change count) against the current
+    one to detect a stale entity before acting on it.
     """
     return registrar.get_entity_id(alias) is not None
 

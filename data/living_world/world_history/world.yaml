@@ -1,6 +1,6 @@
 door:
 - description:
-    time: 1785803711.0
+    time: 198370.0
     value: A plain door of unfinished wood, pale and slightly rough-grained. Its surface
       is cool and dry to the touch, faintly gritty in places. It has a plain round
       wooden knob, set at about waist height, that turns freely. It has swung shut
@@ -13,7 +13,7 @@ door:
     round wooden knob, set at about waist height, that turns freely. It has swung
     shut again behind the player.
 - state:
-    time: 1785803711.0
+    time: 198370.0
     value: closed
 - description: A plain door of unfinished wood, pale and slightly rough-grained. Its
     surface is cool and dry to the touch, faintly gritty in places. It has a plain
@@ -34,7 +34,7 @@ door:
 - description: A plain door; what's on its far side isn't visible yet.
 door_2:
 - description:
-    time: 1785803743.0
+    time: 198402.0
     value: A second plain door, standing alone in a cracked, sunbaked field. It matches
       the first door's plain, pale, rough-grained wood on both sides. Nothing holds
       it up but its own frame -- no wall, no structure. Its hinges are visible from
@@ -42,7 +42,7 @@ door_2:
       at about waist height, that turns freely.
 - active
 - description:
-    time: 1785803711.0
+    time: 198370.0
     value: A second plain door, standing alone in a cracked, sunbaked field. It matches
       the first door'''s plain, pale, rough-grained wood on both sides. Nothing holds
       it up but its own frame -- no wall, no structure. Its hinges are visible from
@@ -59,7 +59,7 @@ door_2:
     from the back, and it has a matching plain round wooden knob on this side too,
     set at about waist height.
 - state:
-    time: 1785803711.0
+    time: 198370.0
     value: closed
 - description: A second plain door, standing alone in a cracked, sunbaked field. It
     matches the first door's plain, pale, rough-grained wood on both sides. Nothing
@@ -80,7 +80,7 @@ door_2:
     from the back, and it has a matching plain round wooden knob on this side too,
     set at about waist height, that turns freely.
 - position:
-    time: 1785605558.0
+    time: 217.0
     x: 0.0
     y: -998.0
     z: 0.0
@@ -89,7 +89,7 @@ door_2:
     matches the first door's plain, pale, rough-grained wood.
 expanse:
 - description:
-    time: 1785817288.0
+    time: 211947.0
     value: An empty, quiet space, without walls or horizon.
 - object:
     type: expanse
@@ -111,7 +111,7 @@ journaling_desk:
       '
   desk:
   - description:
-      time: 1785817288.0
+      time: 211947.0
       value: A solid desk made of a deep reddish-brown wood.
   - object:
       type: desk
@@ -122,7 +122,7 @@ journaling_desk:
   - description: A solid desk made of a deep reddish-brown wood.
   journal:
   - description:
-      time: 1785817288.0
+      time: 211947.0
       value: A piece of leather bent in half around a small booklet of lined paper.
         It rests on top of the desk and next to a pen.
   - object:
@@ -136,7 +136,7 @@ journaling_desk:
   - writing: Leave a note.
   pen:
   - description:
-      time: 1785817288.0
+      time: 211947.0
       value: A capped fountain pen, jade green and faceted with a wide nib. The ink
         is black. It rests next to a journal and on a desk.
   - object:
@@ -151,26 +151,26 @@ player:
 - character:
     interaction_type: player
 - position:
-    time: 1785894168.0
+    time: 288827.0
     x: 0.0
     y: -900.0
     z: 0.0
 - position:
-    time: 1785894049.0
+    time: 288708.0
     x: 0.0
     y: -960.0
     z: 0.0
 - description:
-    time: 1785894168.0
+    time: 288827.0
     value: A traveler walking north across the cracked, sunbaked field, the second
       door now distant behind them.
 - description:
-    time: 1785803711.0
+    time: 198370.0
     value: A traveler who has just walked through the door and emerged a year later,
       one kilometer south, standing on cracked, sunbaked ground beside a second plain
       door.
 - description:
-    time: 1785894049.0
+    time: 288708.0
     value: A traveler walking north across the cracked, sunbaked field, away from
       the second door.
 - memory: door_2
@@ -178,22 +178,22 @@ player:
     looked around and taken in the door and the surrounding space.
 - memory: southern_field
 - position:
-    time: 1785605341.0
+    time: 0.0
     x: 0.0
     y: 2.0
     z: 0.0
 - position:
-    time: 1785605558.0
+    time: 217.0
     x: 0.0
     y: -1000.0
     z: 0.0
 - position:
-    time: 1785627805.0
+    time: 22464.0
     x: 0.0
     y: -996.0
     z: 0.0
 - position:
-    time: 1785630245.0
+    time: 24904.0
     x: 0.0
     y: -1000.0
     z: 0.0
@@ -212,7 +212,7 @@ player:
 - description: A traveler, pausing at the edge of a quiet space.
 southern_field:
 - description:
-    time: 1785817288.0
+    time: 211947.0
     value: Packed dirt cracked in a spiderweb pattern from drought. Sparse, yellowed
       grass tufts push up through the gaps, and the air smells of dust and something
       organic long since dried out. The land is flat and featureless in every direction,
@@ -226,7 +226,7 @@ southern_field:
 - object:
     type: field
 - position:
-    time: 1785605558.0
+    time: 217.0
     x: 0.0
     y: -1000.0
     z: 0.0
@@ -251,7 +251,7 @@ world:
     the world will generate the terrain for one more kilometer, and advance time one
     year in the existing area.'
 - description:
-    time: 1785817288.0
+    time: 211947.0
     value: 'The world in this setting is designed to iteratively build history.
 
       The core gimmick is that there is a door, and every time the player walks through

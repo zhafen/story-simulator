@@ -1,13 +1,13 @@
 """MCP server exposing story-simulator's world-state and narrative tools.
 
 story-simulator is *just* this server — there is no in-process agent loop
-here. `advance_simulation` runs ONE event-driven simulation loop (modeled
-on Sedgewick & Wayne's event-driven simulation, one function per step --
-see `_run_event_loop`) regardless of which optional modules are active
-(`story_simulator.config.enabled_modules`): with the character module,
-`process_event`/`character_communication`/`resolve_event` and
-`story_simulator.spatial`'s character-aware `pop_event`; with it off,
-`process_base_event` and `story_simulator.core`'s base
+here. `advance_simulation` runs ONE event-driven simulation loop (one
+function per step -- see `_run_event_loop`) regardless of which optional
+modules are active (`story_simulator.config.enabled_modules`): with the
+character module, `process_event`/`character_communication`/
+`resolve_event` and `story_simulator.spatial`'s character-aware
+`pop_event`; with it off, `process_base_event` and
+`story_simulator.core`'s base
 `pop_event`/`predict_event`/`push_event` -- see `core.py`'s own docstring
 for what "base" guarantees with nothing layered on top. Either way, the
 loop fast-forwards through anything it can resolve on its own, and pauses

@@ -1,67 +1,14 @@
 file_info:
     - description: >
         Human-validated regression fixture for tests/test_human_validated.py::
-        test_car_parking_reasoning (currently skipped -- see that test's
-        docstring). Three cars drive to a restaurant with only two parking
-        spots. Their start times and trip lengths are deliberately chosen
-        so that neither "started first" nor "shortest drive" predicts who
-        actually arrives first -- working out the correct arrival order
-        takes real starts_at + duration arithmetic:
-
-            car_a_drive: starts_at 0 min, duration 30 min -> arrives at 30 min.
-            car_b_drive: starts_at 5 min, duration 12 min -> arrives at 17 min.
-            car_c_drive: starts_at 8 min, duration 10 min -> arrives at 18 min.
-
-        So the real arrival order is B, then C, then A -- despite A
-        starting first (it still arrives last) and despite B's drive
-        taking longer than C's (it still arrives first, because it left
-        earlier by more than the difference in drive time). First-come,
-        first-served for the restaurant's two dedicated spots: Car B gets
-        parking_spot_1, Car C gets parking_spot_2, and Car A -- arriving
-        after both are already taken -- has to park on the street instead.
-
-        No `position` component anywhere in this file, deliberately: this
-        puzzle is solvable purely from elapsed-time facts (each drive's
-        own starts_at/duration/traveler/destination, on its own
-        car_X_drive entity, read via view_registry("drive")), and giving
-        the cars spatial coordinates would invite computing arrival order
-        from distance/speed instead -- exactly the physics-flavored
-        shortcut this fixture exists to rule out (see CLAUDE.md's
-        "reasoning, not physics" framing). `drive` (below) is declared
-        right here rather than in manifest/builtins.yaml: it's specific
-        to this one puzzle, not a general engine concept.
-
-        Written for the current base event loop (no character/NPC module
-        -- see docs/architecture.md and CLAUDE.md): these are plain
-        entities, not characters, and nothing perceives or narrates to
-        them automatically. Each car's own `next_due` below is seeded to
-        match its own drive's `starts_at` (in seconds), so
-        advance_simulation pops the cars in start order (A, B, C) when it
-        asks "what happens now that this entity is due" -- the same order
-        a naive "first to start must act first" reading would (wrongly)
-        expect to also be the arrival/parking order. The connected agent
-        answering each of those "is due" prompts has to actually work
-        through the elapsed-time arithmetic in view_registry("drive")'s
-        results to get the parking assignment right, rather than just
-        reacting to whichever order the entities happen to come due in.
+        test_car_parking_reasoning. Three cars drive to a restaurant with only two
+        parking spots.
 
 drive:
     - description: >
-        How long a trip takes and when it starts, stated directly as
-        world-time facts (seconds since world creation) rather than as a
-        distance or speed to be traveled at some assumed pace -- working
-        out what order several drives finish in is elapsed-time
-        arithmetic (starts_at + duration), not a physics calculation.
-        Scoped to this scenario file rather than manifest/builtins.yaml:
-        it's specific to this puzzle, not a general engine concept other
-        scenarios would need.
+        How long a trip takes and when it starts.
     - component_type
     - field:
-        starts_at:
-            description: World time (seconds since world creation) this
-                drive begins.
-            type: float
-            units: seconds
         duration:
             description: How long this drive takes once it starts, in seconds.
             type: float
@@ -76,42 +23,31 @@ drive:
 restaurant:
     - object:
         type: restaurant
+    - place
     - description:
         value: >
             A small restaurant with exactly two dedicated parking spots,
             parking_spot_1 and parking_spot_2; anyone who misses both has
             to park on the street instead.
 
-            Three friends -- car_a, car_b, and car_c -- are each driving
-            here separately for dinner tonight. Each car's own drive is
-            recorded on a matching car_X_drive entity (car_a_drive,
-            car_b_drive, car_c_drive), giving starts_at and duration in
-            seconds -- call view_registry("drive") to see all three at
-            once. Whichever car's starts_at + duration comes out lowest
-            actually arrives first and takes parking_spot_1, the
-            next-lowest takes parking_spot_2, and the highest (last to
-            arrive) parks on street instead.
-
-            Once a car's outcome is worked out, record it with
-            update_registry by setting that car's own state to exactly
-            "parked in parking_spot_1", "parked in parking_spot_2", or
-            "parked on street".
-
 parking_spot_1:
     - object:
         type: parking_spot
+    - place
     - description:
         value: The first of the restaurant's two dedicated parking spots.
 
 parking_spot_2:
     - object:
         type: parking_spot
+    - place
     - description:
         value: The second of the restaurant's two dedicated parking spots.
 
 street:
     - object:
         type: street
+    - location
     - description:
         value: >
             Ordinary street parking near the restaurant, for anyone who
@@ -122,33 +58,23 @@ car_a:
         type: car
     - next_due:
         value: 0
-    - description:
-        value: >
-            One of three friends' cars driving separately to restaurant
-            for dinner tonight -- see restaurant's own description for
-            the parking rule, and car_a_drive for this car's own start
-            time and trip duration.
+    - description: The car for friend A.
 
 car_a_drive:
+    - description:
+        value: car_a's own drive to restaurant -- starts_at/duration are in seconds.
     - drive:
         starts_at: 0
         duration: 1800
         traveler: car_a
         destination: restaurant
-    - description:
-        value: car_a's own drive to restaurant -- starts_at/duration are in seconds.
 
 car_b:
     - object:
         type: car
     - next_due:
         value: 300
-    - description:
-        value: >
-            One of three friends' cars driving separately to restaurant
-            for dinner tonight -- see restaurant's own description for
-            the parking rule, and car_b_drive for this car's own start
-            time and trip duration.
+    - description: The car for friend B.
 
 car_b_drive:
     - drive:
@@ -164,12 +90,7 @@ car_c:
         type: car
     - next_due:
         value: 480
-    - description:
-        value: >
-            One of three friends' cars driving separately to restaurant
-            for dinner tonight -- see restaurant's own description for
-            the parking rule, and car_c_drive for this car's own start
-            time and trip duration.
+    - description: The car for friend B.
 
 car_c_drive:
     - drive:

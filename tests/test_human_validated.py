@@ -23,11 +23,11 @@ import subprocess
 from pathlib import Path
 
 import ibis
+import pandas as pd
 import pytest
 
 from iacs.registrar import Registrar
 from story_simulator.config import registry_schema_name, registry_url, resolve_database_dsn
-from story_simulator.core import safe_view_current
 
 REPO_ROOT = Path(__file__).parent.parent
 PARKING_SCENARIO_DIR = REPO_ROOT / "tests" / "data" / "scenarios" / "parking"
@@ -108,21 +108,6 @@ def _load_registrar(save_dir: Path, narration: str) -> Registrar:
     return Registrar.load(registry_url(save_dir))
 
 
-def _current_state(registrar: Registrar, alias: str) -> str | None:
-    """The current `state.value` recorded for an aliased entity, or None if it has none yet.
-
-    `state` is time_dimension'd (an entity can accumulate several state
-    rows over a turn), so this reads the current one via `view_current`
-    the same way the rest of story-simulator does, rather than the first
-    or last row in write order.
-    """
-    df = safe_view_current(registrar, "state.value")
-    if df is None:
-        return None
-    match = df[df["entity_id.alias"] == alias]
-    return None if match.empty else str(match.iloc[-1]["state.value"])
-
-
 @pytest.mark.live
 @pytest.mark.skip(
     reason="Not yet attempted -- tracks a reasoning capability the core simulation "
@@ -132,44 +117,31 @@ def _current_state(registrar: Registrar, alias: str) -> str | None:
     "passes for real, rather than loosening the assertions to fit whatever the "
     "sim currently does."
 )
-def test_car_parking_reasoning(tmp_path):
+def test_car_parking_core_sim(tmp_path):
     """Three cars must work out their own arrival order from raw facts, then
     correctly divide up a two-spot parking lot on a first-come-first-served basis.
 
-    This is a human-validated check on "reasoning, not physics" (see CLAUDE.md's
-    component-schema section and the project's general design goals): the
-    scenario has no `position` component anywhere in it, deliberately --
-    every number the puzzle needs (each car's starts_at/duration) lives as
-    structured `drive` facts on that car's own car_X_drive entity (see
-    tests/data/scenarios/parking/scenario.yaml), discoverable in one shot
-    via view_registry("drive"), with no distance/speed/physics involved at
-    all. What's actually hard is the arithmetic and the resource
-    bookkeeping: Car A starts driving first but has the longest trip and so
+    Car A starts driving first but has the longest trip and so
     actually arrives last; Car B starts second with a slightly longer trip
     than Car C but, because it left earlier by more than that difference,
     still arrives first; Car C starts last with the shortest trip and
     arrives second. First-come-first-served over exactly two dedicated
     spots then means Car B takes parking_spot_1, Car C takes
     parking_spot_2, and Car A -- last to arrive -- has to park on the
-    street. The scenario's own restaurant description spells out the
-    recording convention: each car's outcome should land in that car's own
-    `state` as exactly "parked in parking_spot_1", "parked in
-    parking_spot_2", or "parked on street".
+    street.
 
     Deliberately structured so naive shortcuts give the wrong answer: "first
     to start goes first" and "shortest trip wins" both misorder these three,
     and the scenario's own `next_due` seeding (matching each car's drive's
     own starts_at -- see that file's docstring) even makes advance_simulation
     *pop* the cars in start order (A, B, C) -- matching neither the real
-    arrival order nor the parking outcome -- so getting this right takes
-    actually reasoning through the elapsed-time arithmetic in
-    view_registry("drive")'s results, not just following processing order.
+    arrival order nor the parking outcome.
 
-    No character/NPC module is involved (see this file's own module
+    No character/NPC/physics module is involved (see this file's own module
     docstring): every entity is a plain object, and each of the three "X is
     due" prompts advance_simulation raises is answered by the connected
     agent itself (responder="host"), which has to call view_entity/
-    view_registry on its own to learn the puzzle facts before deciding —
+    view_registry on its own to learn the facts before deciding —
     exactly the pattern story-simulator's own tool instructions describe.
     One headless turn is enough since every one of those round trips is a
     nested tool call within that single turn, not a separate user message.
@@ -179,29 +151,17 @@ def test_car_parking_reasoning(tmp_path):
 
     narration = _run_headless_turn(
         f"Use start_world with save_dir={save_dir} and scenario_dir={PARKING_SCENARIO_DIR} "
-        "to open a story-simulator world. Then call advance_simulation repeatedly. Each "
-        "time it comes back with status \"input_required\", it's naming one entity that's "
-        "now due -- look up whatever you need with view_registry/view_entity, decide what "
-        "happens, record it with update_registry, and call advance_simulation again with "
-        "that exact resume_token and your answer (ending with a `next_due_in: <seconds>` "
-        "line if that entity has more to do, or omitting it if it's finished) -- until "
-        "advance_simulation's status is \"done\". There is no human player and no subagent "
-        "to delegate to here; decide everything yourself. Don't narrate anything back to "
-        "me; just drive the simulation to completion and stop.",
+        "to open a story-simulator world. Then advance the simulation until all cars are "
+        "parked.",
         timeout=300,
     )
 
+
     r = _load_registrar(save_dir, narration)
-    assert _current_state(r, "car_a") == "parked on street", (
-        "Car A starts first but has the longest trip, so it should actually "
-        f"arrive last and end up parked on the street -- narration: {narration!r}"
-    )
-    assert _current_state(r, "car_b") == "parked in parking_spot_1", (
-        "Car B's trip is slightly longer than Car C's, but it starts earlier by "
-        "more than that difference, so it should still arrive first and take "
-        f"the first parking spot -- narration: {narration!r}"
-    )
-    assert _current_state(r, "car_c") == "parked in parking_spot_2", (
-        "Car C starts last with the shortest trip and should arrive second, "
-        f"taking the remaining parking spot -- narration: {narration!r}"
-    )
+    locations = r.view("location")
+    expected_locations = pd.DataFrame([
+        {"alias": "car_a", "location.value": "street"},
+        {"alias": "car_b", "location.value": "parking_spot_1"},
+        {"alias": "car_c", "location.value": "parking_spot_2"},
+    ])
+    pd.testing.assert_allclose(expected_locations, locations)

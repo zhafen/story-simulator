@@ -60,20 +60,20 @@ fully decided.
 ```mermaid
 flowchart TD
     subgraph Turn["Process event"]
-        direction TD
-        G[Character communication] --> F[Resolve event]
+        direction TB
+        G["Character communication"] --> F[Resolve event]
         F --> D[Update data]
     end
 
     subgraph Comm["Character communication"]
-        direction TD
+        direction TB
         SC[Select character] --> NC[Narrate to character]
         NC --> GI[Get character input]
         GI --> SC
     end
 
     subgraph Event["Event-driven simulation (Sedgewick & Wayne)"]
-        direction TD
+        direction TB
         I1[Predict events] --> I2[Push to queue]
         I2 -- next entity --> I1
         I2 --> L1[Pop event]

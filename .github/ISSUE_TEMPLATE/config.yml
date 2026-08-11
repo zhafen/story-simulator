@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: v1.0 Roadmap
+    url: https://github.com/zhafen/story-simulator/issues/45
+    about: The tracking issue for the current release -- check here before filing something that might already be an open epic.

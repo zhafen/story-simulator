@@ -37,7 +37,7 @@ import pytest
 
 from iacs.registrar import Registrar
 from story_simulator.config import registry_schema_name, registry_url, resolve_database_dsn
-from story_simulator.core import safe_view, safe_view_current
+from story_simulator.core import safe_view_current
 
 REPO_ROOT = Path(__file__).parent.parent
 PARKING_SCENARIO_DIR = REPO_ROOT / "tests" / "data" / "scenarios" / "parking"
@@ -187,16 +187,11 @@ def _load_registrar(save_dir: Path, narration: str) -> Registrar:
 
 def _location(registrar: Registrar, alias: str) -> str | None:
     """The current `location.value` recorded for an aliased entity, or
-    None if it has none yet.
-
-    `location` isn't a declared component type (see manifest/builtins.yaml)
-    -- it's exactly the kind of improvised-but-consistent component
-    CLAUDE.md describes iacs tolerating, established here by the
-    scenario's own restaurant description telling the model to use it. Not
-    time_dimension'd (nothing declares it that way), but each car's
-    location is only ever written once, so a plain view suffices.
+    None if it has none yet. `location` is a declared, time_dimension'd
+    component type (see manifest/builtins.yaml), so this resolves the
+    current row per entity rather than assuming a single write.
     """
-    df = safe_view(registrar, "location.value")
+    df = safe_view_current(registrar, "location.value")
     if df is None:
         return None
     match = df[df["entity_id.alias"] == alias]
@@ -219,12 +214,26 @@ def _event_states(registrar: Registrar) -> dict[str, str]:
 # already says that for whichever responder it names (see
 # resolve._frame_for_responder) -- so this only states the pacing this
 # test specifically needs, which nothing else knows to enforce.
+#
+# The "decide the full outcome now" sentence below is here, not in the
+# scenario or in core.py's general prompts, for the same reason: it's a
+# pacing constraint specific to how *this test* checks state turn by
+# turn, not a rule real gameplay should follow (a real event may well
+# legitimately want to defer part of itself to a follow-up). Confirmed
+# live as necessary -- a weak model, left to its own judgment, sometimes
+# resolves "drive to restaurant and search for parking" as "arrived,
+# still searching" and defers the actual parking assignment to a new
+# event it schedules in the plan step, which this test's single-turn
+# assertions have no way to see coming.
 _RESOLVE_ONE_EVENT_INSTRUCTION = (
     "Call advance_simulation. Answer its first prompt (resolving the next due event -- "
-    "look up whatever you need and record the outcome via update_registry) and then its "
-    "second prompt for that same event (planning any follow-up, or saying none is needed) "
-    "-- two separate advance_simulation calls for the one event. Once both are answered, "
-    "stop: do not call advance_simulation a third time. Don't narrate anything back to me."
+    "look up whatever you need and record the outcome via update_registry). Decide the "
+    "full outcome now, in this one turn -- don't defer part of it (e.g. a still-pending "
+    "sub-decision like where exactly something ends up) to a new event in the next prompt. "
+    "Then answer its second prompt for that same event (planning any follow-up, or saying "
+    "none is needed) -- two separate advance_simulation calls for the one event. Once both "
+    "are answered, stop: do not call advance_simulation a third time. Don't narrate "
+    "anything back to me."
 )
 
 
@@ -242,7 +251,7 @@ def test_car_parking_core_sim(tmp_path):
     means Car B takes parking_spot_1, Car C takes parking_spot_2, and Car
     A -- last to arrive -- has to park on the street.
 
-    Each car has exactly one pre-planned `event` entity (car_X_event, see
+    Each car has exactly one pre-planned `event` entity (car_X_trip, see
     tests/data/scenarios/parking/scenario.yaml) whose start_time + duration
     already *is* its true arrival time -- so pop_event's own mechanical
     sort (soonest due first) pops them in the real arrival order (B, C,
@@ -278,8 +287,8 @@ def test_car_parking_core_sim(tmp_path):
             f"haven't come due yet, so neither should have a recorded location -- narration: {narration!r}"
         )
         states = _event_states(r)
-        assert states.get("car_b_event") == "complete", states
-        assert states.get("car_c_event") != "complete" and states.get("car_a_event") != "complete", states
+        assert states.get("car_b_trip") == "complete", states
+        assert states.get("car_c_trip") != "complete" and states.get("car_a_trip") != "complete", states
 
         narration = session.send_turn(f"Again, {_RESOLVE_ONE_EVENT_INSTRUCTION}")
         r = _load_registrar(save_dir, narration)
@@ -295,8 +304,8 @@ def test_car_parking_core_sim(tmp_path):
             f"Car B's already-recorded outcome shouldn't change -- narration: {narration!r}"
         )
         states = _event_states(r)
-        assert states.get("car_c_event") == "complete", states
-        assert states.get("car_a_event") != "complete", states
+        assert states.get("car_c_trip") == "complete", states
+        assert states.get("car_a_trip") != "complete", states
 
         narration = session.send_turn(
             "Call advance_simulation again and keep answering its prompts (resolve, then "

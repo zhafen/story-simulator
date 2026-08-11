@@ -367,43 +367,27 @@ def _ensure_postgres_schema(save_dir: Path) -> None:
 def _export_world_yaml(registrar: Registrar, save_dir: Path) -> None:
     """Re-export the registry's state to `save_dir`'s `world/`/`world_history/` dirs.
 
-    A straight, mechanical round-trip (`Registrar.export_manifest`) -- not
-    the old `IacsArchivist`'s LLM-driven read/write loop, removed along with
-    `EnsembleWorld`/`Interpreter` in the MCP rebuild (see
+    A straight, mechanical round-trip (`Registrar.export_manifest`), run
+    after every registry write so a save's own YAML reads as a live
+    mirror of the registry rather than frozen turn-zero seed data. See
     docs/manifest/history.yaml: project_history.turn_pipeline_removed and
-    .world_yaml_sync_reverses_old_archivist_design). Runs after every
-    registry write so a save's own YAML stops being frozen turn-zero seed
-    data and instead reads as a live mirror of the registry, which stays the
-    actual source of truth.
+    .world_yaml_sync_reverses_old_archivist_design for why this replaced
+    the old LLM-driven Archivist read/write loop.
 
     Writes to two directories, not one:
-    - `world/`: current state (the default, collapsed export -- a
-      time_dimension'd component type like `description`/`state`/`position`
-      shows only its current row per entity, not every historical
-      restatement).
-    - `world_history/`: the same content, uncollapsed -- every row ever
-      recorded, full change history. Kept because the registry itself still
-      accumulates full history forever (nothing here is deleted, only what
-      the *collapsed* export shows), but that history would otherwise only
-      ever exist in this process's own database connection -- worth having
-      committed alongside the save, not just inferable from it.
+    - `world/`: current state, collapsed -- a time_dimension'd component
+      type shows only its current row per entity, not every restatement.
+    - `world_history/`: the same content, uncollapsed -- full change
+      history, since the registry keeps it forever but it would
+      otherwise only exist in this process's own DB connection.
 
-    Each is a directory, not a single fixed filename, so a save can be
-    split across more files later without a format change, matching
-    iacs's own principle of letting an EC source be organized across as
-    many files as its author wants -- `start_world`'s loader recurses
-    into whichever directory it picks rather than assuming one file lives
-    there. An earlier revision used fixed filenames instead; see
-    docs/manifest/history.yaml:
-    project_history.world_save_format_switched_from_fixed_filenames_to_directories
-    for why that changed.
+    Each is a directory, not a fixed filename, so a save can be split
+    across multiple files later -- see docs/manifest/history.yaml:
+    project_history.world_save_format_switched_from_fixed_filenames_to_directories.
 
-    `export_manifest` also re-exports this project's own field-schema
-    manifest (merged into every registry via `input_dirs=[MANIFEST_DIR]`)
-    to its own `builtins.yaml` alongside `world.yaml` -- that's just a
-    normalized round-trip of `manifest/builtins.yaml`'s static content, not
-    game state, so it's deleted rather than left to accumulate confusingly
-    in each export directory.
+    Also re-exports the field-schema manifest to its own `builtins.yaml`
+    alongside `world.yaml`; deleted rather than left to accumulate, since
+    it's static schema, not game state.
     """
     __iacs__ = {"solution of": "story_simulator_mission.seed_yaml_reflects_live_state"}
     world_dir = save_dir / WORLD_DIRNAME
@@ -515,7 +499,13 @@ async def resolve_event(alias: str, replay: TurnReplay) -> str:
     `event_state` transition (complete or interrupted), and whatever it
     changes about the entities it involves (see involved_entity) -- the
     same direct tool-calling pattern it already uses for every other
-    write. This function's only job is to ask and hand back the answer;
+    write. The prompt spells out that last part explicitly (write changes
+    onto the affected entity itself, not just described in this event's
+    own outcome text) -- confirmed live that a weak model otherwise
+    narrates an involved entity's new state inside the event's outcome
+    without a separate update_registry write for that entity, leaving
+    nothing for a caller reading that entity directly to find. This
+    function's only job is to ask and hand back the answer;
     persisting is entirely the responder's own, not a return value this
     code applies on its behalf (see `plan_events`, and `process_event`'s
     own docstring for why there's no separate mechanical "update" step).
@@ -535,8 +525,10 @@ async def resolve_event(alias: str, replay: TurnReplay) -> str:
             f"out what happens, then record it: {alias}'s own outcome, "
             f"{alias}'s own event_state (complete if this fully resolves "
             f"it, interrupted if something cuts it short), and anything it "
-            f"changes about the entities it involves -- all via "
-            f"update_registry."
+            f"changes about the entities it involves -- write those changes "
+            f"directly onto each affected entity itself (e.g. a `location` "
+            f"or `state` component on it), not only described in {alias}'s "
+            f"own outcome text -- all via update_registry."
         )
     )
     return await replay.resolve(request, responder=event_responder())

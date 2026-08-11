@@ -1,49 +1,8 @@
 file_info:
     - description: >
         Human-validated regression fixture for tests/test_human_validated.py::
-        test_car_parking_core_sim. Three cars drive to a restaurant with
-        only two parking spots. Their start times and trip lengths are
-        deliberately chosen so that neither "started first" nor "shortest
-        drive" predicts who actually arrives first -- working out the
-        correct arrival order takes real start_time + duration arithmetic:
-
-            car_a_event: start_time 0 min, duration 30 min -> arrives at 30 min.
-            car_b_event: start_time 5 min, duration 12 min -> arrives at 17 min.
-            car_c_event: start_time 8 min, duration 10 min -> arrives at 18 min.
-
-        So the real arrival order is B, then C, then A -- despite A
-        starting first (it still arrives last) and despite B's drive
-        taking longer than C's (it still arrives first, because it left
-        earlier by more than the difference in drive time). First-come,
-        first-served for the restaurant's two dedicated spots: Car B gets
-        parking_spot_1, Car C gets parking_spot_2, and Car A -- arriving
-        after both are already taken -- has to park on the street instead.
-
-        Written for the event-entity simulation loop (see
-        docs/architecture.md and story_simulator/core.py): a car itself
-        carries no schedule of its own -- each car has exactly one
-        pre-planned `event` entity (car_X_event) with its own start_time/
-        duration, and the event loop pops/resolves *events*, not cars,
-        by start_time + duration. Because that arithmetic already gives
-        each event's true completion time, the loop's own mechanical
-        popping order *is* the true arrival order (B, then C, then A) --
-        matching neither the cars' start order nor their drive lengths.
-        By the time any one event resolves, whichever spots earlier
-        events already claimed are genuinely already claimed (not a
-        guess about the future), so each event's own resolution only
-        ever needs to reason about itself and what it currently observes
-        -- not about the other two cars' timing.
-
-        Drive-and-park is deliberately kept as a single event per car
-        (not split into a separate "arrive" event) -- simple on purpose,
-        while still exercising the general event-loop machinery (pop,
-        resolve, plan) rather than a special-cased single-shot design.
-
-        No `position` component anywhere in this file, deliberately: the
-        puzzle is solvable purely from each event's own start_time/
-        duration (discoverable via view_registry("event")) plus
-        involved_entity links to find out which car/destination an event
-        concerns, with no distance/speed/physics involved at all.
+        test_car_parking_core_sim. Three cars drive to a restaurant with only
+        two parking spots.
 
 restaurant:
     - object:
@@ -52,19 +11,9 @@ restaurant:
         value: >
             A small restaurant with exactly two dedicated parking spots,
             parking_spot_1 and parking_spot_2; anyone who misses both has
-            to park on the street instead.
-
-            Three friends -- car_a, car_b, and car_c -- are each driving
-            here separately for dinner tonight, one pre-planned event per
-            car (car_a_event, car_b_event, car_c_event). Whichever car's
-            event actually resolves first takes parking_spot_1, the next
-            takes parking_spot_2, and the last (missing both) parks on
-            street instead.
-
-            Once a car's outcome is worked out, record it with
-            update_registry by setting that car's own location to exactly
-            "parked in parking_spot_1", "parked in parking_spot_2", or
-            "parked on street".
+            to park on the street instead. First-come, first-served:
+            whoever actually arrives first takes parking_spot_1, the next
+            takes parking_spot_2.
 
 parking_spot_1:
     - object:
@@ -82,20 +31,15 @@ street:
     - object:
         type: street
     - description:
-        value: >
-            Ordinary street parking near the restaurant, for anyone who
-            arrives after both dedicated spots are already taken.
+        value: Ordinary street parking near the restaurant.
 
 car_a:
     - object:
         type: car
     - description:
-        value: >
-            One of three friends' cars driving separately to restaurant
-            for dinner tonight -- see restaurant's own description for
-            the parking rule, and car_a_event for this car's own trip.
+        value: The car for friend A.
 
-car_a_event:
+car_a_trip:
     - event:
         start_time: 0
         duration: 1800
@@ -111,12 +55,9 @@ car_b:
     - object:
         type: car
     - description:
-        value: >
-            One of three friends' cars driving separately to restaurant
-            for dinner tonight -- see restaurant's own description for
-            the parking rule, and car_b_event for this car's own trip.
+        value: The car for friend B.
 
-car_b_event:
+car_b_trip:
     - event:
         start_time: 300
         duration: 720
@@ -132,12 +73,9 @@ car_c:
     - object:
         type: car
     - description:
-        value: >
-            One of three friends' cars driving separately to restaurant
-            for dinner tonight -- see restaurant's own description for
-            the parking rule, and car_c_event for this car's own trip.
+        value: The car for friend C.
 
-car_c_event:
+car_c_trip:
     - event:
         start_time: 480
         duration: 600

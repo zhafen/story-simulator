@@ -306,13 +306,31 @@ story_simulator_mission:
               ordering value (_next_turn_stamp) that only existed to resolve
               which of an entity's position rows is current.
 
-              Position/state/next_due's ordering field is now `time` (in
-              seconds since world creation), sourced from `next_due`'s own
-              accumulated next_due_in history rather than the wall clock --
-              see core._current_world_time/_next_time_stamp and
-              single_ordering_vocabulary. Still no day/night cycle or
-              calendar; "how long has X been walking" is answerable from
-              `time` deltas but nothing surfaces it yet.
+              Position/state/location's ordering field is `time` (in seconds
+              since world creation), sourced from whichever `event` was most
+              recently popped -- see core._current_world_time/_next_time_stamp
+              and single_ordering_vocabulary. The old next_due-based
+              mechanism this paragraph used to describe is gone entirely
+              (manifest/builtins.yaml's next_due component was dead schema,
+              removed); still no day/night cycle or calendar, and "how long
+              has X been walking" is answerable from `time` deltas but
+              nothing surfaces it yet.
+
+              Known gap, sharper than "resets to 0.0 on a subprocess
+              restart": _current_world_time is purely in-process,
+              session-scoped memory, not a registry entity, so it resets on
+              *every* idle-triggered MCP disconnect too (a routine, expected
+              event per CLAUDE.md's own recovery guidance), not just a
+              crash. If any update_registry call lands in the narrow window
+              between reconnect and the next successful event pop, it
+              backfills `time: 0.0` for time_dimension'd fields -- and since
+              Registry.view_current picks the row with the *highest* `time`
+              as current (not most-recent-write, except as an equal-time
+              tiebreak), such a write could be silently treated as stale on
+              read if an earlier row in that same session already recorded a
+              higher timestamp. Accepted for now in favor of not introducing
+              a separate persisted clock entity, but worth knowing precisely
+              rather than just "known gap".
         - requirement
         - impact:
               type: gameplay_richness
@@ -695,3 +713,45 @@ architecture_manifest_solution:
           This manifest (story-simulator.yaml + history.yaml), modeling the
           project as requirement/solution entities scored for cost-vs-impact.
     - solution of: story_simulator_mission.queryable_architecture
+
+# ---------------------------------------------------------------------------
+# Concepts already implemented in manifest/builtins.yaml's event_components
+# without a backing requirement -- deliberately left with no `solution of`
+# link so run_dataflow('audit.traceability') surfaces them as exactly what
+# they are ("solutions in search of a problem"), rather than inventing a new
+# iacs vocabulary concept for "unvalidated solution". Each carries a `todo`
+# so run_dataflow('audit.todo') also picks it up. Resolve by either writing
+# a real requirement and linking `solution of` to it, or removing the
+# now-unjustified schema/code.
+# ---------------------------------------------------------------------------
+
+outcome_progress_interruption_semantics:
+    - description: >
+          outcome.progress's field description currently says "how far the
+          resolution leaves the event's own lifecycle", but its real shape
+          is closer to "the outcome given a particular event_state" --
+          e.g. what "interrupted" concretely produces is a different kind
+          of outcome than "complete", and nobody has decided how that
+          should work yet. Deliberately set aside rather than designed
+          under time pressure.
+    - todo:
+          value: >
+              Decide outcome.progress/event_state's real interruption
+              semantics (what "interrupted" concretely produces, and
+              whether outcome.progress should be reframed as "the outcome
+              given a particular event_state"), or drop "interrupted" from
+              the vocabulary if it turns out not to be needed.
+          priority: 0.3
+
+involved_entity_unused:
+    - description: >
+          involved_entity (manifest/builtins.yaml event_components) lets an
+          event link to the entities it concerns, but nothing reads that
+          link today -- resolve_event/plan_events tell the responder to
+          look it up, but no code scopes anything by it.
+    - todo:
+          value: >
+              Give involved_entity a real functional use (e.g. scoping what
+              resolve_event/plan_events look up), or remove it if it turns
+              out not to be needed.
+          priority: 0.2

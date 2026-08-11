@@ -37,7 +37,7 @@ state:
         time:
             description: World time (seconds since world creation) this state
                 was recorded at, backfilled on merge (see
-                story_simulator.spatial.merge_yaml_string), not authored
+                story_simulator.core._next_time_stamp), not authored
                 directly, so it stays nullable for hand-authored rows.
                 Entities can accumulate multiple state rows over time;
                 flagged time_dimension so Registry.view_current resolves
@@ -47,29 +47,24 @@ state:
             time_dimension: true
             units: seconds
 
-next_due:
-    - description: The next in-world time this entity should be processed by
-        the event loop (see story_simulator.spatial.next_due_entity). No row
-        yet means due immediately -- a brand-new entity always goes before
-        anything already scheduled into the future. Exactly one value counts
-        as current per entity -- see `time`.
+location:
+    - description: The entity's current location, as a short freeform phrase
+        (e.g. "parked in parking_spot_1" or "parked on street") rather than
+        spatial coordinates -- see `position` for that. Exactly one value
+        counts as current per entity -- see `time`.
     - component_type
     - field:
         value:
-            description: The next due time, in seconds since world creation --
-                the same world-time axis `time` (below) stamps every other
-                write with, so "when is X next due" and "how recent is this
-                row" share one clock.
-            type: float
-            units: seconds
+            description: The current location, e.g. "parked on street".
+            type: str
         time:
             description: World time (seconds since world creation) this
-                next_due row was recorded at, backfilled on merge (see
-                story_simulator.spatial.merge_yaml_string), not authored
+                location was recorded at, backfilled on merge (see
+                story_simulator.core._next_time_stamp), not authored
                 directly, so it stays nullable for hand-authored rows.
-                Entities can accumulate multiple next_due rows over time;
+                Entities can accumulate multiple location rows over time;
                 flagged time_dimension so Registry.view_current resolves
-                the row with the highest time as the current one.
+                the row with the highest time as the current location.
             type: float
             nullable: true
             time_dimension: true
@@ -98,7 +93,7 @@ physics_components:
             time:
                 description: World time (seconds since world creation) this
                     position was recorded at, backfilled on merge (see
-                    story_simulator.spatial.merge_yaml_string), not authored
+                    story_simulator.core._next_time_stamp), not authored
                     directly, so it stays nullable for hand-authored rows.
                     Entities can accumulate multiple position rows over time;
                     flagged time_dimension so Registry.view_current resolves

@@ -170,6 +170,40 @@ class TestRegistryTools:
         registrar = _registrars[ctx.request_context.session]
         assert registrar.get("origin").count().execute() == 2
 
+    def test_update_registry_rejects_bare_mapping_components(self, tmp_path):
+        """A component written without the required leading `- ` (a bare
+        mapping instead of a list) is silently ignored by iacs's own ETL
+        -- no error, no invalid_field row, no data merged. Confirmed live
+        as a real failure mode (a responder's write appeared to succeed
+        but left the registry untouched), so update_registry now raises
+        instead of reporting success for it."""
+        ctx = _make_ctx()
+        start_world(str(tmp_path / "save"), ctx)
+        with pytest.raises(ValueError, match="car_a"):
+            update_registry("car_a:\n    state: parked on street\n", ctx)
+        registrar = _registrars[ctx.request_context.session]
+        assert "state" not in registrar.registry.component_types
+
+    def test_update_registry_accepts_legitimate_nested_entities(self, tmp_path):
+        """A dict value isn't always the bare-mapping mistake -- a nested
+        entity (each sub-key its own child entity, e.g.
+        tests/data/scenarios/move/scenario.yaml's journaling_desk) is a
+        dict too, and must still be accepted."""
+        ctx = _make_ctx()
+        start_world(str(tmp_path / "save"), ctx)
+        result = update_registry(
+            "desk:\n"
+            "    data:\n"
+            "        - note: just documentation, never its own entity\n"
+            "    journal:\n"
+            "        - object:\n"
+            "            type: journal\n",
+            ctx,
+        )
+        assert "Merged" in result
+        registrar = _registrars[ctx.request_context.session]
+        assert registrar.get_entity_id("desk.journal") is not None
+
     def test_update_registry_writes_collapsed_and_full_history_yaml(self, tmp_path):
         ctx = _make_ctx()
         save_dir = tmp_path / "save"

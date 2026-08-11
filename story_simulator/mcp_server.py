@@ -3,21 +3,25 @@
 story-simulator is *just* this server today -- no in-process agent loop
 lives here. `advance_simulation` runs ONE event-driven simulation loop (one
 function per step -- see `core._run_event_loop`), built entirely on
-`story_simulator.core`'s base `pop_event`/`predict_next_event`/`push_event` --
-see `core.py`'s own docstring for what that guarantees. The loop
-fast-forwards through anything it can resolve on its own, and pauses
+`story_simulator.core`'s `pop_event`/`resolve_event`/`plan_events` -- see
+`core.py`'s own docstring for what that guarantees. World state is `event`
+entities (manifest/builtins.yaml's event_components), each due once world
+time reaches its own start_time + duration -- not the acting entities (a
+car, a door, ...) themselves, which carry no schedule of their own. The
+loop fast-forwards through anything it can resolve on its own, and pauses
 whenever a turn needs input only the connected host can supply -- an
-entity's own resolution -- handing control back to whatever MCP-aware host
-is connected (a human's chat agent, an automated harness, ...). That host
-decides what happens itself (`responder="host"`, the default) or is asked
-to delegate to its own isolated subagent mechanism instead
-(`responder="subagent"`, opt in via STORY_SIM_RESPONDER -- see
-`story_simulator.config.event_responder`) -- see `advance_simulation`'s own
-`responder` field -- then calls `advance_simulation` again with its decision
-(recorded via `update_registry`) and the `resume_token` it was given, to
-resume the loop -- Multi Round-Trip Requests (MRTR, MCP spec 2026-07-28),
-not a second dedicated tool. `view_registry`/`view_entity`/`update_registry`
-remain directly callable too, for anything outside that loop.
+event's own resolution, or what (if anything) follows from it -- handing
+control back to whatever MCP-aware host is connected (a human's chat
+agent, an automated harness, ...). That host decides what happens itself
+(`responder="host"`, the default) or is asked to delegate to its own
+isolated subagent mechanism instead (`responder="subagent"`, opt in via
+STORY_SIM_RESPONDER -- see `story_simulator.config.event_responder`) -- see
+`advance_simulation`'s own `responder` field -- then calls
+`advance_simulation` again with its decision (recorded via
+`update_registry`) and the `resume_token` it was given, to resume the loop
+-- Multi Round-Trip Requests (MRTR, MCP spec 2026-07-28), not a second
+dedicated tool. `view_registry`/`view_entity`/`update_registry` remain
+directly callable too, for anything outside that loop.
 
 This file is deliberately thin: every `@server.tool()` function below just
 unpacks `ctx.request_context.session` into a plain session id and calls
@@ -54,24 +58,39 @@ server = FastMCP(
     instructions=(
         "You are the game master for a story-simulator world: a text simulation whose "
         "state lives in a structured entity/component registry, not just your own context, "
-        "run as an event-driven simulation (one entity due at a time, scheduled by its "
-        "own next_due) rather than a fixed per-turn loop.\n\n"
+        "run as an event-driven simulation. World state is `event` entities -- each one due "
+        "once world time reaches its own start_time + duration -- not the acting entities "
+        "(a car, a door, ...) they concern, which carry no schedule of their own. An event "
+        "usually also carries involved_entity links naming who/what it concerns.\n\n"
         "Call start_world once, at the beginning, to open or seed a save. Then call "
-        "advance_simulation with no arguments: it pauses on every due entity in turn, "
-        "returning {\"status\": \"input_required\", \"prompt\": ..., \"responder\": \"host\" or "
+        "advance_simulation with no arguments: it pauses on every due event, in two separate "
+        "steps -- resolve, then plan -- each returning "
+        "{\"status\": \"input_required\", \"prompt\": ..., \"responder\": \"host\" or "
         "\"subagent\", \"resume_token\": ...}. If responder is \"host\", decide what happens "
         "yourself, from your own context. If it's \"subagent\", the prompt itself asks you to "
         "delegate to your own isolated subagent mechanism (e.g. an Agent/Task tool) instead of "
         "answering inline -- follow that instruction rather than answering directly. Either "
-        "way, call advance_simulation again with that exact resume_token and the answer to "
-        "resume the loop. State the outcome and end your answer with a line formatted exactly "
-        "as `next_due_in: <seconds>` if this entity has more to do, or omit that line if it's "
-        "finished. It will keep asking (a new resume_token each time -- always use the one "
-        "from the latest result) until either it needs you once more or the schedule empties "
-        "(\"status\": \"done\").\n\n"
-        "Record what happened yourself via update_registry (new positions, new entities, "
-        "changed details — reusing existing aliases; attach new data to an existing entity "
-        "via a `same_as` component rather than creating a disconnected duplicate). "
+        "way:\n"
+        "- On a resolve prompt: look up whatever you need (view_entity/view_registry, "
+        "including the event's own involved_entity links) to work out what happened, then "
+        "record it yourself via update_registry -- that event's own `outcome` (a "
+        "natural-language description, plus whether this leaves it \"complete\" or "
+        "\"interrupted\"), that event's own `event_state` transition, and anything it changes "
+        "about the entities it involves.\n"
+        "- On a plan prompt: decide whether anything new needs to be scheduled as a result, "
+        "and if so create it yourself via update_registry -- one or more new `event` entities, "
+        "each with its own start_time/duration/event_state/involved_entity. If nothing "
+        "follows from this event, just say so; \"nothing new\" is a normal answer, not a case "
+        "to avoid.\n\n"
+        "Either way, call advance_simulation again with that exact resume_token and a short "
+        "answer describing what you just recorded. It will keep asking (a new resume_token "
+        "each time -- always use the one from the latest result) until either it needs you "
+        "once more or the schedule empties (\"status\": \"done\").\n\n"
+        "update_registry's entity-first YAML needs each component as a list item (a leading "
+        "`- `) to attach to an existing aliased entity -- `car_a:\\n    - event_state:\\n        "
+        "value: complete` merges into the same car_a already in the registry. The same content "
+        "as a bare mapping (no `- `) is silently accepted with no error, yet records nothing "
+        "at all -- always use the list form.\n\n"
         "`description` and `state` are both current-value components: a new write becomes "
         "the entity's current one, both for view_entity and for the save's exported YAML "
         "(older writes stay recorded as history — view_entity still shows all of them). "
@@ -142,15 +161,19 @@ def update_registry(yaml_string: str, ctx: Context) -> str:
 
 @server.tool()
 async def advance_simulation(ctx: Context, resume_token: str | None = None, answer: str | None = None) -> dict:
-    """Fast-forward through any due entities, and pause whenever a turn
+    """Fast-forward through any due events, and pause whenever a turn
     needs input only outside story-simulator's own process can supply.
 
-    The base event-driven simulation (see `core.py`) -- every due entity
-    resolves via responder="host" or "subagent" (see
-    `config.event_responder`), no character/NPC concept at all.
-    (A character-aware branch used to layer player/NPC turns on top of
-    this; moved out to `shelved/` pending a rewrite -- see
-    `docs/architecture.md`.)
+    The event-driven simulation (see `core.py`) -- world state is `event`
+    entities, each due once world time reaches its own start_time +
+    duration, not the acting entities they concern. Every due event asks
+    two separate responder calls in turn -- resolve (what happened), then
+    plan (what, if anything, follows) -- each via responder="host" or
+    "subagent" (see `config.event_responder`); expect two pauses per
+    event, not one. No character/NPC concept at all. (A character-aware
+    branch used to layer player/NPC turns on top of an earlier,
+    next_due-based version of this loop; moved out to `shelved/` pending
+    a rewrite -- see `docs/architecture.md`.)
 
     Call with neither argument to start (or continue after a prior call
     finished with nothing left scheduled). That, and every later call,
@@ -159,17 +182,18 @@ async def advance_simulation(ctx: Context, resume_token: str | None = None, answ
     "subagent", "resume_token": ...}``. On the latter, decide what happens
     yourself if `responder` is "host", or follow `prompt`'s own instruction
     to delegate to an isolated subagent if it's "subagent" -- either way,
-    call again with that exact `resume_token` and your `answer` -- no
-    separate tool, and no server-side state to lose: `resume_token` carries
-    everything needed to resume, so it survives an MCP disconnect/reconnect
-    between calls too.
+    record it yourself via update_registry (there's no structured return
+    value this tool applies on your behalf), then call again with that
+    exact `resume_token` and your `answer` -- no separate tool, and no
+    server-side state to lose: `resume_token` carries everything needed to
+    resume, so it survives an MCP disconnect/reconnect between calls too.
 
     Args:
         resume_token: The `resume_token` from this session's last
             `input_required` result, or omitted to start/continue fresh.
-        answer: What happens for the entity that result's `prompt` asked
-            about (optionally ending with a `next_due_in: <seconds>` line
-            -- omit it if there's nothing further to happen). Omit `answer`
+        answer: Your answer to that result's `prompt` -- what an event's
+            resolution was, or what (if anything) it schedules next,
+            recorded via update_registry before you answer. Omit `answer`
             itself along with `resume_token` on a fresh call.
     """
     __iacs__ = {"solution of": "story_simulator_mission.tool_catalog.advance_simulation"}

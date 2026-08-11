@@ -160,14 +160,20 @@ event_components:
         - description: >
             A scheduled or ongoing occurrence -- what the event-driven
             simulation loop actually pops and resolves, distinct from the
-            entities it concerns (see involved_entity). Due once world
-            time reaches start_time + duration.
+            entities it concerns (see involved_entity) and from its own
+            place in its lifecycle (see event_state, a separate component
+            so a lifecycle transition never has to restate start_time/
+            duration in the same row). Due once world time reaches
+            start_time + duration. Not time_dimension'd -- unlike
+            event_state, start_time/duration are set once, the same way
+            object.type is, not restated over an event's life.
         - component_type
         - field:
             start_time:
                 description: World time (seconds since world creation)
-                    this event begins. Nullable -- a brand-new event
-                    (state "new") may not have one scheduled yet.
+                    this event begins. Nullable -- an event not yet
+                    scheduled (event_state "not started") may not have
+                    one yet.
                 type: float
                 nullable: true
                 units: seconds
@@ -177,24 +183,33 @@ event_components:
                 type: float
                 nullable: true
                 units: seconds
-            state:
-                description: This event's own place in its lifecycle.
+    event_state:
+        - description: >
+            An event's own place in its lifecycle, split out from `event`
+            itself so a transition doesn't require restating start_time/
+            duration. Vocabulary matches iacs's own task.execution_state
+            (iacs/iacs/builtins/components.yaml), extended there with
+            "planned" and "interrupted" for this project's purposes.
+        - component_type
+        - field:
+            value:
+                description: This event's current lifecycle state.
                 type: str
                 range:
-                    - new
+                    - not started
                     - planned
-                    - in_progress
+                    - in progress
                     - interrupted
-                    - completed
+                    - complete
             time:
                 description: World time (seconds since world creation)
-                    this event row was recorded at, backfilled on merge,
-                    not authored directly, so it stays nullable for
-                    hand-authored rows. An event accumulates a new row
-                    each time it's rescheduled or its lifecycle state
-                    changes; flagged time_dimension so
-                    Registry.view_current resolves the row with the
-                    highest time as the event's current one.
+                    this event_state row was recorded at, backfilled on
+                    merge, not authored directly, so it stays nullable
+                    for hand-authored rows. An event accumulates a new
+                    row each time its lifecycle state changes; flagged
+                    time_dimension so Registry.view_current resolves the
+                    row with the highest time as the event's current
+                    lifecycle state.
                 type: float
                 nullable: true
                 time_dimension: true
@@ -214,15 +229,22 @@ event_components:
         - description: >
             What actually happened once an event resolved: a
             natural-language description, plus how far that leaves the
-            event's own lifecycle.
+            event's own lifecycle. progress uses the same vocabulary as
+            event_state -- see there.
         - component_type
         - field:
             progress:
                 description: How far this outcome leaves the event's own
-                    lifecycle. Defaults to "done" -- most outcomes fully
-                    resolve the event they belong to.
+                    lifecycle. Defaults to "complete" -- most outcomes
+                    fully resolve the event they belong to.
                 type: str
-                default: done
+                range:
+                    - not started
+                    - planned
+                    - in progress
+                    - interrupted
+                    - complete
+                default: complete
             value:
                 description: A natural-language description of what happened.
                 type: str

@@ -17,7 +17,7 @@ from __future__ import annotations
 
 __iacs__ = {
     "todo": (
-        "The pop/is_event_valid/advance_clock/predict_next_event/push_event "
+        "The pop_event/is_event_valid/advance_clock/resolve_event/plan_events "
         "functions just live loose at module scope here. Evaluate whether "
         "the event loop deserves a more deliberate structure (a class, a "
         "dataclass-based state object, an explicit stage protocol) as more "
@@ -65,36 +65,17 @@ WORLD_HISTORY_DIRNAME = "world_history"
 _registrars: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
 _save_dirs: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
 # World time (seconds since world creation), per session -- set in
-# process_event from the popped entity's own `next_due` (see
-# advance_clock: "the popped entity's own next_due becomes 'now' for this
+# process_event from the popped event's own start_time + duration (see
+# advance_clock: "the popped event's own due time becomes 'now' for this
 # turn") and read by _next_time_stamp for every write anything does while
-# resolving that entity's turn, so "how recent is this row" and "when is X
-# next due" share one clock instead of the wall clock. Session-scoped
-# process memory, not persisted -- a subprocess restart mid-turn resets it
-# to 0.0 until the next entity pop re-derives it, a known gap (see
-# docs/manifest/story-simulator.yaml: world_time_concept) accepted for now
-# in favor of not introducing a separate persisted clock entity.
+# resolving that event's turn, so "how recent is this row" and "when did
+# this event come due" share one clock instead of the wall clock.
+# Session-scoped process memory, not persisted -- a subprocess restart
+# mid-turn resets it to 0.0 until the next event pop re-derives it, a
+# known gap (see docs/manifest/story-simulator.yaml: world_time_concept)
+# accepted for now in favor of not introducing a separate persisted clock
+# entity.
 _current_world_time: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
-
-# It's how a base-module event tells the loop it's done (see
-# resolve_event's default=inf) when the next_due_in line is omitted,
-# not a mistake to fall back from with a hardcoded interval.
-_NEXT_DUE_IN_INSTRUCTION = (
-    "If there's more to happen, end your answer with a line formatted "
-    "exactly as `next_due_in: <seconds>` stating how long from now. Omit "
-    "that line entirely if this is finished and shouldn't happen again."
-)
-
-
-def merge_yaml_string(registrar: Registrar, yaml_text: str, time: float | None = None) -> None:
-    """Run the ETL pipeline on a raw YAML string and merge the result into `registrar`.
-
-    Same mechanism every write in this project uses.
-    `time`, when given, backfills the time_dimension field the merged data
-    declares (world time, seconds since world creation) so `Registry.view_current` can
-    resolve which of an entity's accumulated rows is current.
-    """
-    registrar.update(input_dirs=[str(MANIFEST_DIR)], yaml_strings={WORLD_FILE_ID: yaml_text}, time=time)
 
 
 def safe_view(registrar: Registrar, fields: str | list[str]) -> pd.DataFrame | None:
@@ -127,49 +108,49 @@ def safe_view_current(registrar: Registrar, fields: str | list[str]) -> pd.DataF
 
 # ---------------------------------------------------------------------------
 # Event-driven simulation loop -- one function per box in the turn-anatomy
-# diagram (see docs/architecture.md). Schedule lives as registry data (a
-# `next_due` component), not an in-memory priority queue.
+# diagram (see docs/architecture.md). The schedule is `event` entities'
+# own start_time/duration (manifest/builtins.yaml's event_components),
+# not an in-memory priority queue and not a next_due component rescheduled
+# by code -- an event's timing is set once, either by whoever pre-plans it
+# or by a responder's own `plan_events` call, and never revised afterward.
 # ---------------------------------------------------------------------------
 
-
-def due_by_entity(registrar: Registrar) -> pd.DataFrame:
-    """One row per entity with a next_due of its own: `entity_id`, `due` (float).
-
-    Casts explicitly to `next_due.value: float`: a save with zero
-    `next_due` rows anywhere leaves the schema undeclared on a plain
-    `Registrar.load()` reconnect, so `get` falls back to a generic string
-    table that can't be compared against a float.
-    """
-    return (
-        registrar.get("next_due")
-        .group_by("entity_id")
-        .aggregate(due=lambda t: t["value"].cast("float64").max())
-        .execute()
-    )
+_TERMINAL_EVENT_STATES = ("complete", "interrupted")
 
 
 def pop_event(registrar: Registrar) -> str | None:
-    """Pop event box: whichever entity, of any kind, is due soonest, or
-    None if nothing is currently scheduled.
+    """Pop event box: whichever `event` entity is due soonest, or None if
+    nothing is currently scheduled.
 
-    Logic is fully separated from any dependence on how the events are
-    resolved. An entity with no `next_due` row simply isn't a candidate
-    (not sorted as due immediately): an entity only enters the schedule
-    once something explicitly pushes it there (see `push_event`).
-    An entity most recently pushed at `due_at=inf` is treated as
-    permanently done, filtered out the same way -- see `resolve_event`.
+    An event only enters consideration once it has both start_time and
+    duration set -- one not yet scheduled (event_state "not started", or
+    no event_state row at all yet) isn't a candidate, the same way an
+    entity with no next_due row wasn't under the mechanism this replaces.
+    A terminal event (event_state "complete" or "interrupted") is filtered
+    out the same way an inf-valued next_due used to be. Due time is
+    start_time + duration, computed fresh from the registry every call --
+    there's no separate reschedule write to keep in sync with it, since an
+    event's own timing isn't revised once set (see this section's own
+    docstring).
 
     A plain read, not a destructive dequeue -- `story_simulator.resolve`'s
     replay-from-the-top mechanism depends on calling this again and again
     being safe.
     """
-    if "next_due" not in registrar.registry.component_types:
+    if "event" not in registrar.registry.component_types:
         return None
-    due_df = registrar.view_current("next_due.value").execute()
-    due_df = due_df[due_df["next_due.value"] < float("inf")]
-    if due_df.empty:
+    events = registrar.view_current(["event.start_time", "event.duration"]).execute()
+    events = events.dropna(subset=["event.start_time", "event.duration"])
+    if events.empty:
         return None
-    return due_df.sort_values("next_due.value").iloc[0]["entity_id.alias"]
+    states = safe_view_current(registrar, "event_state.value")
+    if states is not None:
+        terminal_ids = set(states[states["event_state.value"].isin(_TERMINAL_EVENT_STATES)]["entity_id"])
+        events = events[~events["entity_id"].isin(terminal_ids)]
+    if events.empty:
+        return None
+    due = events["event.start_time"] + events["event.duration"]
+    return events.assign(_due=due).sort_values("_due").iloc[0]["entity_id.alias"]
 
 
 def is_event_valid(registrar: Registrar, alias: str) -> bool:
@@ -184,45 +165,22 @@ def is_event_valid(registrar: Registrar, alias: str) -> bool:
 
 
 def advance_clock(registrar: Registrar, alias: str) -> float:
-    """Advance clock box: the popped entity's own `next_due` becomes "now" for this turn.
+    """Advance clock box: the popped event's own start_time + duration --
+    the moment it's actually due, not when it started -- becomes "now"
+    for this turn.
 
-    No separate persisted global clock -- the popped event's own timestamp
+    No separate persisted global clock -- the popped event's own timing
     is the only notion of "current time" needed today.
     """
     entity_id = registrar.get_entity_id(alias)
     if entity_id is None:
         return 0.0
-    due_df = due_by_entity(registrar)
-    match = due_df[due_df["entity_id"] == entity_id]
-    return float(match.iloc[0]["due"]) if not match.empty else 0.0
-
-
-def predict_next_event(registrar: Registrar, alias: str, next_due_in: float) -> float:
-    """Predict next event / Predict next box: compute when `alias` should next be due.
-
-    Named for what the result actually is -- the event `alias`'s current
-    resolution causes to happen next -- rather than the more generic
-    "predict an event" `predict_event` used to read as.
-
-    Serves both call sites (initial per-entity setup and the
-    post-`Process event` reschedule) -- same computation either way.
-    Pure: doesn't write anything itself.
-    """
-    now = advance_clock(registrar, alias)
-    return now + next_due_in
-
-
-def push_event(registrar: Registrar, alias: str, due_at: float, time: float | None = None) -> None:
-    """Push to queue / Push events box: commit `alias`'s next_due to the registry.
-
-    Writing `next_due` IS "pushing to the queue" -- there's no separate
-    in-memory priority queue; `pop_event`'s live registry read *is* the
-    queue. `time` should get the same world-time stamp every other
-    time_dimension'd write uses, since `next_due.time` needs it to resolve
-    which row is current for an entity rescheduled more than once.
-    """
-    data = {f"{alias}_next_due": [{"same_as": {"value": alias}}, {"next_due": {"value": due_at}}]}
-    merge_yaml_string(registrar, yaml.safe_dump(data, sort_keys=False), time=time)
+    events = registrar.view_current(["event.start_time", "event.duration"]).execute()
+    match = events[events["entity_id"] == entity_id]
+    if match.empty:
+        return 0.0
+    row = match.iloc[0]
+    return float(row["event.start_time"]) + float(row["event.duration"])
 
 
 # ---------------------------------------------------------------------------
@@ -248,12 +206,12 @@ def _next_time_stamp(session) -> float:
     current in-fiction "now" (seconds since world creation).
 
     Reads `_current_world_time`, set in `process_event` from the popped
-    entity's own `next_due` (see `advance_clock`) -- every write made
-    while resolving one entity's turn shares that same "now", the same
-    world-time axis `next_due.value` itself uses, rather than a wall-clock
-    substitute. Falls back to 0.0 if nothing has been popped yet for this
-    session (e.g. a stray `update_registry` call before `advance_simulation`
-    is ever run).
+    event's own start_time + duration (see `advance_clock`) -- every write
+    made while resolving one event's turn shares that same "now", the
+    same world-time axis `event.start_time`/`event_state.time`/`outcome`
+    writes all use, rather than a wall-clock substitute. Falls back to 0.0
+    if nothing has been popped yet for this session (e.g. a stray
+    `update_registry` call before `advance_simulation` is ever run).
 
     Two writes at the same world time -- several update_registry calls
     resolving one turn, or any number of stray calls before the first event
@@ -463,8 +421,77 @@ def _export_world_yaml(registrar: Registrar, save_dir: Path) -> None:
             Path(path).unlink(missing_ok=True)
 
 
+def _find_malformed_entities(yaml_string: str) -> list[str]:
+    """Scan for entities whose components aren't given as a YAML list --
+    the shape iacs's EC parser requires. A component written as a bare
+    mapping under an alias (`alias:\\n    component:\\n        value: x`
+    instead of the required list form, `alias:\\n    - component:\\n
+    value: x`) is silently accepted by `registrar.update()` -- no error,
+    no `invalid_field` row -- yet merges nothing at all, confirmed
+    happening live: a responder had no signal its own write never took
+    effect (an event's own lifecycle transition never actually recorded,
+    so the event loop kept re-popping the same event forever).
+    `_update_registry_and_sync` raises on whatever this finds, before
+    ever merging, so that mistake surfaces as an ordinary tool error the
+    caller can react to instead.
+
+    A dict value is ambiguous on its own: it's either a malformed
+    component list (the mistake above) or a legitimate nested-entity dict
+    (each key its own child entity, e.g.
+    tests/data/scenarios/move/scenario.yaml's `journaling_desk`, whose
+    sub-keys are themselves proper component lists). Distinguished here
+    by recursing only when *every* value at this level is itself a list
+    or dict -- a bare scalar anywhere means this level was meant as a
+    component list, not further nesting. `"data"` is skipped everywhere,
+    matching EC's own freeform-notes convention (never itself a component
+    list).
+
+    Best-effort: a parse failure or an unexpected top-level shape just
+    finds nothing rather than raising here -- `registrar.update()`'s own
+    error handling is authoritative for those, this only adds a check for
+    the one silent-failure mode it has none for.
+    """
+    try:
+        parsed = yaml.safe_load(yaml_string)
+    except yaml.YAMLError:
+        return []
+    if not isinstance(parsed, dict):
+        return []
+
+    malformed: list[str] = []
+
+    def check(path: str, value) -> None:
+        if isinstance(value, list):
+            return
+        if isinstance(value, dict) and value and all(
+            isinstance(v, (list, dict)) for k, v in value.items() if k != "data"
+        ):
+            for key, sub_value in value.items():
+                if key != "data":
+                    check(f"{path}.{key}", sub_value)
+            return
+        malformed.append(path)
+
+    for alias, value in parsed.items():
+        if alias != "data":
+            check(alias, value)
+    return malformed
+
+
 def _update_registry_and_sync(registrar: Registrar, save_dir: Path, yaml_string: str, session) -> None:
-    """Merge `yaml_string` into the registry, then sync `save_dir`'s YAML to match."""
+    """Merge `yaml_string` into the registry, then sync `save_dir`'s YAML to match.
+
+    See `_find_malformed_entities` for the one check this does before
+    merging at all.
+    """
+    malformed = _find_malformed_entities(yaml_string)
+    if malformed:
+        raise ValueError(
+            "Each entity's components must be a YAML list (a leading `- ` before each "
+            "component name), e.g. `alias:\n    - component:\n        value: x` -- a bare "
+            "mapping (`alias:\n    component:\n        value: x`) is silently ignored "
+            f"rather than merged. Malformed here: {', '.join(malformed)}."
+        )
     registrar.update(
         input_dirs=[str(MANIFEST_DIR)],
         yaml_strings={WORLD_FILE_ID: yaml_string},
@@ -478,55 +505,79 @@ def _update_registry_and_sync(registrar: Registrar, save_dir: Path, yaml_string:
 # ---------------------------------------------------------------------------
 
 
-def _parse_next_due_in(answer: str, default: float = 1.0) -> tuple[str, float]:
-    """Split a resolve_event answer into (narration, next_due_in).
+async def resolve_event(alias: str, replay: TurnReplay) -> str:
+    """Resolve box: ask a responder to interpret `alias` now that it's due,
+    and hand back whatever it says, for narration.
 
-    Looks for a trailing `next_due_in: <seconds>` line (see
-    `_NEXT_DUE_IN_INSTRUCTION`) and falls back to `default` rather
-    than raising if it's missing or malformed -- a model's mistake here
-    shouldn't crash the turn.
+    No next_due_in convention to parse here, unlike the mechanism this
+    replaces: the responder is expected to record everything itself via
+    update_registry -- this event's own `outcome`, this event's own
+    `event_state` transition (complete or interrupted), and whatever it
+    changes about the entities it involves (see involved_entity) -- the
+    same direct tool-calling pattern it already uses for every other
+    write. This function's only job is to ask and hand back the answer;
+    persisting is entirely the responder's own, not a return value this
+    code applies on its behalf (see `plan_events`, and `process_event`'s
+    own docstring for why there's no separate mechanical "update" step).
+
+    Never responder="human": no player is ever behind an event here
+    (there's no `character.interaction_type` to branch on, since the
+    character module isn't what's driving this popped entity). Between
+    "host" and "subagent" -- see `story_simulator.resolve`'s module
+    docstring for what "subagent" buys -- `config.event_responder()`
+    decides, defaulting to "host" so nothing changes unless a deployment
+    opts in via STORY_SIM_RESPONDER.
     """
-    lines = answer.strip().splitlines()
-    if lines and lines[-1].strip().lower().startswith("next_due_in:"):
-        try:
-            value = float(lines[-1].split(":", 1)[1].strip())
-            return "\n".join(lines[:-1]).strip(), value
-        except ValueError:
-            pass
-    return answer.strip(), default
+    request = JudgmentRequest(
+        prompt=(
+            f"{alias} is due. Look up whatever you need (view_entity/"
+            f"view_registry, including its involved_entity links) to work "
+            f"out what happens, then record it: {alias}'s own outcome, "
+            f"{alias}'s own event_state (complete if this fully resolves "
+            f"it, interrupted if something cuts it short), and anything it "
+            f"changes about the entities it involves -- all via "
+            f"update_registry."
+        )
+    )
+    return await replay.resolve(request, responder=event_responder())
 
 
-async def resolve_event(alias: str, replay: TurnReplay) -> tuple[str, float]:
-    """Resolve a base-module event: what happens now that `alias` is due,
-    and how long until it's next due -- inf (never again, see `pop_event`)
-    if the answer omits `next_due_in` entirely, unlike the character
-    module's 1-second default. A base event has no standing agenda to
-    keep acting on; it's done unless told otherwise.
+async def plan_events(alias: str, replay: TurnReplay) -> str:
+    """Plan box: ask a responder whether anything new needs to be
+    scheduled as a result of `alias` resolving, and let it create new
+    `event` entities via update_registry if so.
 
-    Never responder="human": no player is ever behind a base event (there's
-    no `character.interaction_type` to branch on, since the character
-    module isn't what's driving this popped entity). Between "host" and
-    "subagent" -- see `story_simulator.resolve`'s module docstring for what
-    "subagent" buys -- `config.event_responder()` decides, defaulting
-    to "host" so nothing changes unless a deployment opts in via
-    STORY_SIM_RESPONDER.
+    Always asked, even when nothing ends up being scheduled -- "nothing
+    follows from this" is this step's own answer to reach, not a case the
+    loop skips based on `alias`'s outcome alone (see `process_event`).
     """
-    request = JudgmentRequest(prompt=f"{alias} is due.\n\n{_NEXT_DUE_IN_INSTRUCTION}")
-    answer = await replay.resolve(request, responder=event_responder())
-    return _parse_next_due_in(answer, default=float("inf"))
+    request = JudgmentRequest(
+        prompt=(
+            f"Given how {alias} just resolved, does anything new need to "
+            f"happen as a result? If so, create it now: one or more new "
+            f"event entities (their own start_time/duration/event_state/"
+            f"involved_entity) via update_registry. If nothing follows "
+            f"from this, just say so -- no new events needed."
+        )
+    )
+    return await replay.resolve(request, responder=event_responder())
 
 
-async def process_event(registrar: Registrar, alias: str, replay: TurnReplay, session) -> str:
-    """Base module's process event box: Advance clock -> Resolve event ->
-    Predict next event -> Push event -- no character-communication step
-    first: a base event has no agency to ask "what do you do" of, it just
-    resolves.
+async def process_event(registrar: Registrar, alias: str, replay: TurnReplay, session) -> tuple[str, str]:
+    """Process event box: Advance clock -> Resolve event -> Plan events.
+
+    No update-data step: `resolve_event` and `plan_events` both write
+    everything they decide directly via update_registry (including
+    `alias`'s own event_state transition), so there's nothing left for
+    this function to persist mechanically afterward -- unlike the
+    next_due_in mechanism this replaces, which needed a code-driven
+    predict/push reschedule step because a plain float answer had nothing
+    else able to act on it.
     """
     _current_world_time[session] = advance_clock(registrar, alias)
-    narration, next_due_in = await resolve_event(alias, replay)
-    due_at = predict_next_event(registrar, alias, next_due_in)
-    push_event(registrar, alias, due_at, time=_next_time_stamp(session))
-    return narration
+    resolve_narration = await resolve_event(alias, replay)
+    plan_narration = await plan_events(alias, replay)
+    return resolve_narration, plan_narration
 
 
 async def _run_event_loop(
@@ -537,40 +588,35 @@ async def _run_event_loop(
     replay: TurnReplay | None = None,
 ) -> tuple[str | None, TurnReplay | None, str, str | None]:
     """The Event-driven simulation subgraph itself: Pop event -> Valid? ->
-    Process event (which itself advances the clock first), looping until
-    either a NeedsExternalInput pauses it (returned to the caller, not
-    raised further) or the queue empties.
+    Process event (which itself advances the clock first, then asks two
+    separate responder calls -- resolve, then plan), looping until either
+    a NeedsExternalInput pauses it (returned to the caller, not raised
+    further) or the queue empties.
 
-    Always the base path today (`pop_event`/`process_event`, no notion of
-    character at all, what this module's own docstring promises works with
-    nothing character/npc/spatial layered on top) -- this loop used to
-    dispatch through its own `_process_due_entity` seam so a
-    character-aware pair (`spatial.pop_event`/`process_event`) could
-    branch in depending on `story_simulator.config.enabled_modules`; that
-    branch moved out to `shelved/` (see `docs/architecture.md`) pending a
-    rewrite, and with it gone there was no longer a second destination for
-    the seam to pick between, so it called `process_event` directly
-    instead. A future character-aware branch would need to reintroduce its
-    own dispatch step rather than assume this one still exists.
+    One `process_event` call is one full event's worth of work, but not
+    necessarily one pause: resolve's own judgment call and plan's own
+    judgment call are two separate entries in the same `TurnReplay`
+    (see that class's own docstring -- "a single turn can hit more than
+    one judgment call before it's done"), so a fresh event typically
+    pauses twice in a row (once to resolve, once to plan) before this
+    loop ever reaches the bottom and pops the next one -- both under the
+    same `resume_token` until the second answer lands, at which point
+    `process_event` returns normally and the loop moves on.
 
     `resume_alias`/`replay` re-enter the loop for a specific turn already
     in progress (what `advance_simulation` is resuming, decoded from its
     `resume_token`) instead of popping fresh -- `replay`'s answers-so-far
     mean everything up to the newest still-unanswered judgment call
-    replays from cache (see `story_simulator.resolve.TurnReplay`), and if
-    that call now completes, execution falls straight through into the
-    ordinary loop below for whatever's next, rather than returning
-    immediately. There's a single `process_event` call site, not one per
-    branch: `alias` starts as `resume_alias` (possibly None) and the loop
-    only pops/validates a fresh one when `alias` is still None, so a
-    resumed turn skips straight to processing while a fresh one falls
-    through the same two checks first -- deliberately, so `pop_event`/
-    `is_event_valid` read as happening *before* `process_event` in this
-    function's own source order too, not just at runtime for the common
-    case (an entity-reachability trace of this function orders its
-    dotted-arrow chain by first occurrence in source, and two separate
-    call sites -- the resume branch textually first -- used to make that
-    chain read backwards).
+    replays from cache, and if that call now completes, execution falls
+    straight through into the ordinary loop below for whatever's next,
+    rather than returning immediately. There's a single `process_event`
+    call site, not one per branch: `alias` starts as `resume_alias`
+    (possibly None) and the loop only pops/validates a fresh one when
+    `alias` is still None, so a resumed turn skips straight to processing
+    while a fresh one falls through the same two checks first --
+    deliberately, so `pop_event`/`is_event_valid` read as happening
+    *before* `process_event` in this function's own source order too, not
+    just at runtime for the common case.
 
     Returns (alias, replay, prompt, responder): `alias`/`replay`/`responder`
     are None only when the queue is empty (nothing left to stash);
@@ -596,11 +642,11 @@ async def _run_event_loop(
             await process_event(registrar, alias, replay, session)
         except NeedsExternalInput as e:
             return alias, replay, e.prompt, e.responder
-        # No exception: this turn resolved fully -- reset alias to force a
-        # fresh pop next iteration. A base event always pauses
-        # (responder="host" or "subagent", per config.event_responder() --
-        # never "human", see resolve_event) unless this exact call was
-        # already answered by a prior replay.
+        # No exception: both resolve and plan answered fully -- reset
+        # alias to force a fresh pop next iteration. Each one always
+        # pauses at least once (responder="host" or "subagent", per
+        # config.event_responder() -- never "human", see resolve_event)
+        # unless this exact call was already answered by a prior replay.
         alias = None
 
 
@@ -771,14 +817,21 @@ def update_registry(session, yaml_string: str) -> str:
 
 
 async def advance_simulation(session, resume_token: str | None = None, answer: str | None = None) -> dict:
-    """Fast-forward through any due entities, and pause whenever a turn
+    """Fast-forward through any due events, and pause whenever a turn
     needs input only outside story-simulator's own process can supply.
 
-    The base event-driven simulation (see this module's own docstring) --
-    every due entity resolves via responder="host" or "subagent" (see
-    `config.event_responder`), no character/NPC concept at all.
-    (A character-aware branch used to layer player/NPC turns on top of
-    this; moved out to `shelved/` pending a rewrite -- see
+    The event-driven simulation (see this module's own docstring): world
+    state is `event` entities, each due once world time reaches its own
+    start_time + duration (manifest/builtins.yaml's event_components) --
+    not the acting entities (a car, a door, ...) themselves, which carry
+    no schedule of their own. Every due event goes through two separate
+    responder calls in turn -- resolve (what happened) and plan (what, if
+    anything, follows from that) -- each via responder="host" or
+    "subagent" (see `config.event_responder`); a fresh event typically
+    means two pauses in a row, one per call, before the loop reaches the
+    next one. No character/NPC concept at all. (A character-aware branch
+    used to layer player/NPC turns on top of an earlier, next_due-based
+    version of this loop; moved out to `shelved/` pending a rewrite -- see
     `docs/architecture.md`.)
 
     Call with neither argument to start (or continue after a prior call
@@ -788,17 +841,19 @@ async def advance_simulation(session, resume_token: str | None = None, answer: s
     "subagent", "resume_token": ...}``. On the latter, decide what happens
     yourself if `responder` is "host", or follow `prompt`'s own instruction
     to delegate to an isolated subagent if it's "subagent" -- either way,
-    call again with that exact `resume_token` and your `answer` -- no
-    separate tool, and no server-side state to lose: `resume_token` carries
+    record whatever you decide yourself via update_registry (there's no
+    structured return value this tool applies on your behalf), then call
+    again with that exact `resume_token` and your `answer` -- no separate
+    tool, and no server-side state to lose: `resume_token` carries
     everything needed to resume, so it survives an MCP disconnect/reconnect
     between calls too.
 
     Args:
         resume_token: The `resume_token` from this session's last
             `input_required` result, or omitted to start/continue fresh.
-        answer: What happens for the entity that result's `prompt` asked
-            about (optionally ending with a `next_due_in: <seconds>` line
-            -- omit it if there's nothing further to happen). Omit `answer`
+        answer: Your answer to that result's `prompt` -- what an event's
+            resolution was, or what (if anything) it schedules next,
+            recorded via update_registry before you answer. Omit `answer`
             itself along with `resume_token` on a fresh call.
     """
     registrar = _get_registrar(session)

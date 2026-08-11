@@ -5,21 +5,31 @@ docs/manifest/history.yaml: project_history.turn_pipeline_removed), so this
 spawns `claude -p` as a real subprocess against this repo's .mcp.json,
 exactly the way the README's quick-start describes a client connecting.
 
-Written for the current base event loop only (no character/NPC module --
-see docs/architecture.md and CLAUDE.md's shelving note): every entity here
-is a plain object, `advance_simulation` always resolves a due entity via
-responder="host" (`story_simulator.config.event_responder`'s default), and
-the connected agent is expected to decide each entity's outcome itself,
-looking up whatever it needs via view_registry/view_entity, exactly as the
-server's own tool instructions describe. The character-module-era tests
-that used to live in this file (NPC/move scenarios, HeadlessSession, ...)
-are preserved at shelved/tests/test_human_validated.py, dormant until that
-module is un-shelved.
+Written for the current event-entity simulation loop (no character/NPC
+module -- see docs/architecture.md and CLAUDE.md's shelving note): world
+state is `event` entities, each due once world time reaches its own
+start_time + duration, and every due event resolves via two separate
+responder calls (resolve, then plan) at responder="host"
+(`story_simulator.config.event_responder`'s default). The connected agent
+is expected to decide each step itself, looking up whatever it needs via
+view_registry/view_entity and recording its own decisions via
+update_registry, exactly as the server's own tool instructions describe.
+
+Uses `HeadlessSession` (one persistent `claude -p` process over
+stream-json, several `send_turn` calls) rather than a single one-shot
+turn, so the test itself can pace the simulation one event at a time and
+check registry state between each -- not just the final result. The
+character-module-era tests that used to live in this file (NPC/move
+scenarios, an earlier version of this same class) are preserved at
+shelved/tests/test_human_validated.py, dormant until that module is
+un-shelved.
 """
 
 import json
+import selectors
 import shutil
 import subprocess
+import time
 from pathlib import Path
 
 import ibis
@@ -27,6 +37,7 @@ import pytest
 
 from iacs.registrar import Registrar
 from story_simulator.config import registry_schema_name, registry_url, resolve_database_dsn
+from story_simulator.core import safe_view, safe_view_current
 
 REPO_ROOT = Path(__file__).parent.parent
 PARKING_SCENARIO_DIR = REPO_ROOT / "tests" / "data" / "scenarios" / "parking"
@@ -56,30 +67,97 @@ _MCP_TOOL_ARGS = [
 ]
 
 
-def _run_headless_turn(prompt: str, *, model: str = LOW_QUALITY_MODEL, timeout: int = 180) -> str:
-    """Run one single-shot headless `claude -p` turn against this repo's MCP servers.
+class HeadlessSession:
+    """One continuously-running `claude -p` process, driven over stream-json.
 
-    One prompt in, one reply out, then the process exits. A single turn is
-    enough even for a multi-step advance_simulation loop: each
-    input_required/resume_token round trip is an ordinary nested tool call
-    within that one turn (MRTR, MCP spec 2026-07-28), not a separate user
-    message.
+    Unlike separate one-shot calls, this keeps a single story-simulator-mcp
+    child process (and its Postgres connection) alive for the whole `with`
+    block, so `send_turn`'s caller can read the registry in between turns
+    while that process is still holding it open, and so the test itself
+    can pace the conversation -- one event's worth of work per turn --
+    rather than handing the model a single "drive it all the way" prompt
+    with no chance to inspect state along the way.
     """
-    if shutil.which("claude") is None:
-        pytest.skip("claude CLI not on PATH")
 
-    result = subprocess.run(
-        ["claude", "-p", prompt, *_MCP_TOOL_ARGS, "--model", model, "--output-format", "json"],
-        cwd=REPO_ROOT,
-        stdin=subprocess.DEVNULL,
-        capture_output=True,
-        text=True,
-        timeout=timeout,
-    )
-    assert result.returncode == 0, f"claude exited {result.returncode}: {result.stderr}"
-    payload = json.loads(result.stdout)
-    assert not payload["is_error"], payload
-    return payload["result"]
+    def __init__(self, *, model: str = LOW_QUALITY_MODEL, turn_timeout: float = 240):
+        self.model = model
+        self.turn_timeout = turn_timeout
+        self.proc: subprocess.Popen | None = None
+
+    def __enter__(self) -> "HeadlessSession":
+        if shutil.which("claude") is None:
+            pytest.skip("claude CLI not on PATH")
+        self.proc = subprocess.Popen(
+            [
+                "claude",
+                "-p",
+                "--input-format",
+                "stream-json",
+                "--output-format",
+                "stream-json",
+                "--verbose",
+                *_MCP_TOOL_ARGS,
+                "--model",
+                self.model,
+            ],
+            cwd=REPO_ROOT,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            bufsize=1,
+        )
+        return self
+
+    def send_turn(self, prompt: str) -> str:
+        """Send one prompt on the ongoing conversation and block for its narrated reply."""
+        assert self.proc is not None and self.proc.stdin is not None
+        message = {"type": "user", "message": {"role": "user", "content": prompt}}
+        self.proc.stdin.write(json.dumps(message) + "\n")
+        self.proc.stdin.flush()
+
+        sel = selectors.DefaultSelector()
+        sel.register(self.proc.stdout, selectors.EVENT_READ)
+        deadline = time.monotonic() + self.turn_timeout
+        try:
+            while True:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    self._fail(f"turn timed out after {self.turn_timeout}s waiting for a reply")
+                if not sel.select(timeout=remaining):
+                    continue
+                line = self.proc.stdout.readline()
+                if not line:
+                    self._fail("claude process exited before replying")
+                try:
+                    event = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if event.get("type") == "result":
+                    if event.get("is_error"):
+                        self._fail(f"turn errored: {event}")
+                    return event["result"]
+        finally:
+            sel.close()
+
+    def _fail(self, message: str) -> None:
+        stderr = self.proc.stderr.read() if self.proc and self.proc.stderr else ""
+        self.close()
+        pytest.fail(f"{message}\nstderr: {stderr}")
+
+    def close(self) -> None:
+        if self.proc is None:
+            return
+        proc, self.proc = self.proc, None
+        if proc.stdin:
+            proc.stdin.close()
+        try:
+            proc.wait(timeout=30)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+
+    def __exit__(self, *exc_info) -> None:
+        self.close()
 
 
 def _load_registrar(save_dir: Path, narration: str) -> Registrar:
@@ -107,88 +185,132 @@ def _load_registrar(save_dir: Path, narration: str) -> Registrar:
     return Registrar.load(registry_url(save_dir))
 
 
+def _location(registrar: Registrar, alias: str) -> str | None:
+    """The current `location.value` recorded for an aliased entity, or
+    None if it has none yet.
+
+    `location` isn't a declared component type (see manifest/builtins.yaml)
+    -- it's exactly the kind of improvised-but-consistent component
+    CLAUDE.md describes iacs tolerating, established here by the
+    scenario's own restaurant description telling the model to use it. Not
+    time_dimension'd (nothing declares it that way), but each car's
+    location is only ever written once, so a plain view suffices.
+    """
+    df = safe_view(registrar, "location.value")
+    if df is None:
+        return None
+    match = df[df["entity_id.alias"] == alias]
+    return None if match.empty else str(match.iloc[-1]["location.value"])
+
+
+def _event_states(registrar: Registrar) -> dict[str, str]:
+    """Map of {event_alias: current event_state.value}, or {} if nothing's been recorded yet."""
+    df = safe_view_current(registrar, "event_state.value")
+    if df is None:
+        return {}
+    return dict(zip(df["entity_id.alias"], df["event_state.value"]))
+
+
+# One turn's instruction, reused for each of the three events: resolve
+# advance_simulation's two prompts for exactly one event (its resolve
+# step, then its plan step), then stop before touching a second one. The
+# "no human/subagent behind this, decide yourself" framing doesn't need
+# repeating here -- advance_simulation's own input_required prompt
+# already says that for whichever responder it names (see
+# resolve._frame_for_responder) -- so this only states the pacing this
+# test specifically needs, which nothing else knows to enforce.
+_RESOLVE_ONE_EVENT_INSTRUCTION = (
+    "Call advance_simulation. Answer its first prompt (resolving the next due event -- "
+    "look up whatever you need and record the outcome via update_registry) and then its "
+    "second prompt for that same event (planning any follow-up, or saying none is needed) "
+    "-- two separate advance_simulation calls for the one event. Once both are answered, "
+    "stop: do not call advance_simulation a third time. Don't narrate anything back to me."
+)
+
+
 @pytest.mark.live
 def test_car_parking_core_sim(tmp_path):
     """Three cars must work out their own arrival order from raw facts, then
-    correctly divide up a two-spot parking lot on a first-come-first-served basis.
+    correctly divide up a two-spot parking lot on a first-come-first-served basis --
+    checked one event at a time, not just by the final result.
 
-    Car A starts driving first but has the longest trip and so
-    actually arrives last; Car B starts second with a slightly longer trip
-    than Car C but, because it left earlier by more than that difference,
-    still arrives first; Car C starts last with the shortest trip and
-    arrives second. First-come-first-served over exactly two dedicated
-    spots then means Car B takes parking_spot_1, Car C takes
-    parking_spot_2, and Car A -- last to arrive -- has to park on the
-    street.
+    Car A starts driving first but has the longest trip and so actually
+    arrives last; Car B starts second with a slightly longer trip than Car
+    C but, because it left earlier by more than that difference, still
+    arrives first; Car C starts last with the shortest trip and arrives
+    second. First-come-first-served over exactly two dedicated spots then
+    means Car B takes parking_spot_1, Car C takes parking_spot_2, and Car
+    A -- last to arrive -- has to park on the street.
 
-    Deliberately structured so naive shortcuts give the wrong answer: "first
-    to start goes first" and "shortest trip wins" both misorder these three,
-    and the scenario's own `next_due` seeding (matching each car's drive's
-    own starts_at -- see that file's docstring) even makes advance_simulation
-    *pop* the cars in start order (A, B, C) -- matching neither the real
-    arrival order nor the parking outcome.
+    Each car has exactly one pre-planned `event` entity (car_X_event, see
+    tests/data/scenarios/parking/scenario.yaml) whose start_time + duration
+    already *is* its true arrival time -- so pop_event's own mechanical
+    sort (soonest due first) pops them in the real arrival order (B, C,
+    A), not start order or trip length. That's what makes each event's own
+    resolution answerable with "very basic reasoning": by the time any one
+    event resolves, whichever spots earlier events already claimed
+    (recorded on the relevant car's own `location`) are genuinely already
+    claimed, not a guess about entities that haven't been touched yet.
 
-    No character/NPC/physics module is involved (see this file's own module
-    docstring): every entity is a plain object, and each of the three "X is
-    due" prompts advance_simulation raises is answered by the connected
-    agent itself (responder="host"), which has to call view_entity/
-    view_registry on its own to learn the facts before deciding —
-    exactly the pattern story-simulator's own tool instructions describe.
-    One headless turn is enough since every one of those round trips is a
-    nested tool call within that single turn, not a separate user message.
-    A generous timeout accounts for three such rounds.
-
-    The prompt spells out *mechanics*, not the puzzle's answer -- a weak
-    model, given just "advance the simulation until all cars are parked",
-    was observed failing on protocol rather than reasoning: it never
-    figured out `location` was how to record a car's outcome (nothing
-    tells it that beyond `street`/`restaurant`/the spots already carrying
-    a bare `place`/`location` tag) and answered "is due" prompts with an
-    in-between status, omitting `next_due_in` -- which permanently ends
-    that entity's turn in the base event loop -- without ever computing
-    or recording where a car actually ends up. It also separately hit
-    `update_registry`'s own footgun: a component written as a bare
-    mapping under an existing alias (no leading `- `) is silently
-    accepted with no error and no `invalid_field` row, yet records
-    nothing at all. None of that is the arrival-order arithmetic this
-    test is actually checking, so the prompt states it directly instead
-    of leaving a weak model to rediscover it by trial and error.
+    This test checks that directly, turn by turn: after each event
+    resolves, the car it concerned should have its final `location`
+    recorded, and -- just as importantly -- the cars whose events haven't
+    come due yet should still show no location at all. Getting the *order*
+    right is exactly what a naive shortcut (start order, or trip length)
+    would get wrong, so a passing intermediate check after each turn is
+    real evidence the loop -- not a lucky final state -- is doing this
+    correctly.
     """
     save_dir = tmp_path / "test_save"
 
-    narration = _run_headless_turn(
-        f"Use start_world with save_dir={save_dir} and scenario_dir={PARKING_SCENARIO_DIR} "
-        "to open a story-simulator world. Then advance the simulation until all cars are "
-        "parked. Each time advance_simulation comes back with status \"input_required\", "
-        "it's naming one entity that's now due -- that is this entity's *only* chance to be "
-        "resolved, so look up whatever facts you need (view_registry/view_entity) and work "
-        "out its full, final outcome now, rather than answering with an in-between status; "
-        "you'll then leave off the `next_due_in` line, since there's nothing further for it "
-        "to do. Record a car's final parking outcome with a `location` component whose "
-        "`value` is the alias of where it ends up (`street`, `parking_spot_1`, or "
-        "`parking_spot_2`), via update_registry with YAML in exactly this list form -- the "
-        "leading `- ` before `location` matters, a bare mapping under an existing alias "
-        "silently records nothing:\n"
-        "<car_alias>:\n"
-        "    - location:\n"
-        "        value: <alias of where it parked>\n\n"
-        "There is no human player and no subagent to delegate to here; decide everything "
-        "yourself. Don't narrate anything back to me; just drive the simulation to "
-        "completion and stop.",
-        timeout=300,
-    )
+    with HeadlessSession() as session:
+        narration = session.send_turn(
+            f"Use start_world with save_dir={save_dir} and scenario_dir={PARKING_SCENARIO_DIR} "
+            f"to open a story-simulator world. Then {_RESOLVE_ONE_EVENT_INSTRUCTION}"
+        )
+        r = _load_registrar(save_dir, narration)
+        assert _location(r, "car_b") == "parked in parking_spot_1", (
+            "Car B should be first to actually arrive (it left earlier than Car C by more "
+            f"than their trip-length difference) and take the first spot -- narration: {narration!r}"
+        )
+        assert _location(r, "car_c") is None and _location(r, "car_a") is None, (
+            "Only one event should have resolved this turn -- car_c's and car_a's own events "
+            f"haven't come due yet, so neither should have a recorded location -- narration: {narration!r}"
+        )
+        states = _event_states(r)
+        assert states.get("car_b_event") == "complete", states
+        assert states.get("car_c_event") != "complete" and states.get("car_a_event") != "complete", states
 
-    r = _load_registrar(save_dir, narration)
-    # r.view returns an ibis expression (needs executing), keyed on
-    # "component.field" strings, not a bare component name -- and
-    # "entity_id.alias" (not "alias") is the column it prepends.
-    locations = r.view(["location.value"]).execute()
-    actual = dict(zip(locations["entity_id.alias"], locations["location.value"]))
-    expected = {"car_a": "street", "car_b": "parking_spot_1", "car_c": "parking_spot_2"}
-    # Checked per car, not as a whole-table dict comparison: a stray
-    # `location` row on some other entity (e.g. exploratory model output)
-    # is irrelevant to what this test actually checks -- each car's own
-    # recorded outcome, nothing about the `location` table being exactly
-    # these three rows and no more.
-    for alias, expected_value in expected.items():
-        assert actual.get(alias) == expected_value, f"{alias}: {actual}, narration: {narration!r}"
+        narration = session.send_turn(f"Again, {_RESOLVE_ONE_EVENT_INSTRUCTION}")
+        r = _load_registrar(save_dir, narration)
+        assert _location(r, "car_c") == "parked in parking_spot_2", (
+            "Car C should be second to arrive (after Car B, before Car A) and take the "
+            f"remaining dedicated spot -- narration: {narration!r}"
+        )
+        assert _location(r, "car_a") is None, (
+            "Car A's own event still hasn't come due yet, so it shouldn't have a recorded "
+            f"location -- narration: {narration!r}"
+        )
+        assert _location(r, "car_b") == "parked in parking_spot_1", (
+            f"Car B's already-recorded outcome shouldn't change -- narration: {narration!r}"
+        )
+        states = _event_states(r)
+        assert states.get("car_c_event") == "complete", states
+        assert states.get("car_a_event") != "complete", states
+
+        narration = session.send_turn(
+            "Call advance_simulation again and keep answering its prompts (resolve, then "
+            "plan, for whatever event it names) until its status is \"done\" -- there's only "
+            "one event left. Don't narrate anything back to me."
+        )
+        r = _load_registrar(save_dir, narration)
+        assert _location(r, "car_a") == "parked on street", (
+            "Car A starts first but has the longest trip, so it should actually arrive last "
+            f"and end up parked on the street -- narration: {narration!r}"
+        )
+        assert _location(r, "car_b") == "parked in parking_spot_1", (
+            f"Car B's already-recorded outcome shouldn't change -- narration: {narration!r}"
+        )
+        assert _location(r, "car_c") == "parked in parking_spot_2", (
+            f"Car C's already-recorded outcome shouldn't change -- narration: {narration!r}"
+        )

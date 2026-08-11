@@ -155,6 +155,78 @@ turn_components:
             wholesale on each `perceive` call to match its current result set.
         - component_type
 
+event_components:
+    event:
+        - description: >
+            A scheduled or ongoing occurrence -- what the event-driven
+            simulation loop actually pops and resolves, distinct from the
+            entities it concerns (see involved_entity). Due once world
+            time reaches start_time + duration.
+        - component_type
+        - field:
+            start_time:
+                description: World time (seconds since world creation)
+                    this event begins. Nullable -- a brand-new event
+                    (state "new") may not have one scheduled yet.
+                type: float
+                nullable: true
+                units: seconds
+            duration:
+                description: How long this event takes, in seconds, once
+                    it starts. Nullable for the same reason as start_time.
+                type: float
+                nullable: true
+                units: seconds
+            state:
+                description: This event's own place in its lifecycle.
+                type: str
+                range:
+                    - new
+                    - planned
+                    - in_progress
+                    - interrupted
+                    - completed
+            time:
+                description: World time (seconds since world creation)
+                    this event row was recorded at, backfilled on merge,
+                    not authored directly, so it stays nullable for
+                    hand-authored rows. An event accumulates a new row
+                    each time it's rescheduled or its lifecycle state
+                    changes; flagged time_dimension so
+                    Registry.view_current resolves the row with the
+                    highest time as the event's current one.
+                type: float
+                nullable: true
+                time_dimension: true
+                units: seconds
+    involved_entity:
+        - description: >
+            Marks that the owning event involves the entity referenced by
+            value -- who or what it concerns, acts on, or needs in order
+            to be interpreted. An event can carry several
+            involved_entity rows, one per entity it involves.
+        - parent: directed_relation
+        - field:
+            value:
+                description: The entity this event involves.
+                type: entity_ref
+    outcome:
+        - description: >
+            What actually happened once an event resolved: a
+            natural-language description, plus how far that leaves the
+            event's own lifecycle.
+        - component_type
+        - field:
+            progress:
+                description: How far this outcome leaves the event's own
+                    lifecycle. Defaults to "done" -- most outcomes fully
+                    resolve the event they belong to.
+                type: str
+                default: done
+            value:
+                description: A natural-language description of what happened.
+                type: str
+
 agent_components:
     agent:
         - description: >

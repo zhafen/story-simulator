@@ -23,7 +23,6 @@ import subprocess
 from pathlib import Path
 
 import ibis
-import pandas as pd
 import pytest
 
 from iacs.registrar import Registrar
@@ -109,14 +108,6 @@ def _load_registrar(save_dir: Path, narration: str) -> Registrar:
 
 
 @pytest.mark.live
-@pytest.mark.skip(
-    reason="Not yet attempted -- tracks a reasoning capability the core simulation "
-    "doesn't reliably have yet (working out cross-entity scheduling from raw "
-    "facts, rather than reacting to whatever order advance_simulation happens "
-    "to process entities in). Un-skip once that's actually been built and this "
-    "passes for real, rather than loosening the assertions to fit whatever the "
-    "sim currently does."
-)
 def test_car_parking_core_sim(tmp_path):
     """Three cars must work out their own arrival order from raw facts, then
     correctly divide up a two-spot parking lot on a first-come-first-served basis.
@@ -146,22 +137,58 @@ def test_car_parking_core_sim(tmp_path):
     One headless turn is enough since every one of those round trips is a
     nested tool call within that single turn, not a separate user message.
     A generous timeout accounts for three such rounds.
+
+    The prompt spells out *mechanics*, not the puzzle's answer -- a weak
+    model, given just "advance the simulation until all cars are parked",
+    was observed failing on protocol rather than reasoning: it never
+    figured out `location` was how to record a car's outcome (nothing
+    tells it that beyond `street`/`restaurant`/the spots already carrying
+    a bare `place`/`location` tag) and answered "is due" prompts with an
+    in-between status, omitting `next_due_in` -- which permanently ends
+    that entity's turn in the base event loop -- without ever computing
+    or recording where a car actually ends up. It also separately hit
+    `update_registry`'s own footgun: a component written as a bare
+    mapping under an existing alias (no leading `- `) is silently
+    accepted with no error and no `invalid_field` row, yet records
+    nothing at all. None of that is the arrival-order arithmetic this
+    test is actually checking, so the prompt states it directly instead
+    of leaving a weak model to rediscover it by trial and error.
     """
     save_dir = tmp_path / "test_save"
 
     narration = _run_headless_turn(
         f"Use start_world with save_dir={save_dir} and scenario_dir={PARKING_SCENARIO_DIR} "
         "to open a story-simulator world. Then advance the simulation until all cars are "
-        "parked.",
+        "parked. Each time advance_simulation comes back with status \"input_required\", "
+        "it's naming one entity that's now due -- that is this entity's *only* chance to be "
+        "resolved, so look up whatever facts you need (view_registry/view_entity) and work "
+        "out its full, final outcome now, rather than answering with an in-between status; "
+        "you'll then leave off the `next_due_in` line, since there's nothing further for it "
+        "to do. Record a car's final parking outcome with a `location` component whose "
+        "`value` is the alias of where it ends up (`street`, `parking_spot_1`, or "
+        "`parking_spot_2`), via update_registry with YAML in exactly this list form -- the "
+        "leading `- ` before `location` matters, a bare mapping under an existing alias "
+        "silently records nothing:\n"
+        "<car_alias>:\n"
+        "    - location:\n"
+        "        value: <alias of where it parked>\n\n"
+        "There is no human player and no subagent to delegate to here; decide everything "
+        "yourself. Don't narrate anything back to me; just drive the simulation to "
+        "completion and stop.",
         timeout=300,
     )
 
-
     r = _load_registrar(save_dir, narration)
-    locations = r.view("location")
-    expected_locations = pd.DataFrame([
-        {"alias": "car_a", "location.value": "street"},
-        {"alias": "car_b", "location.value": "parking_spot_1"},
-        {"alias": "car_c", "location.value": "parking_spot_2"},
-    ])
-    pd.testing.assert_allclose(expected_locations, locations)
+    # r.view returns an ibis expression (needs executing), keyed on
+    # "component.field" strings, not a bare component name -- and
+    # "entity_id.alias" (not "alias") is the column it prepends.
+    locations = r.view(["location.value"]).execute()
+    actual = dict(zip(locations["entity_id.alias"], locations["location.value"]))
+    expected = {"car_a": "street", "car_b": "parking_spot_1", "car_c": "parking_spot_2"}
+    # Checked per car, not as a whole-table dict comparison: a stray
+    # `location` row on some other entity (e.g. exploratory model output)
+    # is irrelevant to what this test actually checks -- each car's own
+    # recorded outcome, nothing about the `location` table being exactly
+    # these three rows and no more.
+    for alias, expected_value in expected.items():
+        assert actual.get(alias) == expected_value, f"{alias}: {actual}, narration: {narration!r}"

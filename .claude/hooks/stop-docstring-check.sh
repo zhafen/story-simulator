@@ -12,6 +12,21 @@ set -euo pipefail
 
 input=$(cat)
 
+# HeadlessSession (tests/test_human_validated.py) spawns its own `claude -p`
+# subprocess against this same repo, to drive story-simulator-mcp the way a
+# real external client would -- but that subprocess is still subject to this
+# repo's own Stop hooks. A nudge meant for an interactive human session
+# instead hijacks that automated turn: the model has no user to defer to, so
+# it just answers the nudge (reviewing docstrings) instead of the test's
+# actual instruction, and the test sees that as an unrelated failure. Opt
+# out for exactly that one caller via an env var it sets on its own
+# subprocess -- narrower than skipping this hook for every headless `-p`
+# invocation against this repo, which could hide a real nudge from some
+# other automated caller that actually has a way to act on it.
+if [[ -n "${STORY_SIM_HEADLESS_TEST:-}" ]]; then
+  exit 0
+fi
+
 # Recursion prevention: only nudge once per Stop attempt, mirroring
 # stop-hook-git-check.sh -- if the model's forced follow-up turn doesn't
 # resolve it, don't loop forever re-flagging the same diff.

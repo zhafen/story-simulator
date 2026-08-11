@@ -26,10 +26,12 @@ un-shelved.
 """
 
 import json
+import os
 import selectors
 import shutil
 import subprocess
 import time
+import uuid
 from pathlib import Path
 
 import ibis
@@ -41,6 +43,15 @@ from story_simulator.core import safe_view_current
 
 REPO_ROOT = Path(__file__).parent.parent
 PARKING_SCENARIO_DIR = REPO_ROOT / "tests" / "data" / "scenarios" / "parking"
+
+# Every raw stream-json line from a HeadlessSession's `claude -p` subprocess
+# lands here, one file per session -- not just the final narrated result.
+# Diagnosing the live-test flakiness previously required hand-rolling a
+# throwaway script outside the test suite to capture this (thinking blocks,
+# tool_use/tool_result payloads, intermediate assistant messages) since
+# HeadlessSession.send_turn only ever returned the final "result" event's
+# text. Gitignored -- these are per-run debug artifacts, not source.
+LIVE_TRACE_DIR = REPO_ROOT / ".live_test_traces"
 
 # Cheapest available model. Kept deliberately weak rather than swapped for a
 # stronger one: story-simulator's tools need to hold up under a bad model's
@@ -83,10 +94,23 @@ class HeadlessSession:
         self.model = model
         self.turn_timeout = turn_timeout
         self.proc: subprocess.Popen | None = None
+        LIVE_TRACE_DIR.mkdir(exist_ok=True)
+        self.trace_path = (
+            LIVE_TRACE_DIR / f"{time.strftime('%Y%m%dT%H%M%S')}_{uuid.uuid4().hex[:8]}.jsonl"
+        )
+        self._trace_file = None
 
     def __enter__(self) -> "HeadlessSession":
         if shutil.which("claude") is None:
             pytest.skip("claude CLI not on PATH")
+        self._trace_file = open(self.trace_path, "w")
+        # STORY_SIM_HEADLESS_TEST tells this repo's own Stop hooks (see
+        # .claude/hooks/stop-docstring-check.sh) that this subprocess is an
+        # automated responder, not an interactive session with a user who
+        # could act on a nudge -- otherwise a hook's feedback derails the
+        # turn into answering the nudge instead of the test's own
+        # instruction, and the test sees that as an unrelated failure.
+        env = {**os.environ, "STORY_SIM_HEADLESS_TEST": "1"}
         self.proc = subprocess.Popen(
             [
                 "claude",
@@ -101,6 +125,7 @@ class HeadlessSession:
                 self.model,
             ],
             cwd=REPO_ROOT,
+            env=env,
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -110,7 +135,14 @@ class HeadlessSession:
         return self
 
     def send_turn(self, prompt: str) -> str:
-        """Send one prompt on the ongoing conversation and block for its narrated reply."""
+        """Send one prompt on the ongoing conversation and block for its narrated reply.
+
+        Every raw line read from the subprocess -- not just the final
+        result -- is appended to `self.trace_path` as it arrives, so a
+        failure (or a passing-but-suspicious run) can be inspected after
+        the fact instead of only ever seeing the narrated text this method
+        returns.
+        """
         assert self.proc is not None and self.proc.stdin is not None
         message = {"type": "user", "message": {"role": "user", "content": prompt}}
         self.proc.stdin.write(json.dumps(message) + "\n")
@@ -129,6 +161,9 @@ class HeadlessSession:
                 line = self.proc.stdout.readline()
                 if not line:
                     self._fail("claude process exited before replying")
+                if self._trace_file is not None:
+                    self._trace_file.write(line)
+                    self._trace_file.flush()
                 try:
                     event = json.loads(line)
                 except json.JSONDecodeError:
@@ -142,10 +177,14 @@ class HeadlessSession:
 
     def _fail(self, message: str) -> None:
         stderr = self.proc.stderr.read() if self.proc and self.proc.stderr else ""
+        message = f"{message}\ntrace: {self.trace_path}\nstderr: {stderr}"
         self.close()
-        pytest.fail(f"{message}\nstderr: {stderr}")
+        pytest.fail(message)
 
     def close(self) -> None:
+        if self._trace_file is not None:
+            self._trace_file.close()
+            self._trace_file = None
         if self.proc is None:
             return
         proc, self.proc = self.proc, None
@@ -273,6 +312,7 @@ def test_car_parking_core_sim(tmp_path):
     save_dir = tmp_path / "test_save"
 
     with HeadlessSession() as session:
+        print(f"HeadlessSession trace: {session.trace_path}")
         narration = session.send_turn(
             f"Use start_world with save_dir={save_dir} and scenario_dir={PARKING_SCENARIO_DIR} "
             f"to open a story-simulator world. Then {_RESOLVE_ONE_EVENT_INSTRUCTION}"

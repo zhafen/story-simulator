@@ -142,11 +142,13 @@ story_simulator_mission:
             - work_state: done
         view_registry:
             - description: >
-                  RETIRED (was: markdown dump of every recorded instance of one
-                  component type). Removed -- duplicated iacs's own
-                  view_component now that iacs-mcp can be pointed at this same
-                  registry; see docs/manifest/history.yaml:
-                  project_history.story_simulator_view_tools_removed_in_favor_of_iacs.
+                  Markdown dump of every recorded instance of one component
+                  type. Delegates to iacs's own Registrar.view_df rather than
+                  reimplementing the read logic -- see docs/manifest/
+                  history.yaml: project_history.
+                  story_simulator_view_tools_reinstated_as_iacs_delegates for
+                  why this is a thin wrapper rather than routed through a
+                  separate iacs-mcp call.
             - requirement
             - impact:
                   type: reliability
@@ -154,12 +156,12 @@ story_simulator_mission:
             - work_state: done
         view_entity:
             - description: >
-                  RETIRED (was: every recorded component instance for one
-                  entity, resolved by exact hash, exact alias, or unambiguous
-                  path fragment). Removed -- duplicated iacs's own view_entity
-                  now that iacs-mcp can be pointed at this same registry; see
-                  docs/manifest/history.yaml:
-                  project_history.story_simulator_view_tools_removed_in_favor_of_iacs.
+                  Every recorded component instance for one entity, resolved by
+                  exact hash, exact alias, or unambiguous path fragment.
+                  Delegates to iacs's own Registrar.view_entity rather than
+                  reimplementing the traversal -- see docs/manifest/
+                  history.yaml: project_history.
+                  story_simulator_view_tools_reinstated_as_iacs_delegates.
             - requirement
             - impact:
                   type: reliability

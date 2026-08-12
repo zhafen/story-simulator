@@ -519,15 +519,13 @@ async def resolve_event(alias: str, replay: TurnReplay, end_time: float) -> str:
     example, even though that's what most scenarios so far have needed:
     this prompt is generic across every scenario, and not every event's
     consequence is a location change, so hardcoding one component here
-    would bias every scenario toward it. Points at iacs's own `view_entity`
-    on the component type's own name instead (its field descriptions carry
+    would bias every scenario toward it. Points at `view_entity` on the
+    component type's own name instead (its field descriptions carry
     scenario-specific examples, e.g. `location`'s own doubles as the
     phrasing convention) -- confirmed live that a model resolving its
     first-ever write to an unfamiliar component type doesn't otherwise
     think to look up that component type's own schema, and improvises a
-    reasonable-but-inconsistent phrasing instead. (Story-simulator has no
-    view_entity of its own -- see `start_world`'s own docstring for why
-    this now means iacs's.)
+    reasonable-but-inconsistent phrasing instead.
 
     `end_time` (the same value `process_event` just fed to `advance_clock`
     -- `alias`'s own start_time + duration, plain arithmetic, not left for
@@ -567,22 +565,20 @@ async def resolve_event(alias: str, replay: TurnReplay, end_time: float) -> str:
             f"{alias}'s end_time (world time {end_time:g}) has been "
             f"reached. Nothing else with an earlier end_time is still "
             f"unresolved -- if another entity's own event hasn't reached "
-            f"event_state: complete yet (check via iacs's view_entity/"
-            f"view_component, not assumed from its start_time or where it "
+            f"event_state: complete yet (check via view_entity/"
+            f"view_registry, not assumed from its start_time or where it "
             f"appears in a table), treat it as not having happened yet. "
-            f"Look up whatever you need (iacs's view_entity/"
-            f"view_component, including this event's own involved_entity "
-            f"links) to "
+            f"Look up whatever you need (view_entity/"
+            f"view_registry, including its involved_entity links) to "
             f"work out what happens, then record it: {alias}'s own "
             f"outcome, {alias}'s own event_state "
             f"(complete if this fully resolves it, interrupted if "
             f"something cuts it short), and anything it changes about the "
             f"entities it involves -- write those changes directly onto "
             f"each affected entity itself, using whichever component type "
-            f"actually fits (iacs's view_entity on the component type's own "
-            f"name, e.g. view_entity('location'), shows its field "
-            f"descriptions if you're unsure which one or how to phrase it), "
-            f"not only "
+            f"actually fits (view_entity on the component type's own name, "
+            f"e.g. view_entity('location'), shows its field descriptions "
+            f"if you're unsure which one or how to phrase it), not only "
             f"described in {alias}'s own outcome text -- all via "
             f"update_registry."
         )
@@ -760,24 +756,22 @@ def start_world(session, save_dir: str, scenario_dir: str | None = None) -> str:
     every start_world call would re-merge the same starting entities
     repeatedly.
 
-    The returned message leads with a required next step: call iacs's own
-    `load_database` tool (mcp__iacs__*) with this exact registry_url. This
-    server has no view_registry/view_entity of its own any more (removed --
-    see docs/manifest/history.yaml: project_history.
-    story_simulator_view_tools_removed_in_favor_of_iacs) -- iacs's own
-    view_entity/view_component/list_component_types are now the only way to
-    read the registry, and they default to iacs's own unrelated example
-    manifest until pointed here. This save_dir's own registry_url isn't
-    knowable ahead of time (it's a hash of save_dir's own path, only chosen
-    here), so iacs-mcp can't be preconfigured with it at server-startup the
-    way IACS_DATABASE_URL allows for a deployment that already knows its
-    save_dir in advance (see HeadlessSession in tests/test_human_validated.py
-    for that path) -- confirmed live that a weak model, even once nudged,
-    doesn't reliably go find and call load_database on its own unless this
-    is stated as a required first step rather than a trailing aside (see
-    docs/manifest/history.yaml: project_history.
-    iacs_mcp_pointed_at_live_registry_for_component_discovery for the
-    original finding this addresses).
+    The returned message also mentions iacs's own `load_database` tool
+    (mcp__iacs__*, if connected) as an optional extra: pointing it at this
+    exact registry_url lets its deeper introspection (validate_yaml,
+    describe_format, ...) operate on this world instead of iacs's own
+    unrelated example manifest. Not required for ordinary reads any more --
+    view_registry/view_entity (below) cover that directly, via the same
+    underlying Registrar methods iacs's own tools use, so there's no
+    separate MCP server a host needs to discover just to look something
+    up. (An earlier version of this removed view_registry/view_entity
+    entirely in favor of requiring iacs's tools instead -- reverted before
+    that specific "required first step" framing was ever live-verified,
+    on the strength of prior evidence already in hand: across every live
+    rerun so far, a weak model has reliably discovered and used tools
+    already on this server, but never once discovered or called a tool on
+    a *separate* MCP server, nudged or not; see docs/manifest/history.yaml:
+    project_history.story_simulator_view_tools_reinstated_as_iacs_delegates.)
 
     Args:
         save_dir: Directory holding (or to hold) this world's save data.
@@ -832,14 +826,50 @@ def start_world(session, save_dir: str, scenario_dir: str | None = None) -> str:
     _registrars[session] = registrar
     _save_dirs[session] = save_dir_path
     return (
-        f"World opened at {save_dir_path}. "
-        f"REQUIRED NEXT STEP: call iacs's load_database tool now (search for "
-        f"mcp__iacs__load_database if it isn't already loaded) with "
-        f"database_url={registry_url(save_dir_path)!r}. This server has no view_registry/"
-        f"view_entity of its own -- nothing can be looked up until iacs's own view_entity/"
-        f"view_component/list_component_types are pointed at this exact world via that call. "
-        f"Component types already declared: {registrar.registry.component_types}."
+        f"World opened at {save_dir_path}. Component types: {registrar.registry.component_types}. "
+        "Call view_registry or view_entity to see what's there. "
+        f"If iacs's own tools are also available (mcp__iacs__*) and you want its deeper "
+        f"introspection (validate_yaml, describe_format, ...), call its load_database with "
+        f"database_url={registry_url(save_dir_path)!r} to point them at this exact world too -- "
+        f"optional, not required for ordinary reads."
     )
+
+
+def view_registry(session, component_type: str) -> str:
+    """View all recorded data for one component type (e.g. "position", "object", "character").
+
+    Covers both the starting scenario and everything recorded since, since
+    it reads straight from the registry -- the same `view_df` method
+    iacs's own `view_component` tool wraps too (see this module's own
+    docstring history for why this exists as a story-simulator tool
+    at all rather than relying on iacs's copy: docs/manifest/history.yaml,
+    project_history.story_simulator_view_tools_reinstated_as_iacs_delegates).
+    Rendered as a markdown table, not CSV -- published format comparisons
+    put CSV among the worst-parsed formats for LLMs, which is what
+    actually reads this (the responder standing in for this call), not
+    another program.
+    """
+    registrar = _get_registrar(session)
+    return registrar.view_df(component_type).fillna("null").to_markdown()
+
+
+def view_entity(session, entity_id: str) -> str:
+    """Return every recorded component instance for a specific entity.
+
+    Delegates straight to iacs's own `Registrar.view_entity` -- the same
+    entity-traversal logic iacs's own `view_entity` tool already wraps,
+    not reimplemented here a second time (an earlier version of this
+    function did reimplement it independently; see docs/manifest/
+    history.yaml: project_history.
+    story_simulator_view_tools_reinstated_as_iacs_delegates for why that
+    changed).
+
+    Args:
+        entity_id: Entity hash, alias, or unambiguous path fragment (e.g.
+            "player", "desk", or "journaling_desk.desk").
+    """
+    registrar = _get_registrar(session)
+    return registrar.view_entity(entity_id, format="markdown")
 
 
 def update_registry(session, yaml_string: str) -> str:

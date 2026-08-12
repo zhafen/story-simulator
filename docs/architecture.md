@@ -22,24 +22,30 @@ read on what's still open.
 ```mermaid
 flowchart LR
     Human(("Human player")) <--> Client["MCP-aware chat client<br/>(the narrator/game master)"]
-    Client -- "start_world, advance_simulation,<br/>update_registry" --> Server["story-simulator-mcp"]
-    Client -- "load_database, view_entity,<br/>view_component, describe_format,<br/>validate_yaml" --> Iacs["iacs-mcp"]
+    Client -- "start_world, advance_simulation,<br/>view_registry, view_entity,<br/>update_registry" --> Server["story-simulator-mcp"]
+    Client -- "describe_format,<br/>validate_yaml (optional: load_database)" --> Iacs["iacs-mcp"]
     Server -- "reads/writes" --> DB[("registry database<br/>(one schema per save_dir)")]
-    Iacs -- "reads (once pointed at it<br/>via load_database)" --> DB
 ```
 
 For a human player, narration is just the connected agent's own replies —
-nothing in story-simulator narrates *for* it. story-simulator has no
-`view_entity`/`view_registry` of its own — reading the registry is entirely
-`iacs-mcp`'s job. `iacs-mcp` starts pointed at its own separate example
-manifest, same as always, but `start_world`'s own return value tells the
-connected agent to call iacs's `load_database` with this save's exact
-`registry_url`, so iacs's `view_entity`/`view_component`/
-`list_component_types` end up reading the same live, accumulating registry
-state story-simulator itself writes to — one registry, not two (see
+nothing in story-simulator narrates *for* it. `view_registry`/`view_entity`
+are story-simulator's own tools, but delegate internally to iacs's own
+`Registrar.view_df`/`view_entity` methods against the same registrar object
+`start_world` already opened — a single in-process call, not a second MCP
+round-trip. `iacs-mcp` (attached alongside, unmodified in this flow) stays
+the format/validation reference — `describe_format`/`validate_yaml` — since
+those don't need the live registry at all; its own `load_database` tool
+can optionally point its deeper introspection tools at this exact world
+too, but nothing on the ordinary read path depends on a host discovering
+and calling it. Two earlier iterations tried routing all reads through
+`iacs-mcp` instead (once via a nudge, once by removing story-simulator's
+own tools outright) — reverted after live evidence that a connected host
+reliably discovers and uses tools on the server it's already talking to,
+but never once discovered or called a tool on a separate one (see
 `docs/manifest/history.yaml`: `project_history.
-iacs_mcp_pointed_at_live_registry_for_component_discovery` and
-`project_history.story_simulator_view_tools_removed_in_favor_of_iacs`).
+iacs_mcp_pointed_at_live_registry_for_component_discovery`,
+`project_history.story_simulator_view_tools_removed_in_favor_of_iacs`, and
+`project_history.story_simulator_view_tools_reinstated_as_iacs_delegates`).
 
 > **Character/NPC/terrain/physics/spatial-perception tools are currently
 > shelved** (`perceive`, `advance_npc_turn`, `generate_terrain`,

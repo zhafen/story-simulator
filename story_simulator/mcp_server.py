@@ -21,18 +21,22 @@ STORY_SIM_RESPONDER -- see `story_simulator.config.event_responder`) -- see
 `advance_simulation` again with its decision (recorded via
 `update_registry`) and the `resume_token` it was given, to resume the loop
 -- Multi Round-Trip Requests (MRTR, MCP spec 2026-07-28), not a second
-dedicated tool. `update_registry` remains directly callable too, for
-anything outside that loop.
+dedicated tool. `view_registry`/`view_entity`/`update_registry` remain
+directly callable too, for anything outside that loop.
 
-No `view_registry`/`view_entity` tools of this server's own -- reading the
-registry happens entirely through iacs's own `view_entity`/`view_component`/
-`list_component_types` instead (see `core.start_world`'s own docstring for
-why, and the `IACS_DATABASE_URL`/`load_database` mechanism that points
-iacs's tools at this exact world). This server previously reimplemented
-that reading capability itself; removed once iacs-mcp could be pointed at
-the same registry, rather than maintaining two independent copies of the
-same logic (see docs/manifest/history.yaml: project_history.
-story_simulator_view_tools_removed_in_favor_of_iacs).
+`view_registry`/`view_entity` are thin delegates to iacs's own Registrar
+methods (`view_df`/`view_entity`), not independent reimplementations --
+a prior version of each did reimplement the read/traversal logic itself,
+which turned out to just duplicate what iacs's own `view_component`/
+`view_entity` MCP tools already wrap. An even earlier iteration removed
+these two tools entirely in favor of requiring iacs's own tools instead;
+reverted after live evidence that a connected host reliably discovers and
+uses tools on THIS server but has never once discovered or called a tool
+on a separate one, however strongly nudged (see docs/manifest/history.yaml:
+project_history.story_simulator_view_tools_reinstated_as_iacs_delegates).
+Delegating (calling the same underlying Registrar object this server
+already holds) avoids the original duplication without repeating that
+discoverability problem.
 
 This file is deliberately thin: every `@server.tool()` function below just
 unpacks `ctx.request_context.session` into a plain session id and calls
@@ -69,21 +73,12 @@ server = FastMCP(
     instructions=(
         "You are the game master for a story-simulator world: a text simulation whose "
         "state lives in a structured entity/component registry, not just your own context, "
-        "run as an event-driven simulation.\n\n"
-        "REQUIRED FIRST STEPS, in order: (1) call start_world. (2) Immediately call iacs's "
-        "own load_database tool (mcp__iacs__load_database if it isn't already loaded, search "
-        "for it) with the exact database_url start_world's own return value gives you. This "
-        "server has no tools of its own for reading the registry -- no view_entity/"
-        "view_registry here -- so nothing can be looked up until iacs's tools (view_entity, "
-        "view_component, list_component_types) are pointed at this exact world via that call. "
-        "Skipping step (2) leaves you with no way to check a component type's real name/fields "
-        "before writing, which reliably produces wrong or invented component names.\n\n"
-        "World state is `event` entities -- each ready "
+        "run as an event-driven simulation. World state is `event` entities -- each ready "
         "to resolve once world time reaches its own end_time (start_time + duration) -- "
         "not the acting entities (a car, a door, ...) they concern, which carry no "
         "schedule of their own. An event usually also carries involved_entity links "
         "naming who/what it concerns.\n\n"
-        "Once the world is open and iacs is pointed at it, call "
+        "Call start_world once, at the beginning, to open or seed a save. Then call "
         "advance_simulation with no arguments: it pauses on every such event, in two separate "
         "steps -- resolve, then plan -- each returning "
         "{\"status\": \"input_required\", \"prompt\": ..., \"responder\": \"host\" or "
@@ -92,7 +87,7 @@ server = FastMCP(
         "delegate to your own isolated subagent mechanism (e.g. an Agent/Task tool) instead of "
         "answering inline -- follow that instruction rather than answering directly. Either "
         "way:\n"
-        "- On a resolve prompt: look up whatever you need (iacs's view_entity/view_component, "
+        "- On a resolve prompt: look up whatever you need (view_entity/view_registry, "
         "including the event's own involved_entity links) to work out what happened, then "
         "record it yourself via update_registry -- that event's own `outcome` (a "
         "natural-language description, plus whether this leaves it \"complete\" or "
@@ -113,13 +108,13 @@ server = FastMCP(
         "as a bare mapping (no `- `) is silently accepted with no error, yet records nothing "
         "at all -- always use the list form.\n\n"
         "`description` and `state` are both current-value components: a new write becomes "
-        "the entity's current one, both for iacs's view_entity and for the save's exported "
-        "YAML (older writes stay recorded as history — view_entity still shows all of them). "
+        "the entity's current one, both for view_entity and for the save's exported YAML "
+        "(older writes stay recorded as history — view_entity still shows all of them). "
         "Write the whole updated description each time, not a diff, and use `state` for a "
         "short current status word or phrase (e.g. a door being \"open\") rather than folding "
         "it into the description text.\n\n"
-        "Use iacs's view_entity/view_component to look up what's already known before "
-        "deciding — don't invent entities or details nothing has established."
+        "Use view_registry/view_entity to look up what's already known before deciding — "
+        "don't invent entities or details nothing has established."
     ),
 )
 
@@ -144,6 +139,29 @@ def start_world(save_dir: str, ctx: Context, scenario_dir: str | None = None) ->
     """
     __iacs__ = {"solution of": "story_simulator_mission.tool_catalog.start_world"}
     return core.start_world(ctx.request_context.session, save_dir, scenario_dir)
+
+
+@server.tool()
+def view_registry(component_type: str, ctx: Context) -> str:
+    """View all recorded data for one component type (e.g. "position", "object", "character").
+
+    Covers both the starting scenario and everything recorded since, since
+    it reads straight from the registry.
+    """
+    __iacs__ = {"solution of": "story_simulator_mission.tool_catalog.view_registry"}
+    return core.view_registry(ctx.request_context.session, component_type)
+
+
+@server.tool()
+def view_entity(entity_id: str, ctx: Context) -> str:
+    """Return every recorded component instance for a specific entity.
+
+    Args:
+        entity_id: Entity hash, alias, or unambiguous path fragment (e.g.
+            "player", "desk", or "journaling_desk.desk").
+    """
+    __iacs__ = {"solution of": "story_simulator_mission.tool_catalog.view_entity"}
+    return core.view_entity(ctx.request_context.session, entity_id)
 
 
 @server.tool()

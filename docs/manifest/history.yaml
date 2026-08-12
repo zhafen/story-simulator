@@ -199,3 +199,33 @@ project_history:
               instructions) lead with the load_database step as a required
               first step instead of a trailing note, since there's no
               fallback read path left if a host skips it.
+    story_simulator_view_tools_reinstated_as_iacs_delegates:
+        - description: >
+              Before the "required first step" framing from
+              story_simulator_view_tools_removed_in_favor_of_iacs was ever
+              live-verified, reconsidered the whole approach: every live
+              rerun across this entire investigation showed the same
+              pattern -- a connected host reliably discovers and uses tools
+              already on story-simulator-mcp, but has never once discovered
+              or called a tool on the separate iacs-mcp server, regardless
+              of how the nudge was worded. Routing ordinary reads through a
+              second MCP server was the actual mistake, not the wording of
+              the nudge toward it.
+
+              Reinstated view_registry/view_entity as story-simulator's own
+              tools, but this time as thin delegates to iacs's own
+              Registrar.view_df/view_entity methods against the same
+              registrar object start_world already holds -- a single
+              in-process call, not a second MCP round-trip -- rather than
+              the original hand-rolled reimplementation
+              story_simulator_view_tools_removed_in_favor_of_iacs had
+              found and removed. This keeps the fix from that entry (no
+              duplicated read logic) while dropping its actual mistake
+              (assuming a nudge could ever make cross-server tool discovery
+              as reliable as same-server tool discovery already is).
+
+              iacs-mcp remains attached for describe_format/validate_yaml
+              (which don't need the live registry) and its load_database
+              tool is still available as an optional way to point its
+              deeper introspection at this exact world -- just no longer
+              anything the ordinary read path depends on.

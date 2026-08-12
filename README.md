@@ -14,12 +14,10 @@ similar) to the server below and talking to it; that client's own replies *are* 
 > `perceive`, `advance_npc_turn`, `generate_terrain`, and `resolve_physics` — and the model API
 > key they needed — have been moved to [`shelved/`](shelved) pending a rewrite; see
 > [`docs/architecture.md`](docs/architecture.md). What's live today is the base event loop:
-> `start_world`, `advance_simulation`, `update_registry` — every
+> `start_world`, `advance_simulation`, `view_registry`, `view_entity`, `update_registry` — every
 > due entity resolves via the connected host deciding directly (`responder="host"`, the default)
 > or delegating to its own isolated subagent (`responder="subagent"`, opt in with
 > `STORY_SIM_RESPONDER=subagent`) — no separate model call of story-simulator's own either way.
-> Reading the registry (`view_entity`/`view_component`) is iacs-mcp's job, not
-> story-simulator's own — see `docs/architecture.md`.
 
 ## Quick start
 
@@ -40,7 +38,7 @@ similar) to the server below and talking to it; that client's own replies *are* 
 3. Talk to it:
    ```
    you:   I want to play story-simulator. Please start up a world.
-   agent: [calls start_world, then iacs's load_database] The world is ready. You are in a vast,
+   agent: [calls start_world, view_registry] The world is ready. You are in a vast,
           empty expanse, with only a door in front of you.
    you:   I walk through the door.
    agent: [calls advance_simulation, decides what happens, records it via update_registry]

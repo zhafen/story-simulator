@@ -228,13 +228,14 @@ def _location(registrar: Registrar, alias: str) -> str | None:
     """The current `location.value` recorded for an aliased entity, or
     None if it has none yet. `location` is a declared, time_dimension'd
     component type (see manifest/builtins.yaml), so this resolves the
-    current row per entity rather than assuming a single write.
+    current row per entity rather than assuming a single write. Filters via
+    `aliases` (iacs's own alias-resolution, not a local re-filter) since
+    `alias` here is always expected to name exactly one entity.
     """
-    df = safe_view_current(registrar, "location.value")
-    if df is None:
+    df = safe_view_current(registrar, "location.value", aliases=alias)
+    if df is None or df.empty:
         return None
-    match = df[df["entity_id.alias"] == alias]
-    return None if match.empty else str(match.iloc[-1]["location.value"])
+    return str(df.iloc[-1]["location.value"])
 
 
 def _event_states(registrar: Registrar) -> dict[str, str]:

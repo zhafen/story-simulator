@@ -64,9 +64,12 @@ def _resolve_prompt(alias: str, due_time: float) -> str:
         f"outcome, {alias}'s own event_state (complete if this fully "
         f"resolves it, interrupted if something cuts it short), and "
         f"anything it changes about the entities it involves -- write "
-        f"those changes directly onto each affected entity itself (e.g. a "
-        f"`location` component on it), not only described in {alias}'s "
-        f"own outcome text -- all via update_registry."
+        f"those changes directly onto each affected entity itself, using "
+        f"whichever component type actually fits (view_entity on the "
+        f"component type's own name, e.g. view_entity('location'), shows "
+        f"its field descriptions if you're unsure which one or how to "
+        f"phrase it), not only described in {alias}'s own outcome text -- "
+        f"all via update_registry."
     )
 
 

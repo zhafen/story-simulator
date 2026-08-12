@@ -238,6 +238,17 @@ def _location(registrar: Registrar, alias: str) -> str | None:
     return str(df.iloc[-1]["location.value"])
 
 
+def _parked_at(location: str | None, spot: str) -> bool:
+    """Loosely checks a recorded `location` value names `spot` (e.g.
+    "parking_spot_1" or "street"), not any one exact phrasing.
+    `location`'s own schema (manifest/builtins.yaml) calls it a "short
+    freeform phrase", and confirmed live that a model's correct answer can
+    reasonably come out phrased several ways ("parked in parking_spot_1"
+    vs. just "parking_spot_1") -- the model shouldn't have to guess the
+    one exact wording a test hardcodes."""
+    return location is not None and spot in location
+
+
 def _event_states(registrar: Registrar) -> dict[str, str]:
     """Map of {event_alias: current event_state.value}, or {} if nothing's been recorded yet."""
     df = safe_view_current(registrar, "event_state.value")
@@ -319,7 +330,7 @@ def test_car_parking_core_sim(tmp_path):
             f"to open a story-simulator world. Then {_RESOLVE_ONE_EVENT_INSTRUCTION}"
         )
         r = _load_registrar(save_dir, narration)
-        assert _location(r, "car_b") == "parked in parking_spot_1", (
+        assert _parked_at(_location(r, "car_b"), "parking_spot_1"), (
             "Car B should be first to actually arrive (it left earlier than Car C by more "
             f"than their trip-length difference) and take the first spot -- narration: {narration!r}"
         )
@@ -333,7 +344,7 @@ def test_car_parking_core_sim(tmp_path):
 
         narration = session.send_turn(f"Again, {_RESOLVE_ONE_EVENT_INSTRUCTION}")
         r = _load_registrar(save_dir, narration)
-        assert _location(r, "car_c") == "parked in parking_spot_2", (
+        assert _parked_at(_location(r, "car_c"), "parking_spot_2"), (
             "Car C should be second to arrive (after Car B, before Car A) and take the "
             f"remaining dedicated spot -- narration: {narration!r}"
         )
@@ -341,7 +352,7 @@ def test_car_parking_core_sim(tmp_path):
             "Car A's own event still hasn't come due yet, so it shouldn't have a recorded "
             f"location -- narration: {narration!r}"
         )
-        assert _location(r, "car_b") == "parked in parking_spot_1", (
+        assert _parked_at(_location(r, "car_b"), "parking_spot_1"), (
             f"Car B's already-recorded outcome shouldn't change -- narration: {narration!r}"
         )
         states = _event_states(r)
@@ -354,13 +365,13 @@ def test_car_parking_core_sim(tmp_path):
             "one event left. Don't narrate anything back to me."
         )
         r = _load_registrar(save_dir, narration)
-        assert _location(r, "car_a") == "parked on street", (
+        assert _parked_at(_location(r, "car_a"), "street"), (
             "Car A starts first but has the longest trip, so it should actually arrive last "
             f"and end up parked on the street -- narration: {narration!r}"
         )
-        assert _location(r, "car_b") == "parked in parking_spot_1", (
+        assert _parked_at(_location(r, "car_b"), "parking_spot_1"), (
             f"Car B's already-recorded outcome shouldn't change -- narration: {narration!r}"
         )
-        assert _location(r, "car_c") == "parked in parking_spot_2", (
+        assert _parked_at(_location(r, "car_c"), "parking_spot_2"), (
             f"Car C's already-recorded outcome shouldn't change -- narration: {narration!r}"
         )

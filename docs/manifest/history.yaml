@@ -289,3 +289,34 @@ project_history:
               nesting below a top-level alias -- matching the one live
               mistake actually observed, same scoping philosophy as #54's
               own unknown-component-type check.
+    live_tests_decoupled_from_turn_count:
+        - description: >
+              Fix for #61. tests/test_human_validated.py::
+              test_car_parking_core_sim and tests/test_race_placement_live.py
+              used to pace themselves one event per conversation turn --
+              a hand-crafted instruction telling the model to resolve+plan
+              exactly one event then stop, with intermediate registry
+              assertions between turns (e.g. car_c/car_a should still show
+              no location/placement after only car_b's event resolved).
+              User's explicit call: testing shouldn't be sensitive to how
+              many turns the model takes, only to (1) each event's final
+              outcome and (2) whether events resolved in the correct
+              order.
+
+              Rewrote both tests to send one open-ended "keep answering
+              advance_simulation's prompts until status is done"
+              instruction instead, then check only final registry state.
+              Order evidence, replacing the turn-by-turn pauses: each car's
+              relevant write (location for the parking test,
+              race_placement for the race test) is time-stamped with the
+              world time it was recorded at (core._next_time_stamp --
+              every write made while resolving one event shares that
+              event's own end_time as "now"), so comparing those
+              timestamps across cars (`_write_time`, tests/
+              test_human_validated.py) confirms each outcome was produced
+              while its own event resolved, independent of literal turn
+              count. Scope deliberately limited to these two live tests'
+              own pacing -- real (interactive) gameplay's pause/checkpoint
+              behavior (core.py/mcp_server.py's own loop/prompt design) is
+              untouched; see #62 for whole-simulation stop conditions,
+              a related but separate question.

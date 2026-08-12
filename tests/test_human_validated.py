@@ -269,43 +269,43 @@ def _event_states(registrar: Registrar) -> dict[str, str]:
     return dict(zip(df["entity_id.alias"], df["event_state.value"]))
 
 
-# One turn's instruction, reused for each of the three events: resolve
-# advance_simulation's two prompts for exactly one event (its resolve
-# step, then its plan step), then stop before touching a second one. The
-# "no human/subagent behind this, decide yourself" framing doesn't need
-# repeating here -- advance_simulation's own input_required prompt
-# already says that for whichever responder it names (see
-# resolve._frame_for_responder) -- so this only states the pacing this
-# test specifically needs, which nothing else knows to enforce.
-#
-# The "decide the full outcome now" sentence below is here, not in the
-# scenario or in core.py's general prompts, for the same reason: it's a
-# pacing constraint specific to how *this test* checks state turn by
-# turn, not a rule real gameplay should follow (a real event may well
-# legitimately want to defer part of itself to a follow-up). Confirmed
-# live as necessary -- a weak model, left to its own judgment, sometimes
-# resolves "drive to restaurant and search for parking" as "arrived,
-# still searching" and defers the actual parking assignment to a new
-# event it schedules in the plan step, which this test's single-turn
-# assertions have no way to see coming.
-_RESOLVE_ONE_EVENT_INSTRUCTION = (
-    "Call advance_simulation. Answer its first prompt (resolving the next event whose "
-    "end_time has been reached -- "
-    "look up whatever you need and record the outcome via update_registry). Decide the "
-    "full outcome now, in this one turn -- don't defer part of it (e.g. a still-pending "
-    "sub-decision like where exactly something ends up) to a new event in the next prompt. "
-    "Then answer its second prompt for that same event (planning any follow-up, or saying "
-    "none is needed) -- two separate advance_simulation calls for the one event. Once both "
-    "are answered, stop: do not call advance_simulation a third time. Don't narrate "
-    "anything back to me."
+def _write_time(registrar: Registrar, component_type: str, alias: str) -> float | None:
+    """The world time (see core._next_time_stamp) `component_type` was
+    last written for `alias` -- the end_time of whichever event's own
+    resolution turn made that write (every write made while resolving one
+    event shares that event's own start_time + duration as "now"), or
+    None if nothing's been recorded yet.
+
+    Order evidence for live tests that no longer pace themselves one
+    event per turn (see #61/docs/manifest/history.yaml): comparing these
+    recorded world-times across entities confirms each one's outcome was
+    produced while its own event resolved, not guessed independent of
+    when that event's end_time was actually reached -- regardless of how
+    many actual conversation turns the model took to get there.
+    """
+    df = registrar.view_df(component_type, aliases=alias)
+    if df.empty:
+        return None
+    return float(df.iloc[-1][f"{component_type}.time"])
+
+
+# Reused across live tests that no longer pace themselves one event per
+# turn (see #61/docs/manifest/history.yaml: project_history.
+# live_tests_decoupled_from_turn_count): let the model run the whole
+# batch of events in as many or as few turns/tool-calls as it wants,
+# rather than forcing it to stop after each one -- what these tests check
+# is the final outcome and order, not how it got there.
+_RUN_TO_DONE_INSTRUCTION = (
+    "Call advance_simulation and keep answering its prompts (resolve, then plan, for "
+    "whatever event it names, recording each decision via update_registry) until its "
+    "status is \"done\". Don't narrate anything back to me."
 )
 
 
 @pytest.mark.live
 def test_car_parking_core_sim(tmp_path):
     """Three cars must work out their own arrival order from raw facts, then
-    correctly divide up a two-spot parking lot on a first-come-first-served basis --
-    checked one event at a time, not just by the final result.
+    correctly divide up a two-spot parking lot on a first-come-first-served basis.
 
     Car A starts driving first but has the longest trip and so actually
     arrives last; Car B starts second with a slightly longer trip than Car
@@ -325,14 +325,18 @@ def test_car_parking_core_sim(tmp_path):
     (recorded on the relevant car's own `location`) are genuinely already
     claimed, not a guess about entities that haven't been touched yet.
 
-    This test checks that directly, turn by turn: after each event
-    resolves, the car it concerned should have its final `location`
-    recorded, and -- just as importantly -- the cars whose events haven't
-    reached their own end_time yet should still show no location at all. Getting the *order*
-    right is exactly what a naive shortcut (start order, or trip length)
-    would get wrong, so a passing intermediate check after each turn is
-    real evidence the loop -- not a lucky final state -- is doing this
-    correctly.
+    Deliberately checks only the *final* result, not turn-by-turn state
+    (see #61/docs/manifest/history.yaml: project_history.
+    live_tests_decoupled_from_turn_count) -- the model runs the whole
+    batch in one open-ended instruction, in as many or as few
+    advance_simulation round-trips as it wants. What matters is (1) each
+    car's final location and (2) that the *order* was actually respected,
+    not the turn count. Order evidence comes from each car's `location`
+    write being time-stamped with its own trip event's end_time (world
+    time -- see core._next_time_stamp: every write made while resolving
+    one event shares that event's own end_time as "now") -- confirming
+    car_b's spot was recorded while resolving car_b_trip specifically,
+    not retroactively or out of turn.
     """
     save_dir = tmp_path / "test_save"
 
@@ -340,51 +344,35 @@ def test_car_parking_core_sim(tmp_path):
         print(f"HeadlessSession trace: {session.trace_path}")
         narration = session.send_turn(
             f"Use start_world with save_dir={save_dir} and scenario_dir={PARKING_SCENARIO_DIR} "
-            f"to open a story-simulator world. Then {_RESOLVE_ONE_EVENT_INSTRUCTION}"
+            f"to open a story-simulator world. Then {_RUN_TO_DONE_INSTRUCTION}"
         )
         r = _load_registrar(save_dir, narration)
+
         assert _parked_at(_location(r, "car_b"), "parking_spot_1"), (
             "Car B should be first to actually arrive (it left earlier than Car C by more "
             f"than their trip-length difference) and take the first spot -- narration: {narration!r}"
         )
-        assert _location(r, "car_c") is None and _location(r, "car_a") is None, (
-            "Only one event should have resolved this turn -- car_c's and car_a's own events "
-            f"haven't reached their own end_time yet, so neither should have a recorded location -- narration: {narration!r}"
-        )
-        states = _event_states(r)
-        assert states.get("car_b_trip") == "complete", states
-        assert states.get("car_c_trip") != "complete" and states.get("car_a_trip") != "complete", states
-
-        narration = session.send_turn(f"Again, {_RESOLVE_ONE_EVENT_INSTRUCTION}")
-        r = _load_registrar(save_dir, narration)
         assert _parked_at(_location(r, "car_c"), "parking_spot_2"), (
             "Car C should be second to arrive (after Car B, before Car A) and take the "
             f"remaining dedicated spot -- narration: {narration!r}"
         )
-        assert _location(r, "car_a") is None, (
-            "Car A's own event still hasn't reached its own end_time yet, so it shouldn't have a recorded "
-            f"location -- narration: {narration!r}"
-        )
-        assert _parked_at(_location(r, "car_b"), "parking_spot_1"), (
-            f"Car B's already-recorded outcome shouldn't change -- narration: {narration!r}"
-        )
-        states = _event_states(r)
-        assert states.get("car_c_trip") == "complete", states
-        assert states.get("car_a_trip") != "complete", states
-
-        narration = session.send_turn(
-            "Call advance_simulation again and keep answering its prompts (resolve, then "
-            "plan, for whatever event it names) until its status is \"done\" -- there's only "
-            "one event left. Don't narrate anything back to me."
-        )
-        r = _load_registrar(save_dir, narration)
         assert _parked_at(_location(r, "car_a"), "street"), (
             "Car A starts first but has the longest trip, so it should actually arrive last "
             f"and end up parked on the street -- narration: {narration!r}"
         )
-        assert _parked_at(_location(r, "car_b"), "parking_spot_1"), (
-            f"Car B's already-recorded outcome shouldn't change -- narration: {narration!r}"
+
+        states = _event_states(r)
+        assert states.get("car_b_trip") == "complete", states
+        assert states.get("car_c_trip") == "complete", states
+        assert states.get("car_a_trip") == "complete", states
+
+        times = {alias: _write_time(r, "location", alias) for alias in ("car_b", "car_c", "car_a")}
+        assert times["car_b"] == pytest.approx(1020), (
+            f"car_b's location should be recorded at car_b_trip's own end_time -- {times}, narration: {narration!r}"
         )
-        assert _parked_at(_location(r, "car_c"), "parking_spot_2"), (
-            f"Car C's already-recorded outcome shouldn't change -- narration: {narration!r}"
+        assert times["car_c"] == pytest.approx(1080), (
+            f"car_c's location should be recorded at car_c_trip's own end_time -- {times}, narration: {narration!r}"
+        )
+        assert times["car_a"] == pytest.approx(1800), (
+            f"car_a's location should be recorded at car_a_trip's own end_time -- {times}, narration: {narration!r}"
         )

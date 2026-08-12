@@ -7,8 +7,8 @@ exactly the way the README's quick-start describes a client connecting.
 
 Written for the current event-entity simulation loop (no character/NPC
 module -- see docs/architecture.md and CLAUDE.md's shelving note): world
-state is `event` entities, each due once world time reaches its own
-start_time + duration, and every due event resolves via two separate
+state is `event` entities, each ready to resolve once world time reaches
+its own end_time (start_time + duration), and every such event resolves via two separate
 responder calls (resolve, then plan) at responder="host"
 (`story_simulator.config.event_responder`'s default). The connected agent
 is expected to decide each step itself, looking up whatever it needs via
@@ -277,7 +277,8 @@ def _event_states(registrar: Registrar) -> dict[str, str]:
 # event it schedules in the plan step, which this test's single-turn
 # assertions have no way to see coming.
 _RESOLVE_ONE_EVENT_INSTRUCTION = (
-    "Call advance_simulation. Answer its first prompt (resolving the next due event -- "
+    "Call advance_simulation. Answer its first prompt (resolving the next event whose "
+    "end_time has been reached -- "
     "look up whatever you need and record the outcome via update_registry). Decide the "
     "full outcome now, in this one turn -- don't defer part of it (e.g. a still-pending "
     "sub-decision like where exactly something ends up) to a new event in the next prompt. "
@@ -305,7 +306,7 @@ def test_car_parking_core_sim(tmp_path):
     Each car has exactly one pre-planned `event` entity (car_X_trip, see
     tests/data/scenarios/parking/scenario.yaml) whose start_time + duration
     already *is* its true arrival time -- so pop_event's own mechanical
-    sort (soonest due first) pops them in the real arrival order (B, C,
+    sort (soonest end_time first) pops them in the real arrival order (B, C,
     A), not start order or trip length. That's what makes each event's own
     resolution answerable with "very basic reasoning": by the time any one
     event resolves, whichever spots earlier events already claimed
@@ -315,7 +316,7 @@ def test_car_parking_core_sim(tmp_path):
     This test checks that directly, turn by turn: after each event
     resolves, the car it concerned should have its final `location`
     recorded, and -- just as importantly -- the cars whose events haven't
-    come due yet should still show no location at all. Getting the *order*
+    reached their own end_time yet should still show no location at all. Getting the *order*
     right is exactly what a naive shortcut (start order, or trip length)
     would get wrong, so a passing intermediate check after each turn is
     real evidence the loop -- not a lucky final state -- is doing this
@@ -336,7 +337,7 @@ def test_car_parking_core_sim(tmp_path):
         )
         assert _location(r, "car_c") is None and _location(r, "car_a") is None, (
             "Only one event should have resolved this turn -- car_c's and car_a's own events "
-            f"haven't come due yet, so neither should have a recorded location -- narration: {narration!r}"
+            f"haven't reached their own end_time yet, so neither should have a recorded location -- narration: {narration!r}"
         )
         states = _event_states(r)
         assert states.get("car_b_trip") == "complete", states
@@ -349,7 +350,7 @@ def test_car_parking_core_sim(tmp_path):
             f"remaining dedicated spot -- narration: {narration!r}"
         )
         assert _location(r, "car_a") is None, (
-            "Car A's own event still hasn't come due yet, so it shouldn't have a recorded "
+            "Car A's own event still hasn't reached its own end_time yet, so it shouldn't have a recorded "
             f"location -- narration: {narration!r}"
         )
         assert _parked_at(_location(r, "car_b"), "parking_spot_1"), (

@@ -5,9 +5,10 @@ lives here. `advance_simulation` runs ONE event-driven simulation loop (one
 function per step -- see `core._run_event_loop`), built entirely on
 `story_simulator.core`'s `pop_event`/`resolve_event`/`plan_events` -- see
 `core.py`'s own docstring for what that guarantees. World state is `event`
-entities (manifest/builtins.yaml's event_components), each due once world
-time reaches its own start_time + duration -- not the acting entities (a
-car, a door, ...) themselves, which carry no schedule of their own. The
+entities (manifest/builtins.yaml's event_components), each ready to
+resolve once world time reaches its own end_time (start_time +
+duration) -- not the acting entities (a car, a door, ...) themselves,
+which carry no schedule of their own. The
 loop fast-forwards through anything it can resolve on its own, and pauses
 whenever a turn needs input only the connected host can supply -- an
 event's own resolution, or what (if anything) follows from it -- handing
@@ -58,12 +59,13 @@ server = FastMCP(
     instructions=(
         "You are the game master for a story-simulator world: a text simulation whose "
         "state lives in a structured entity/component registry, not just your own context, "
-        "run as an event-driven simulation. World state is `event` entities -- each one due "
-        "once world time reaches its own start_time + duration -- not the acting entities "
-        "(a car, a door, ...) they concern, which carry no schedule of their own. An event "
-        "usually also carries involved_entity links naming who/what it concerns.\n\n"
+        "run as an event-driven simulation. World state is `event` entities -- each ready "
+        "to resolve once world time reaches its own end_time (start_time + duration) -- "
+        "not the acting entities (a car, a door, ...) they concern, which carry no "
+        "schedule of their own. An event usually also carries involved_entity links "
+        "naming who/what it concerns.\n\n"
         "Call start_world once, at the beginning, to open or seed a save. Then call "
-        "advance_simulation with no arguments: it pauses on every due event, in two separate "
+        "advance_simulation with no arguments: it pauses on every such event, in two separate "
         "steps -- resolve, then plan -- each returning "
         "{\"status\": \"input_required\", \"prompt\": ..., \"responder\": \"host\" or "
         "\"subagent\", \"resume_token\": ...}. If responder is \"host\", decide what happens "
@@ -161,13 +163,15 @@ def update_registry(yaml_string: str, ctx: Context) -> str:
 
 @server.tool()
 async def advance_simulation(ctx: Context, resume_token: str | None = None, answer: str | None = None) -> dict:
-    """Fast-forward through any due events, and pause whenever a turn
-    needs input only outside story-simulator's own process can supply.
+    """Fast-forward through any events whose end_time has been reached,
+    and pause whenever a turn needs input only outside story-simulator's
+    own process can supply.
 
     The event-driven simulation (see `core.py`) -- world state is `event`
-    entities, each due once world time reaches its own start_time +
-    duration, not the acting entities they concern. Every due event asks
-    two separate responder calls in turn -- resolve (what happened), then
+    entities, each ready to resolve once world time reaches its own
+    end_time (start_time + duration), not the acting entities they
+    concern. Every such event asks two separate responder calls in turn
+    -- resolve (what happened), then
     plan (what, if anything, follows) -- each via responder="host" or
     "subagent" (see `config.event_responder`); expect two pauses per
     event, not one. No character/NPC concept at all. (A character-aware

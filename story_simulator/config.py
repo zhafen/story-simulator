@@ -107,9 +107,9 @@ _EVENT_RESPONDERS = ("host", "subagent")
 
 
 def event_responder() -> str:
-    """Which responder `core.resolve_event` should ask each time
-    a base event comes due: "host" (default -- the connected agent decides
-    inline, from its own accumulated context) or "subagent" (ask it to
+    """Which responder `core.resolve_event` should ask each time a base
+    event's end_time is reached: "host" (default -- the connected agent
+    decides inline, from its own accumulated context) or "subagent" (ask it to
     delegate to its own isolated subagent mechanism instead, e.g. Claude
     Code's Agent/Task tool -- see `story_simulator.resolve`'s module
     docstring for what that buys and its one known gap).

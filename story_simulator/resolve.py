@@ -154,8 +154,8 @@ def _frame_for_responder(request: JudgmentRequest, responder: str) -> str:
         return (
             "Decide the answer yourself, standing in for whichever role "
             "this call needs (a player's own absent character, an NPC, a "
-            "base-module entity that's come due, ...) -- don't wait for "
-            "input and don't hand this off.\n\n" + body
+            "base-module entity whose end_time has been reached, ...) -- "
+            "don't wait for input and don't hand this off.\n\n" + body
         )
     raise ValueError(f"unknown responder {responder!r}")
 

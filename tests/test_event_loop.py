@@ -77,18 +77,19 @@ def test_nothing_scheduled_returns_done_immediately(tmp_path):
 
 def test_responder_defaults_to_host(tmp_path):
     """No STORY_SIM_RESPONDER override -- "host" is config.event_responder()'s
-    default, so that's what a due event's resolve step asks."""
+    default, so that's what an event's resolve step asks once its end_time
+    is reached."""
     ctx = _world(tmp_path)
     _schedule_event(ctx, "gizmo_event", 0, 0)
     result = asyncio.run(advance_simulation(ctx))
     assert result["status"] == "input_required"
     assert result["responder"] == "host"
-    assert "gizmo_event is due" in result["prompt"]
+    assert "gizmo_event's end_time" in result["prompt"]
 
 
 def test_responder_can_be_configured_to_subagent(tmp_path, monkeypatch):
-    """STORY_SIM_RESPONDER=subagent makes a due event's resolve step ask
-    via responder="subagent" instead, with a prompt that tells the
+    """STORY_SIM_RESPONDER=subagent makes an event's resolve step (once its
+    end_time is reached) ask via responder="subagent" instead, with a prompt that tells the
     connected host to delegate rather than answer inline -- see
     story_simulator.resolve._frame_for_responder."""
     monkeypatch.setenv("STORY_SIM_RESPONDER", "subagent")
@@ -98,7 +99,7 @@ def test_responder_can_be_configured_to_subagent(tmp_path, monkeypatch):
     assert result["status"] == "input_required"
     assert result["responder"] == "subagent"
     assert "own subagent mechanism" in result["prompt"]
-    assert "gizmo_event is due" in result["prompt"]
+    assert "gizmo_event's end_time" in result["prompt"]
 
 
 def test_invalid_responder_env_var_raises(tmp_path, monkeypatch):
@@ -118,7 +119,7 @@ def test_one_event_pauses_for_both_resolve_and_plan_before_finishing(tmp_path):
 
     result = asyncio.run(advance_simulation(ctx))
     assert result["status"] == "input_required"
-    assert "gizmo_event is due" in result["prompt"]
+    assert "gizmo_event's end_time" in result["prompt"]
 
     _mark_resolved(ctx, "gizmo_event")
     result = asyncio.run(
@@ -154,7 +155,7 @@ def test_plan_step_creates_a_new_event_that_gets_picked_up_next(tmp_path):
         advance_simulation(ctx, resume_token=result["resume_token"], answer="Scheduled domino_event next.")
     )
     assert result["status"] == "input_required"
-    assert "domino_event is due" in result["prompt"]
+    assert "domino_event's end_time" in result["prompt"]
 
     _mark_resolved(ctx, "domino_event")
     result = asyncio.run(
@@ -178,8 +179,8 @@ def _drive_loop_recording_order(ctx, result, on_plan) -> list[tuple[str, str]]:
         # the actual body (see resolve._frame_for_responder) -- pull the
         # alias out from immediately before its own marker phrase rather
         # than assuming it's the first word.
-        if " is due" in result["prompt"]:
-            who = result["prompt"].split(" is due")[0].rsplit("\n\n", 1)[-1]
+        if "'s end_time" in result["prompt"]:
+            who = result["prompt"].split("'s end_time")[0].rsplit("\n\n", 1)[-1]
             order.append(("resolve", who))
             _mark_resolved(ctx, who)
             answer = f"{who} resolves."
@@ -187,7 +188,7 @@ def _drive_loop_recording_order(ctx, result, on_plan) -> list[tuple[str, str]]:
             # "...\n\nGiven how {alias} just resolved..." -- alias is the
             # last whitespace-separated token before the marker phrase,
             # not the whole paragraph (unlike the resolve prompt's own
-            # "{alias} is due." phrasing, which starts the paragraph).
+            # "{alias}'s end_time..." phrasing, which starts the paragraph).
             who = result["prompt"].split(" just resolved")[0].split()[-1]
             order.append(("plan", who))
             answer = on_plan(who)
@@ -196,9 +197,9 @@ def _drive_loop_recording_order(ctx, result, on_plan) -> list[tuple[str, str]]:
     return order
 
 
-def test_multi_event_interleaves_by_due_time(tmp_path):
-    """Two independently-scheduled events must interleave by when they're
-    actually due, not exhaust one before ever touching the other."""
+def test_multi_event_interleaves_by_end_time(tmp_path):
+    """Two independently-scheduled events must interleave by their actual
+    end_time, not exhaust one before ever touching the other."""
     ctx = _world(tmp_path)
     _schedule_event(ctx, "chain_a_event", 0, 0)
     _schedule_event(ctx, "chain_b_event", 5, 0)
@@ -214,10 +215,11 @@ def test_multi_event_interleaves_by_due_time(tmp_path):
     ]
 
 
-def test_multi_event_handoff_to_a_new_event_slots_in_by_due_time(tmp_path):
+def test_multi_event_handoff_to_a_new_event_slots_in_by_end_time(tmp_path):
     """A mid-chain handoff (chain_a_ball_event's plan step schedules
-    chain_a_domino_event, due sooner than chain_b_ball_event) must slot
-    into the loop's ordering correctly, not just append to the end."""
+    chain_a_domino_event, whose end_time comes sooner than
+    chain_b_ball_event's) must slot into the loop's ordering correctly,
+    not just append to the end."""
     ctx = _world(tmp_path)
     _schedule_event(ctx, "chain_a_ball_event", 0, 0)
     _schedule_event(ctx, "chain_b_ball_event", 5, 0)
@@ -225,7 +227,7 @@ def test_multi_event_handoff_to_a_new_event_slots_in_by_due_time(tmp_path):
     def on_plan(who):
         if who == "chain_a_ball_event":
             _schedule_event(ctx, "chain_a_domino_event", 1, 0)
-            return "Scheduled chain_a_domino_event, due sooner than chain_b_ball_event."
+            return "Scheduled chain_a_domino_event, end_time sooner than chain_b_ball_event."
         return "Nothing new needed."
 
     result = asyncio.run(advance_simulation(ctx))

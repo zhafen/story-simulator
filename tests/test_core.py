@@ -33,9 +33,9 @@ def test_pop_event_finds_a_scheduled_event_with_no_event_state_row_yet():
     assert pop_event(registrar) == "gizmo_event"
 
 
-def test_pop_event_returns_soonest_due():
-    """Due time is start_time + duration, not either alone -- the later-
-    starting, shorter event here is actually due first."""
+def test_pop_event_returns_soonest_end_time():
+    """end_time is start_time + duration, not either alone -- the later-
+    starting, shorter event here actually has the earlier end_time."""
     registrar = _registrar_from_yaml(
         "ball_event:\n"
         "    - event:\n"

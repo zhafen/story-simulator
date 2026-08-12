@@ -66,10 +66,10 @@ _registrars: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
 _save_dirs: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
 # World time (seconds since world creation), per session -- set in
 # process_event from the popped event's own start_time + duration (see
-# advance_clock: "the popped event's own due time becomes 'now' for this
+# advance_clock: "the popped event's own end_time becomes 'now' for this
 # turn") and read by _next_time_stamp for every write anything does while
-# resolving that event's turn, so "how recent is this row" and "when did
-# this event come due" share one clock instead of the wall clock.
+# resolving that event's turn, so "how recent is this row" and "when this
+# event's end_time was reached" share one clock instead of the wall clock.
 # Session-scoped process memory, not persisted -- a subprocess restart
 # mid-turn resets it to 0.0 until the next event pop re-derives it, a
 # known gap (see docs/manifest/story-simulator.yaml: world_time_concept)
@@ -123,15 +123,15 @@ _TERMINAL_EVENT_STATES = ("complete", "interrupted")
 
 
 def pop_event(registrar: Registrar) -> str | None:
-    """Pop event box: whichever `event` entity is due soonest, or None if
-    nothing is currently scheduled.
+    """Pop event box: whichever `event` entity's end_time comes soonest, or
+    None if nothing is currently scheduled.
 
     An event only enters consideration once it has both start_time and
     duration set -- one not yet scheduled (event_state "not started", or
     no event_state row at all yet) isn't a candidate, the same way an
     entity with no next_due row wasn't under the mechanism this replaces.
     A terminal event (event_state "complete" or "interrupted") is filtered
-    out the same way an inf-valued next_due used to be. Due time is
+    out the same way an inf-valued next_due used to be. end_time is
     start_time + duration, computed fresh from the registry every call --
     there's no separate reschedule write to keep in sync with it, since an
     event's own timing isn't revised once set (see this section's own
@@ -153,8 +153,8 @@ def pop_event(registrar: Registrar) -> str | None:
         events = events[~events["entity_id"].isin(terminal_ids)]
     if events.empty:
         return None
-    due = events["event.start_time"] + events["event.duration"]
-    return events.assign(_due=due).sort_values("_due").iloc[0]["entity_id.alias"]
+    end_time = events["event.start_time"] + events["event.duration"]
+    return events.assign(_end_time=end_time).sort_values("_end_time").iloc[0]["entity_id.alias"]
 
 
 def is_event_valid(registrar: Registrar, alias: str) -> bool:
@@ -170,8 +170,8 @@ def is_event_valid(registrar: Registrar, alias: str) -> bool:
 
 def advance_clock(registrar: Registrar, alias: str) -> float:
     """Advance clock box: the popped event's own start_time + duration --
-    the moment it's actually due, not when it started -- becomes "now"
-    for this turn.
+    its end_time, the moment it actually resolves, not when it started --
+    becomes "now" for this turn.
 
     No separate persisted global clock -- the popped event's own timing
     is the only notion of "current time" needed today.
@@ -493,9 +493,10 @@ def _update_registry_and_sync(registrar: Registrar, save_dir: Path, yaml_string:
 # ---------------------------------------------------------------------------
 
 
-async def resolve_event(alias: str, replay: TurnReplay, due_time: float) -> str:
-    """Resolve box: ask a responder to interpret `alias` now that it's due,
-    and hand back whatever it says, for narration.
+async def resolve_event(alias: str, replay: TurnReplay, end_time: float) -> str:
+    """Resolve box: ask a responder to interpret `alias` now that its
+    end_time has been reached, and hand back whatever it says, for
+    narration.
 
     No next_due_in convention to parse here, unlike the mechanism this
     replaces: the responder is expected to record everything itself via
@@ -526,13 +527,15 @@ async def resolve_event(alias: str, replay: TurnReplay, due_time: float) -> str:
     think to look up that component type's own schema, and improvises a
     reasonable-but-inconsistent phrasing instead.
 
-    `due_time` (the same value `process_event` just fed to `advance_clock`
+    `end_time` (the same value `process_event` just fed to `advance_clock`
     -- `alias`'s own start_time + duration, plain arithmetic, not left for
     the responder to infer) is stated explicitly in the prompt: confirmed
-    live that a weak model otherwise sometimes reads "is due" against
-    start_time alone (i.e. when the trip *starts*) rather than start_time
-    + duration (when it actually *arrives*), misjudging which other
-    events have already resolved by that point.
+    live that a weak model otherwise sometimes reads a due-style ("X is
+    due") framing against start_time alone (i.e. when the trip *starts*)
+    rather than start_time + duration (when it actually *arrives*),
+    misjudging which other events have already resolved by that point --
+    part of why this uses "end_time" rather than "due" throughout, not
+    just here.
 
     Never responder="human": no player is ever behind an event here
     (there's no `character.interaction_type` to branch on, since the
@@ -544,10 +547,11 @@ async def resolve_event(alias: str, replay: TurnReplay, due_time: float) -> str:
     """
     request = JudgmentRequest(
         prompt=(
-            f"{alias} is due (world time {due_time:g}). Look up whatever "
-            f"you need (view_entity/view_registry, including its "
-            f"involved_entity links) to work out what happens, then "
-            f"record it: {alias}'s own outcome, {alias}'s own event_state "
+            f"{alias}'s end_time (world time {end_time:g}) has been "
+            f"reached. Look up whatever you need (view_entity/"
+            f"view_registry, including its involved_entity links) to "
+            f"work out what happens, then record it: {alias}'s own "
+            f"outcome, {alias}'s own event_state "
             f"(complete if this fully resolves it, interrupted if "
             f"something cuts it short), and anything it changes about the "
             f"entities it involves -- write those changes directly onto "
@@ -594,9 +598,9 @@ async def process_event(registrar: Registrar, alias: str, replay: TurnReplay, se
     predict/push reschedule step because a plain float answer had nothing
     else able to act on it.
     """
-    due_time = advance_clock(registrar, alias)
-    _current_world_time[session] = due_time
-    resolve_narration = await resolve_event(alias, replay, due_time)
+    end_time = advance_clock(registrar, alias)
+    _current_world_time[session] = end_time
+    resolve_narration = await resolve_event(alias, replay, end_time)
     plan_narration = await plan_events(alias, replay)
     return resolve_narration, plan_narration
 
@@ -867,14 +871,16 @@ def update_registry(session, yaml_string: str) -> str:
 
 
 async def advance_simulation(session, resume_token: str | None = None, answer: str | None = None) -> dict:
-    """Fast-forward through any due events, and pause whenever a turn
-    needs input only outside story-simulator's own process can supply.
+    """Fast-forward through any events whose end_time has been reached,
+    and pause whenever a turn needs input only outside story-simulator's
+    own process can supply.
 
     The event-driven simulation (see this module's own docstring): world
-    state is `event` entities, each due once world time reaches its own
-    start_time + duration (manifest/builtins.yaml's event_components) --
-    not the acting entities (a car, a door, ...) themselves, which carry
-    no schedule of their own. Every due event goes through two separate
+    state is `event` entities, each ready to resolve once world time
+    reaches its own end_time -- start_time + duration
+    (manifest/builtins.yaml's event_components) -- not the acting
+    entities (a car, a door, ...) themselves, which carry no schedule of
+    their own. Every such event goes through two separate
     responder calls in turn -- resolve (what happened) and plan (what, if
     anything, follows from that) -- each via responder="host" or
     "subagent" (see `config.event_responder`); a fresh event typically

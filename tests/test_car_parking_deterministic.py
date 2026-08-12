@@ -8,7 +8,7 @@ exists to separate two different failure modes that look identical from
 the live test alone: the *system* doing something wrong (event ordering,
 prompt text, resume_token bookkeeping, a write not reading back) versus
 the *model* reasoning about a correct system incorrectly. Everything
-asserted here is exact -- prompt text, due-order, and registry state --
+asserted here is exact -- prompt text, end_time-order, and registry state --
 so a live-test failure can be checked against this first: if this test
 still passes, the mechanism is sound and the live failure is the model;
 if this test fails too, it's a real bug independent of any model at all.
@@ -29,7 +29,8 @@ PARKING_SCENARIO_DIR = REPO_ROOT / "tests" / "data" / "scenarios" / "parking"
 _HOST_FRAMING = (
     "Decide the answer yourself, standing in for whichever role this call "
     "needs (a player's own absent character, an NPC, a base-module entity "
-    "that's come due, ...) -- don't wait for input and don't hand this off."
+    "whose end_time has been reached, ...) -- don't wait for input and "
+    "don't hand this off."
 )
 
 
@@ -55,12 +56,13 @@ def _location(save_dir, alias: str) -> str | None:
     return None if match.empty else str(match.iloc[-1]["location.value"])
 
 
-def _resolve_prompt(alias: str, due_time: float) -> str:
+def _resolve_prompt(alias: str, end_time: float) -> str:
     return (
         f"{_HOST_FRAMING}\n\n"
-        f"{alias} is due (world time {due_time:g}). Look up whatever you "
-        f"need (view_entity/view_registry, including its involved_entity "
-        f"links) to work out what happens, then record it: {alias}'s own "
+        f"{alias}'s end_time (world time {end_time:g}) has been reached. "
+        f"Look up whatever you need (view_entity/view_registry, including "
+        f"its involved_entity links) to work out what happens, then "
+        f"record it: {alias}'s own "
         f"outcome, {alias}'s own event_state (complete if this fully "
         f"resolves it, interrupted if something cuts it short), and "
         f"anything it changes about the entities it involves -- write "
@@ -103,19 +105,19 @@ def _mark_resolved(ctx, event_alias: str, car_alias: str, location: str) -> None
     )
 
 
-def test_due_order_matches_true_arrival_order(tmp_path):
-    """car_b_trip (due at 1020) must be served before car_c_trip (due at
-    1080) before car_a_trip (due at 1800) -- computed straight from the
-    scenario's own start_time+duration, not trusted from prose. This is
-    exactly the ordering the user was skeptical of when reading the live
-    trace; pinned down here independent of any model."""
+def test_end_time_order_matches_true_arrival_order(tmp_path):
+    """car_b_trip (end_time 1020) must be served before car_c_trip
+    (end_time 1080) before car_a_trip (end_time 1800) -- computed straight
+    from the scenario's own start_time+duration, not trusted from prose.
+    This is exactly the ordering the user was skeptical of when reading
+    the live trace; pinned down here independent of any model."""
     ctx = _make_ctx()
     save_dir = tmp_path / "save"
     start_world(str(save_dir), ctx, scenario_dir=str(PARKING_SCENARIO_DIR))
 
     result = asyncio.run(advance_simulation(ctx))
     assert result["status"] == "input_required"
-    assert result["prompt"] == _resolve_prompt("car_b_trip", due_time=1020)
+    assert result["prompt"] == _resolve_prompt("car_b_trip", end_time=1020)
 
 
 def test_full_walkthrough_exact_prompts_and_registry_state(tmp_path):
@@ -133,9 +135,9 @@ def test_full_walkthrough_exact_prompts_and_registry_state(tmp_path):
     ]
 
     result = asyncio.run(advance_simulation(ctx))
-    for event_alias, car_alias, location, due_time in plan:
+    for event_alias, car_alias, location, end_time in plan:
         assert result["status"] == "input_required"
-        assert result["prompt"] == _resolve_prompt(event_alias, due_time)
+        assert result["prompt"] == _resolve_prompt(event_alias, end_time)
         assert result["responder"] == "host"
 
         _mark_resolved(ctx, event_alias, car_alias, location)
@@ -159,5 +161,5 @@ def test_full_walkthrough_exact_prompts_and_registry_state(tmp_path):
     assert result == {"status": "done", "narration": "Nothing scheduled."}
 
     # Final state: every car ended up exactly where the puzzle says it should.
-    for event_alias, car_alias, location, due_time in plan:
+    for event_alias, car_alias, location, end_time in plan:
         assert _location(save_dir, car_alias) == location

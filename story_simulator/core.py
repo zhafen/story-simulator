@@ -27,6 +27,7 @@ __iacs__ = {
 }
 
 import base64
+import difflib
 import json
 import shutil
 import subprocess
@@ -466,11 +467,105 @@ def _find_malformed_entities(yaml_string: str) -> list[str]:
     return malformed
 
 
+def _referenced_component_types(parsed: dict) -> set[str]:
+    """Collect every component-type name referenced anywhere in `parsed`
+    (already-`yaml.safe_load`-ed entity-first YAML) -- the component-list
+    keys/bare-string markers at whatever nesting depth they actually
+    appear, not the entity-path segments above them.
+
+    Mirrors `_find_malformed_entities`'s own traversal: recurse through
+    dict-of-dicts-or-lists (entity nesting), and once an actual list is
+    reached (a component list), that's where real component-type names
+    live -- either a bare string marker (e.g. `component_type`) or the
+    single key of a one-key dict (e.g. `{"location": {"value": ...}}`).
+    Assumes `parsed` is already well-formed (no bare-mapping mistakes) --
+    call this only after `_find_malformed_entities` finds nothing.
+    """
+    types: set[str] = set()
+
+    def walk(value) -> None:
+        if isinstance(value, list):
+            for item in value:
+                if isinstance(item, str):
+                    types.add(item)
+                elif isinstance(item, dict):
+                    types.update(k for k in item if k != "data")
+            return
+        if isinstance(value, dict):
+            for key, sub_value in value.items():
+                if key != "data":
+                    walk(sub_value)
+
+    for alias, value in parsed.items():
+        if alias != "data":
+            walk(value)
+    return types
+
+
+def _component_types_defined_inline(parsed: dict) -> set[str]:
+    """Names of component types being freshly declared in this same YAML
+    batch -- an entity named after the type itself, carrying a bare
+    `component_type` marker in its own component list, the same shape
+    manifest/builtins.yaml's own definitions use (see CLAUDE.md's "Define
+    a component type's schema..." section): `location:\n    -
+    description: ...\n    - component_type\n    - field: ...`.
+    """
+    defined: set[str] = set()
+    for alias, value in parsed.items():
+        if alias == "data" or not isinstance(value, list):
+            continue
+        if any(item == "component_type" for item in value):
+            defined.add(alias)
+    return defined
+
+
+def _find_unknown_component_types(yaml_string: str, known: set[str]) -> dict[str, list[str]]:
+    """Component types this write references that aren't in `known` and
+    aren't being defined inline (see `_component_types_defined_inline`) --
+    mapping each unknown name to its closest known matches, if any, so the
+    caller's own error message can suggest a likely-intended real name
+    instead of leaving the caller to guess again.
+
+    Best-effort like `_find_malformed_entities`: a parse failure or
+    unexpected top-level shape just finds nothing here too, since
+    `registrar.update()`'s own error handling is authoritative for those.
+
+    Deliberately mechanical, not semantic -- catches an invented name
+    (`parked_at`) that was never declared anywhere, but not a real,
+    already-declared type used for the wrong purpose (e.g. writing a
+    car's location under `todo` instead of `location` -- both are
+    genuine, known component types, so this check has nothing to object
+    to). See docs/manifest/history.yaml: project_history.
+    mechanical_component_type_validation_added for that scope decision.
+    """
+    try:
+        parsed = yaml.safe_load(yaml_string)
+    except yaml.YAMLError:
+        return {}
+    if not isinstance(parsed, dict):
+        return {}
+
+    referenced = _referenced_component_types(parsed)
+    defined_inline = _component_types_defined_inline(parsed)
+    unknown = referenced - known - defined_inline
+    if not unknown:
+        return {}
+    return {name: difflib.get_close_matches(name, known, n=3) for name in sorted(unknown)}
+
+
 def _update_registry_and_sync(registrar: Registrar, save_dir: Path, yaml_string: str, session) -> None:
     """Merge `yaml_string` into the registry, then sync `save_dir`'s YAML to match.
 
-    See `_find_malformed_entities` for the one check this does before
-    merging at all.
+    Two checks before merging at all -- see `_find_malformed_entities` for
+    the first. The second, `_find_unknown_component_types`, rejects a
+    write that references a component type nothing has ever declared,
+    unless that same write also declares it (see
+    `_component_types_defined_inline`) -- a mechanical backstop against
+    the recurring live-test bug where a weak model invents a plausible
+    but nonexistent component name (`parked_at`, `parking_location`)
+    instead of using the real, already-declared one (`location`),
+    independent of whether it ever bothers to check first via
+    view_entity/view_registry.
     """
     malformed = _find_malformed_entities(yaml_string)
     if malformed:
@@ -480,6 +575,24 @@ def _update_registry_and_sync(registrar: Registrar, save_dir: Path, yaml_string:
             "mapping (`alias:\n    component:\n        value: x`) is silently ignored "
             f"rather than merged. Malformed here: {', '.join(malformed)}."
         )
+
+    known = set(registrar.registry.known_component_types)
+    unknown = _find_unknown_component_types(yaml_string, known)
+    if unknown:
+        details = "; ".join(
+            f"{name!r} (did you mean {' or '.join(repr(c) for c in candidates)}?)"
+            if candidates
+            else f"{name!r} (no similar existing component type found)"
+            for name, candidates in unknown.items()
+        )
+        raise ValueError(
+            f"Unknown component type(s): {details}. Check view_entity/view_registry for "
+            "the real one before guessing a name. If this is genuinely a new component "
+            "type, define it in this same write: an entity named after the type itself, "
+            "with a `component_type` marker and a `field:` block describing each field "
+            "(see manifest/builtins.yaml for examples, e.g. `location`)."
+        )
+
     registrar.update(
         input_dirs=[str(MANIFEST_DIR)],
         yaml_strings={WORLD_FILE_ID: yaml_string},
@@ -822,6 +935,18 @@ def start_world(session, save_dir: str, scenario_dir: str | None = None) -> str:
             registrar.update(
                 input_dirs=[str(MANIFEST_DIR)], yaml_strings={WORLD_FILE_ID: seed_text}
             )
+
+    # Declares the manifest's own component-type schemas (location, event,
+    # ...) on this registrar object regardless of whether this was a fresh
+    # or resumed save, or whether the branch above already did it once --
+    # a declared-but-dataless schema lives only in a Registry's own
+    # in-memory state (Registry.declare_schema's docstring), never
+    # persisted as a physical table, so it doesn't survive a reconnect on
+    # its own (e.g. a resumed save whose player never happened to use
+    # `location` before disconnecting). Without this, the first write to
+    # an already-declared-but-not-yet-used type would look "unknown" to
+    # _find_unknown_component_types even though it's perfectly legitimate.
+    registrar.update(input_dirs=[str(MANIFEST_DIR)])
 
     _registrars[session] = registrar
     _save_dirs[session] = save_dir_path

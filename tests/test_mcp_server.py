@@ -192,6 +192,56 @@ class TestRegistryTools:
         registrar = _registrars[ctx.request_context.session]
         assert "state" not in registrar.registry.component_types
 
+    def test_update_registry_rejects_invented_component_type(self, tmp_path):
+        """The recurring live-test bug this mechanically backstops: a weak
+        model invents a plausible-sounding component name (parked_at)
+        instead of using the real, already-declared one (location)."""
+        ctx = _make_ctx()
+        start_world(str(tmp_path / "save"), ctx)
+        with pytest.raises(ValueError, match="parked_at"):
+            update_registry("car_a:\n    - parked_at: parking_spot_1\n", ctx)
+        registrar = _registrars[ctx.request_context.session]
+        assert "parked_at" not in registrar.registry.component_types
+
+    def test_update_registry_suggests_close_match_for_typo(self, tmp_path):
+        ctx = _make_ctx()
+        start_world(str(tmp_path / "save"), ctx)
+        with pytest.raises(ValueError, match="locaton.*location"):
+            update_registry("car_a:\n    - locaton: parked on street\n", ctx)
+
+    def test_update_registry_allows_declared_but_previously_unused_component_type(self, tmp_path):
+        """A real component type nothing has written to yet (declared in
+        manifest/builtins.yaml, e.g. `location`) must not be rejected as
+        unknown -- component_types alone only reflects data-bearing types,
+        which is exactly the gap that let this bug go unnoticed in the
+        first place (see iacs's own known_component_types)."""
+        ctx = _make_ctx()
+        start_world(str(tmp_path / "save"), ctx)
+        result = update_registry("car_a:\n    - location:\n        value: parked on street\n", ctx)
+        assert "Merged" in result
+
+    def test_update_registry_allows_unknown_type_defined_in_the_same_write(self, tmp_path):
+        """Overriding the check is allowed, but only by actually defining
+        the new component type inline -- the same shape
+        manifest/builtins.yaml's own definitions use."""
+        ctx = _make_ctx()
+        start_world(str(tmp_path / "save"), ctx)
+        result = update_registry(
+            "brand_new_component:\n"
+            "    - description: A freshly-declared component type.\n"
+            "    - component_type\n"
+            "    - field:\n"
+            "        value:\n"
+            "            description: Its one field.\n"
+            "            type: str\n"
+            "\n"
+            "car_a:\n"
+            "    - brand_new_component:\n"
+            "        value: hello\n",
+            ctx,
+        )
+        assert "Merged" in result
+
     def test_update_registry_accepts_legitimate_nested_entities(self, tmp_path):
         """A dict value isn't always the bare-mapping mistake -- a nested
         entity (each sub-key its own child entity, e.g.

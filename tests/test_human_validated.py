@@ -1,9 +1,18 @@
-"""Live end-to-end tests that drive story-simulator-mcp through a real MCP client.
+"""Shared infrastructure for live end-to-end tests that drive story-simulator-mcp
+through a real MCP client -- `HeadlessSession` and registry-reading helpers,
+imported by tests/test_race_placement_live.py and
+tests/test_parking_split_live.py. Carries no live test of its own: the
+original combined driving+parking scenario this file used to test
+(test_car_parking_core_sim) was removed once #57 established that
+combined event resolves unreliably in a way the split-events structure
+(tests/test_parking_split_live.py) doesn't -- see docs/manifest/
+history.yaml: project_history.combined_parking_test_removed.
 
 There is no in-process narrator to call directly (see
-docs/manifest/history.yaml: project_history.turn_pipeline_removed), so this
-spawns `claude -p` as a real subprocess against this repo's .mcp.json,
-exactly the way the README's quick-start describes a client connecting.
+docs/manifest/history.yaml: project_history.turn_pipeline_removed), so
+`HeadlessSession` spawns `claude -p` as a real subprocess against this
+repo's .mcp.json, exactly the way the README's quick-start describes a
+client connecting.
 
 Written for the current event-entity simulation loop (no character/NPC
 module -- see docs/architecture.md and CLAUDE.md's shelving note): world
@@ -15,11 +24,7 @@ is expected to decide each step itself, looking up whatever it needs via
 view_registry/view_entity and recording its own decisions via
 update_registry, exactly as the server's own tool instructions describe.
 
-Uses `HeadlessSession` (one persistent `claude -p` process over
-stream-json, several `send_turn` calls) rather than a single one-shot
-turn, so the test itself can pace the simulation one event at a time and
-check registry state between each -- not just the final result. The
-character-module-era tests that used to live in this file (NPC/move
+The character-module-era tests that used to live in this file (NPC/move
 scenarios, an earlier version of this same class) are preserved at
 shelved/tests/test_human_validated.py, dormant until that module is
 un-shelved.
@@ -42,7 +47,6 @@ from story_simulator.config import registry_schema_name, registry_url, resolve_d
 from story_simulator.core import safe_view_current
 
 REPO_ROOT = Path(__file__).parent.parent
-PARKING_SCENARIO_DIR = REPO_ROOT / "tests" / "data" / "scenarios" / "parking"
 
 # Every raw stream-json line from a HeadlessSession's `claude -p` subprocess
 # lands here, one file per session -- not just the final narrated result.
@@ -289,90 +293,3 @@ def _write_time(registrar: Registrar, component_type: str, alias: str) -> float 
     return float(df.iloc[-1][f"{component_type}.time"])
 
 
-# Reused across live tests that no longer pace themselves one event per
-# turn (see #61/docs/manifest/history.yaml: project_history.
-# live_tests_decoupled_from_turn_count): let the model run the whole
-# batch of events in as many or as few turns/tool-calls as it wants,
-# rather than forcing it to stop after each one -- what these tests check
-# is the final outcome and order, not how it got there.
-_RUN_TO_DONE_INSTRUCTION = (
-    "Call advance_simulation and keep answering its prompts (resolve, then plan, for "
-    "whatever event it names, recording each decision via update_registry) until its "
-    "status is \"done\". Don't narrate anything back to me."
-)
-
-
-@pytest.mark.live
-def test_car_parking_core_sim(tmp_path):
-    """Three cars must work out their own arrival order from raw facts, then
-    correctly divide up a two-spot parking lot on a first-come-first-served basis.
-
-    Car A starts driving first but has the longest trip and so actually
-    arrives last; Car B starts second with a slightly longer trip than Car
-    C but, because it left earlier by more than that difference, still
-    arrives first; Car C starts last with the shortest trip and arrives
-    second. First-come-first-served over exactly two dedicated spots then
-    means Car B takes parking_spot_1, Car C takes parking_spot_2, and Car
-    A -- last to arrive -- has to park on the street.
-
-    Each car has exactly one pre-planned `event` entity (car_X_trip, see
-    tests/data/scenarios/parking/scenario.yaml) whose start_time + duration
-    already *is* its true arrival time -- so pop_event's own mechanical
-    sort (soonest end_time first) pops them in the real arrival order (B, C,
-    A), not start order or trip length. That's what makes each event's own
-    resolution answerable with "very basic reasoning": by the time any one
-    event resolves, whichever spots earlier events already claimed
-    (recorded on the relevant car's own `location`) are genuinely already
-    claimed, not a guess about entities that haven't been touched yet.
-
-    Deliberately checks only the *final* result, not turn-by-turn state
-    (see #61/docs/manifest/history.yaml: project_history.
-    live_tests_decoupled_from_turn_count) -- the model runs the whole
-    batch in one open-ended instruction, in as many or as few
-    advance_simulation round-trips as it wants. What matters is (1) each
-    car's final location and (2) that the *order* was actually respected,
-    not the turn count. Order evidence comes from each car's `location`
-    write being time-stamped with its own trip event's end_time (world
-    time -- see core._next_time_stamp: every write made while resolving
-    one event shares that event's own end_time as "now") -- confirming
-    car_b's spot was recorded while resolving car_b_trip specifically,
-    not retroactively or out of turn.
-    """
-    save_dir = tmp_path / "test_save"
-
-    with HeadlessSession(save_dir) as session:
-        print(f"HeadlessSession trace: {session.trace_path}")
-        narration = session.send_turn(
-            f"Use start_world with save_dir={save_dir} and scenario_dir={PARKING_SCENARIO_DIR} "
-            f"to open a story-simulator world. Then {_RUN_TO_DONE_INSTRUCTION}"
-        )
-        r = _load_registrar(save_dir, narration)
-
-        assert _parked_at(_location(r, "car_b"), "parking_spot_1"), (
-            "Car B should be first to actually arrive (it left earlier than Car C by more "
-            f"than their trip-length difference) and take the first spot -- narration: {narration!r}"
-        )
-        assert _parked_at(_location(r, "car_c"), "parking_spot_2"), (
-            "Car C should be second to arrive (after Car B, before Car A) and take the "
-            f"remaining dedicated spot -- narration: {narration!r}"
-        )
-        assert _parked_at(_location(r, "car_a"), "street"), (
-            "Car A starts first but has the longest trip, so it should actually arrive last "
-            f"and end up parked on the street -- narration: {narration!r}"
-        )
-
-        states = _event_states(r)
-        assert states.get("car_b_trip") == "complete", states
-        assert states.get("car_c_trip") == "complete", states
-        assert states.get("car_a_trip") == "complete", states
-
-        times = {alias: _write_time(r, "location", alias) for alias in ("car_b", "car_c", "car_a")}
-        assert times["car_b"] == pytest.approx(1020), (
-            f"car_b's location should be recorded at car_b_trip's own end_time -- {times}, narration: {narration!r}"
-        )
-        assert times["car_c"] == pytest.approx(1080), (
-            f"car_c's location should be recorded at car_c_trip's own end_time -- {times}, narration: {narration!r}"
-        )
-        assert times["car_a"] == pytest.approx(1800), (
-            f"car_a's location should be recorded at car_a_trip's own end_time -- {times}, narration: {narration!r}"
-        )

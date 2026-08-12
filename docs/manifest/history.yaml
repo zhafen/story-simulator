@@ -343,3 +343,25 @@ project_history:
               run that the six events pop in the intended order: car_b
               drives, car_b parks, car_c drives, car_c parks, car_a drives,
               car_a parks.
+    combined_parking_test_removed:
+        - description: >
+              Resolves #57 for real (2026-08-12): tests/test_human_validated.py::
+              test_car_parking_core_sim (the combined driving+parking
+              scenario) failed 0/3 in its final round, with a confirmed
+              instance of the arrival-order confusion #50 was meant to
+              prevent. parking_split_test_added's split-events sibling
+              passed 2/3 in the same round, with zero instances of that
+              specific bug. User's explicit call: treat the split-events
+              structure itself as the actual fix (a general, scenario-
+              agnostic rule per scenario_agnostic_reasoning_prompts in
+              docs/manifest/story-simulator.yaml -- splitting a compound
+              decision into separate events, not a prompt tailored to this
+              one scenario), and remove the now-known-broken combined test
+              rather than keep chasing its flakiness. tests/data/scenarios/
+              parking/scenario.yaml and tests/test_car_parking_deterministic.py
+              (the no-LLM system-correctness sibling) are untouched --
+              still used, just no longer paired with a live counterpart.
+              Follow-up (making event-splitting a general framework rather
+              than a hand-authored scenario pattern, including events
+              dynamically scheduled during real gameplay's own plan step)
+              tracked separately as its own not-yet-worked task.

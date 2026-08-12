@@ -756,6 +756,20 @@ def start_world(session, save_dir: str, scenario_dir: str | None = None) -> str:
     every start_world call would re-merge the same starting entities
     repeatedly.
 
+    The returned message also tells the connected host to point iacs's own
+    MCP server (mcp__iacs__*, if connected) at this exact registry via its
+    `load_database` tool -- this save_dir's own registry_url isn't knowable
+    ahead of time (it's a hash of save_dir's own path, only chosen here),
+    so iacs-mcp can't be preconfigured with it at server-startup the way
+    IACS_DATABASE_URL allows for a deployment that already knows its
+    save_dir in advance (see HeadlessSession in tests/test_human_validated.py
+    for that path). Without this, iacs's own list_component_types/
+    view_component/validate_yaml tools default to iacs's own unrelated
+    example manifest -- confirmed live that this gap let a weak model
+    invent a nonexistent component name instead of finding the real one
+    (see docs/manifest/history.yaml:
+    project_history.iacs_mcp_pointed_at_live_registry_for_component_discovery).
+
     Args:
         save_dir: Directory holding (or to hold) this world's save data.
         scenario_dir: Starting scenario to seed a brand-new save_dir from
@@ -810,7 +824,12 @@ def start_world(session, save_dir: str, scenario_dir: str | None = None) -> str:
     _save_dirs[session] = save_dir_path
     return (
         f"World opened at {save_dir_path}. Component types: {registrar.registry.component_types}. "
-        "Call view_registry or view_entity to see what's there."
+        "Call view_registry or view_entity to see what's there. "
+        f"If iacs's own tools are also available (mcp__iacs__*), call its load_database "
+        f"with database_url={registry_url(save_dir_path)!r} so its tools (list_component_types, "
+        "view_component, validate_yaml, ...) operate on this exact world instead of a separate, "
+        "unrelated registry -- useful for double-checking a component type's own field names "
+        "before writing to it."
     )
 
 

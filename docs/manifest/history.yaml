@@ -158,3 +158,24 @@ project_history:
               (Superseded by the later directory-based world/world_history
               export scheme — see
               world_save_format_switched_from_fixed_filenames_to_directories.)
+    iacs_mcp_pointed_at_live_registry_for_component_discovery:
+        - description: >
+              Live-test traces showed a weak model inventing nonexistent
+              component names (e.g. `parking_location`, a misused `parent`
+              link) instead of finding the real `location` component,
+              because nothing let it discover the live world's actual
+              component types mid-session. iacs's own MCP server already
+              shipped tools for exactly this (list_component_types,
+              view_component, validate_yaml), but they operated on iacs's
+              own separately-configured example manifest, not the connected
+              story-simulator world's registry — pointing at two unrelated
+              registries at once. Fixed in two parts: IACS_DATABASE_URL, an
+              iacs-mcp env var for a registry_url known before either MCP
+              server starts (used by HeadlessSession in
+              tests/test_human_validated.py, where the live test computes it
+              itself before spawning its subprocess); and `load_database`, a
+              mid-session iacs-mcp tool for a URL only knowable once
+              start_world has actually chosen a save_dir — which
+              start_world's own return message now tells the connected host
+              to call, so a real interactive session gets the same benefit
+              the live test's env-var shortcut gave it, not just the test.

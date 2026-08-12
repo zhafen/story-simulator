@@ -229,3 +229,20 @@ project_history:
               tool is still available as an optional way to point its
               deeper introspection at this exact world -- just no longer
               anything the ordinary read path depends on.
+    mechanical_component_type_validation_added:
+        - description: >
+              Live reruns after reinstating view_registry/view_entity (see
+              story_simulator_view_tools_reinstated_as_iacs_delegates)
+              showed discoverability was never the whole problem: even
+              with view_entity a same-server tool call away, the model
+              never once called view_entity('location') before writing --
+              the passing run guessed the right name by luck, the failing
+              ones guessed `todo` (a real but wrong component) and a
+              wrongly-nested `location`/`status` under `object`. Added
+              update_registry's own mechanical check instead of relying
+              further on prompt wording: reject a write referencing a
+              component type nothing has declared, unless that same write
+              also defines it inline. Deliberately scoped to catching
+              invented names, not semantically-wrong-but-real ones like
+              `todo` -- the latter would need the model to actually reason
+              about intent, which a mechanical check can't do.

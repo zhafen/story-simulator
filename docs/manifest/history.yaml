@@ -246,3 +246,25 @@ project_history:
               invented names, not semantically-wrong-but-real ones like
               `todo` -- the latter would need the model to actually reason
               about intent, which a mechanical check can't do.
+    arrival_order_diagnostic_made_permanent_as_race_placement:
+        - description: >
+              A throwaway diagnostic (tests/test_arrival_order_live.py,
+              since deleted) isolated arrival-order reasoning from
+              test_car_parking_core_sim's parking-spot assignment, to test
+              whether the recurring arrival-order bug (#57) was tied to
+              conflating "driving" and "parking" into one turn. Its
+              heuristic outcome-text check (`_wrongly_claims_already_
+              arrived`, matching substrings like "already"/"before" with no
+              negation-awareness) produced a false positive on a run whose
+              actual reasoning was correct -- 3/3 runs, once read directly,
+              reasoned about arrival order correctly, versus the full
+              parking test's persistent ~1/3 failure rate on the same
+              question. That result -- and the false positive itself --
+              motivated replacing the disposable text-matching diagnostic
+              with a permanent one that checks an exact value instead: a
+              new `race_placement` component (manifest/builtins.yaml,
+              field `place`, 1-indexed), and
+              tests/test_race_placement_live.py /
+              tests/data/scenarios/race/scenario.yaml (reusing the parking
+              scenario's exact start_time/duration facts, reframed as a
+              three-car race with no parking-spot consequence at all).

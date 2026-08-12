@@ -12,8 +12,9 @@ its own end_time (start_time + duration), and every such event resolves via two 
 responder calls (resolve, then plan) at responder="host"
 (`story_simulator.config.event_responder`'s default). The connected agent
 is expected to decide each step itself, looking up whatever it needs via
-view_registry/view_entity and recording its own decisions via
-update_registry, exactly as the server's own tool instructions describe.
+iacs's own view_entity/view_component (story-simulator has none of its
+own -- see `core.start_world`'s docstring) and recording its own decisions
+via update_registry, exactly as the server's own tool instructions describe.
 
 Uses `HeadlessSession` (one persistent `claude -p` process over
 stream-json, several `send_turn` calls) rather than a single one-shot

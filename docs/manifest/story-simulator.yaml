@@ -141,7 +141,12 @@ story_simulator_mission:
                   value: 0.9
             - work_state: done
         view_registry:
-            - description: CSV dump of every recorded instance of one component type.
+            - description: >
+                  RETIRED (was: markdown dump of every recorded instance of one
+                  component type). Removed -- duplicated iacs's own
+                  view_component now that iacs-mcp can be pointed at this same
+                  registry; see docs/manifest/history.yaml:
+                  project_history.story_simulator_view_tools_removed_in_favor_of_iacs.
             - requirement
             - impact:
                   type: reliability
@@ -149,8 +154,12 @@ story_simulator_mission:
             - work_state: done
         view_entity:
             - description: >
-                  Every recorded component instance for one entity, resolved by
-                  exact hash, exact alias, or unambiguous path fragment.
+                  RETIRED (was: every recorded component instance for one
+                  entity, resolved by exact hash, exact alias, or unambiguous
+                  path fragment). Removed -- duplicated iacs's own view_entity
+                  now that iacs-mcp can be pointed at this same registry; see
+                  docs/manifest/history.yaml:
+                  project_history.story_simulator_view_tools_removed_in_favor_of_iacs.
             - requirement
             - impact:
                   type: reliability

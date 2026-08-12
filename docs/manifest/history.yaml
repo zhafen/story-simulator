@@ -179,3 +179,23 @@ project_history:
               start_world's own return message now tells the connected host
               to call, so a real interactive session gets the same benefit
               the live test's env-var shortcut gave it, not just the test.
+    story_simulator_view_tools_removed_in_favor_of_iacs:
+        - description: >
+              A follow-up live rerun after
+              iacs_mcp_pointed_at_live_registry_for_component_discovery
+              landed showed the same class of bug recur anyway: the model
+              never once called an iacs tool across 3 runs, despite
+              start_world's return message telling it to — the instruction
+              was a trailing aside easy to skim past, not a required first
+              step. Investigating whether story-simulator's own
+              view_registry/view_entity duplicated iacs's tools (rather than
+              fixing discoverability alone) found they did: both wrapped the
+              same underlying Registry.view_df/view_entity_df capability
+              iacs's own view_component/view_entity already wrap, just
+              reimplemented independently with different formatting.
+              Removed story-simulator's copies entirely rather than keep
+              two parallel implementations of the same read path, and made
+              start_world's own return message (and the server's top-level
+              instructions) lead with the load_database step as a required
+              first step instead of a trailing note, since there's no
+              fallback read path left if a host skips it.

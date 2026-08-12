@@ -519,13 +519,15 @@ async def resolve_event(alias: str, replay: TurnReplay, end_time: float) -> str:
     example, even though that's what most scenarios so far have needed:
     this prompt is generic across every scenario, and not every event's
     consequence is a location change, so hardcoding one component here
-    would bias every scenario toward it. Points at `view_entity` on the
-    component type's own name instead (its field descriptions carry
+    would bias every scenario toward it. Points at iacs's own `view_entity`
+    on the component type's own name instead (its field descriptions carry
     scenario-specific examples, e.g. `location`'s own doubles as the
     phrasing convention) -- confirmed live that a model resolving its
     first-ever write to an unfamiliar component type doesn't otherwise
     think to look up that component type's own schema, and improvises a
-    reasonable-but-inconsistent phrasing instead.
+    reasonable-but-inconsistent phrasing instead. (Story-simulator has no
+    view_entity of its own -- see `start_world`'s own docstring for why
+    this now means iacs's.)
 
     `end_time` (the same value `process_event` just fed to `advance_clock`
     -- `alias`'s own start_time + duration, plain arithmetic, not left for
@@ -543,7 +545,7 @@ async def resolve_event(alias: str, replay: TurnReplay, end_time: float) -> str:
     yet either. Confirmed live that, without this stated explicitly, a
     weak model sometimes assumes a *different*, not-yet-resolved entity's
     event has already happened -- reasoning from that other event's
-    start_time or its row's position in a `view_registry` table instead of
+    start_time or its row's position in a table instead of
     checking its actual `event_state` -- and writes a wrong outcome for
     `alias` on top of that wrong assumption (e.g. deciding a shared
     resource a different car "already took" is unavailable, when that
@@ -565,20 +567,22 @@ async def resolve_event(alias: str, replay: TurnReplay, end_time: float) -> str:
             f"{alias}'s end_time (world time {end_time:g}) has been "
             f"reached. Nothing else with an earlier end_time is still "
             f"unresolved -- if another entity's own event hasn't reached "
-            f"event_state: complete yet (check via view_entity/"
-            f"view_registry, not assumed from its start_time or where it "
+            f"event_state: complete yet (check via iacs's view_entity/"
+            f"view_component, not assumed from its start_time or where it "
             f"appears in a table), treat it as not having happened yet. "
-            f"Look up whatever you need (view_entity/"
-            f"view_registry, including its involved_entity links) to "
+            f"Look up whatever you need (iacs's view_entity/"
+            f"view_component, including this event's own involved_entity "
+            f"links) to "
             f"work out what happens, then record it: {alias}'s own "
             f"outcome, {alias}'s own event_state "
             f"(complete if this fully resolves it, interrupted if "
             f"something cuts it short), and anything it changes about the "
             f"entities it involves -- write those changes directly onto "
             f"each affected entity itself, using whichever component type "
-            f"actually fits (view_entity on the component type's own name, "
-            f"e.g. view_entity('location'), shows its field descriptions "
-            f"if you're unsure which one or how to phrase it), not only "
+            f"actually fits (iacs's view_entity on the component type's own "
+            f"name, e.g. view_entity('location'), shows its field "
+            f"descriptions if you're unsure which one or how to phrase it), "
+            f"not only "
             f"described in {alias}'s own outcome text -- all via "
             f"update_registry."
         )
@@ -756,19 +760,24 @@ def start_world(session, save_dir: str, scenario_dir: str | None = None) -> str:
     every start_world call would re-merge the same starting entities
     repeatedly.
 
-    The returned message also tells the connected host to point iacs's own
-    MCP server (mcp__iacs__*, if connected) at this exact registry via its
-    `load_database` tool -- this save_dir's own registry_url isn't knowable
-    ahead of time (it's a hash of save_dir's own path, only chosen here),
-    so iacs-mcp can't be preconfigured with it at server-startup the way
-    IACS_DATABASE_URL allows for a deployment that already knows its
+    The returned message leads with a required next step: call iacs's own
+    `load_database` tool (mcp__iacs__*) with this exact registry_url. This
+    server has no view_registry/view_entity of its own any more (removed --
+    see docs/manifest/history.yaml: project_history.
+    story_simulator_view_tools_removed_in_favor_of_iacs) -- iacs's own
+    view_entity/view_component/list_component_types are now the only way to
+    read the registry, and they default to iacs's own unrelated example
+    manifest until pointed here. This save_dir's own registry_url isn't
+    knowable ahead of time (it's a hash of save_dir's own path, only chosen
+    here), so iacs-mcp can't be preconfigured with it at server-startup the
+    way IACS_DATABASE_URL allows for a deployment that already knows its
     save_dir in advance (see HeadlessSession in tests/test_human_validated.py
-    for that path). Without this, iacs's own list_component_types/
-    view_component/validate_yaml tools default to iacs's own unrelated
-    example manifest -- confirmed live that this gap let a weak model
-    invent a nonexistent component name instead of finding the real one
-    (see docs/manifest/history.yaml:
-    project_history.iacs_mcp_pointed_at_live_registry_for_component_discovery).
+    for that path) -- confirmed live that a weak model, even once nudged,
+    doesn't reliably go find and call load_database on its own unless this
+    is stated as a required first step rather than a trailing aside (see
+    docs/manifest/history.yaml: project_history.
+    iacs_mcp_pointed_at_live_registry_for_component_discovery for the
+    original finding this addresses).
 
     Args:
         save_dir: Directory holding (or to hold) this world's save data.
@@ -823,78 +832,14 @@ def start_world(session, save_dir: str, scenario_dir: str | None = None) -> str:
     _registrars[session] = registrar
     _save_dirs[session] = save_dir_path
     return (
-        f"World opened at {save_dir_path}. Component types: {registrar.registry.component_types}. "
-        "Call view_registry or view_entity to see what's there. "
-        f"If iacs's own tools are also available (mcp__iacs__*), call its load_database "
-        f"with database_url={registry_url(save_dir_path)!r} so its tools (list_component_types, "
-        "view_component, validate_yaml, ...) operate on this exact world instead of a separate, "
-        "unrelated registry -- useful for double-checking a component type's own field names "
-        "before writing to it."
+        f"World opened at {save_dir_path}. "
+        f"REQUIRED NEXT STEP: call iacs's load_database tool now (search for "
+        f"mcp__iacs__load_database if it isn't already loaded) with "
+        f"database_url={registry_url(save_dir_path)!r}. This server has no view_registry/"
+        f"view_entity of its own -- nothing can be looked up until iacs's own view_entity/"
+        f"view_component/list_component_types are pointed at this exact world via that call. "
+        f"Component types already declared: {registrar.registry.component_types}."
     )
-
-
-def view_registry(session, component_type: str) -> str:
-    """View all recorded data for one component type (e.g. "position", "object", "character").
-
-    Covers both the starting scenario and everything recorded since, since
-    it reads straight from the registry. Rendered as a markdown table, not
-    CSV -- published format comparisons put CSV among the worst-parsed
-    formats for LLMs, which is what actually reads this (the responder
-    standing in for this call), not another program.
-    """
-    registrar = _get_registrar(session)
-    return registrar.view_df(component_type).fillna("null").to_markdown()
-
-
-def _format_field_value(value) -> str:
-    """Render a field value the way a caller reading this as plain text
-    expects -- YAML/JSON-style true/false/null rather than Python's
-    True/False/None or pandas's float NaN for a missing value, none of
-    which mean anything outside their own library's repr."""
-    if value is True:
-        return "true"
-    if value is False:
-        return "false"
-    if value is None or (isinstance(value, float) and pd.isna(value)):
-        return "null"
-    return str(value)
-
-
-def view_entity(session, entity_id: str) -> str:
-    """Return every recorded component instance for a specific entity, as
-    a markdown outline (one heading per component type, one `key: value`
-    bullet per field) -- not a Python dict repr. Markdown key/value text
-    is both the most token-efficient structured format and, per published
-    format comparisons, the most accurately parsed by LLMs of the formats
-    tested (CSV/JSONL trailed noticeably) -- exactly the two things this
-    output needs, since it's read by whichever model is standing in as
-    this call's responder, not by another program.
-
-    Args:
-        entity_id: Entity hash, alias, or unambiguous path fragment (e.g.
-            "player", "desk", or "journaling_desk.desk").
-    """
-    registrar = _get_registrar(session)
-    resolved_id = registrar.get_entity_id(entity_id)
-    if resolved_id is None:
-        return f"No data found for {entity_id!r}."
-    lines = [f"# {entity_id}"]
-    for component_type in sorted(registrar.registry.component_types):
-        df = safe_view(registrar, component_type)
-        if df is None or df.empty or "entity_id" not in df.columns:
-            continue
-        matches = df[df["entity_id"] == resolved_id]
-        prefix = f"{component_type}."
-        for _, row in matches.iterrows():
-            lines.append(f"\n## {component_type}")
-            for k, v in row.items():
-                if k in ("entity_id", "entity_id.alias"):
-                    continue
-                field = k[len(prefix):] if k.startswith(prefix) else k
-                lines.append(f"- {field}: {_format_field_value(v)}")
-    if len(lines) == 1:
-        return f"No data found for {entity_id!r}."
-    return "\n".join(lines)
 
 
 def update_registry(session, yaml_string: str) -> str:

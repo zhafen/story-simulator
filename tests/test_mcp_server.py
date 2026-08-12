@@ -8,8 +8,6 @@ from story_simulator.mcp_server import (
     server,
     start_world,
     update_registry,
-    view_entity,
-    view_registry,
 )
 
 
@@ -32,12 +30,15 @@ class TestMcpToolRegistration:
     def test_all_tools_are_registered(self):
         expected = {
             "start_world",
-            "view_registry",
-            "view_entity",
             "update_registry",
             "advance_simulation",
         }
         assert expected <= self._tool_names()
+        # view_registry/view_entity removed -- duplicated iacs's own
+        # view_component/view_entity now that iacs-mcp can be pointed at
+        # this same registry (see docs/manifest/history.yaml:
+        # project_history.story_simulator_view_tools_removed_in_favor_of_iacs).
+        assert not {"view_registry", "view_entity"} & self._tool_names()
         # perceive/generate_terrain/resolve_physics/advance_npc_turn moved
         # out to shelved/ along with the rest of the optional-module code
         # (see docs/architecture.md) -- not part of the live tool surface.
@@ -146,7 +147,7 @@ class TestStartWorld:
 
 
 # ---------------------------------------------------------------------------
-# view_registry / view_entity / update_registry
+# update_registry
 # ---------------------------------------------------------------------------
 
 
@@ -155,12 +156,6 @@ class TestRegistryTools:
         ctx = _make_ctx()
         with pytest.raises(ValueError, match="start_world"):
             _get_registrar(ctx.request_context.session)
-
-    def test_view_registry_returns_markdown_table_of_positions(self, tmp_path):
-        ctx = _make_ctx()
-        start_world(str(tmp_path / "save"), ctx)
-        result = view_registry("position", ctx)
-        assert "player" in result
 
     def test_update_registry_merges_new_entity(self, tmp_path):
         ctx = _make_ctx()
@@ -218,15 +213,3 @@ class TestRegistryTools:
         history_text = (save_dir / "world_history" / "world.yaml").read_text()
         assert "second" in history_text
         assert "first" in history_text
-
-    def test_view_entity_returns_known_component_data(self, tmp_path):
-        ctx = _make_ctx()
-        start_world(str(tmp_path / "save"), ctx)
-        result = view_entity("player", ctx)
-        assert "character" in result
-
-    def test_view_entity_reports_unknown_entity(self, tmp_path):
-        ctx = _make_ctx()
-        start_world(str(tmp_path / "save"), ctx)
-        result = view_entity("nonexistent_xyz", ctx)
-        assert "No data found" in result

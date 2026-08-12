@@ -493,7 +493,7 @@ def _update_registry_and_sync(registrar: Registrar, save_dir: Path, yaml_string:
 # ---------------------------------------------------------------------------
 
 
-async def resolve_event(alias: str, replay: TurnReplay) -> str:
+async def resolve_event(alias: str, replay: TurnReplay, due_time: float) -> str:
     """Resolve box: ask a responder to interpret `alias` now that it's due,
     and hand back whatever it says, for narration.
 
@@ -514,6 +514,14 @@ async def resolve_event(alias: str, replay: TurnReplay) -> str:
     code applies on its behalf (see `plan_events`, and `process_event`'s
     own docstring for why there's no separate mechanical "update" step).
 
+    `due_time` (the same value `process_event` just fed to `advance_clock`
+    -- `alias`'s own start_time + duration, plain arithmetic, not left for
+    the responder to infer) is stated explicitly in the prompt: confirmed
+    live that a weak model otherwise sometimes reads "is due" against
+    start_time alone (i.e. when the trip *starts*) rather than start_time
+    + duration (when it actually *arrives*), misjudging which other
+    events have already resolved by that point.
+
     Never responder="human": no player is ever behind an event here
     (there's no `character.interaction_type` to branch on, since the
     character module isn't what's driving this popped entity). Between
@@ -524,15 +532,16 @@ async def resolve_event(alias: str, replay: TurnReplay) -> str:
     """
     request = JudgmentRequest(
         prompt=(
-            f"{alias} is due. Look up whatever you need (view_entity/"
-            f"view_registry, including its involved_entity links) to work "
-            f"out what happens, then record it: {alias}'s own outcome, "
-            f"{alias}'s own event_state (complete if this fully resolves "
-            f"it, interrupted if something cuts it short), and anything it "
-            f"changes about the entities it involves -- write those changes "
-            f"directly onto each affected entity itself (e.g. a `location` "
-            f"or `state` component on it), not only described in {alias}'s "
-            f"own outcome text -- all via update_registry."
+            f"{alias} is due (world time {due_time:g}). Look up whatever "
+            f"you need (view_entity/view_registry, including its "
+            f"involved_entity links) to work out what happens, then "
+            f"record it: {alias}'s own outcome, {alias}'s own event_state "
+            f"(complete if this fully resolves it, interrupted if "
+            f"something cuts it short), and anything it changes about the "
+            f"entities it involves -- write those changes directly onto "
+            f"each affected entity itself (e.g. a `location` component on "
+            f"it), not only described in {alias}'s own outcome text -- "
+            f"all via update_registry."
         )
     )
     return await replay.resolve(request, responder=event_responder())
@@ -570,8 +579,9 @@ async def process_event(registrar: Registrar, alias: str, replay: TurnReplay, se
     predict/push reschedule step because a plain float answer had nothing
     else able to act on it.
     """
-    _current_world_time[session] = advance_clock(registrar, alias)
-    resolve_narration = await resolve_event(alias, replay)
+    due_time = advance_clock(registrar, alias)
+    _current_world_time[session] = due_time
+    resolve_narration = await resolve_event(alias, replay, due_time)
     plan_narration = await plan_events(alias, replay)
     return resolve_narration, plan_narration
 

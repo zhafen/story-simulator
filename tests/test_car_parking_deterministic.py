@@ -55,17 +55,17 @@ def _location(save_dir, alias: str) -> str | None:
     return None if match.empty else str(match.iloc[-1]["location.value"])
 
 
-def _resolve_prompt(alias: str) -> str:
+def _resolve_prompt(alias: str, due_time: float) -> str:
     return (
         f"{_HOST_FRAMING}\n\n"
-        f"{alias} is due. Look up whatever you need (view_entity/"
-        f"view_registry, including its involved_entity links) to work "
-        f"out what happens, then record it: {alias}'s own outcome, "
-        f"{alias}'s own event_state (complete if this fully resolves "
-        f"it, interrupted if something cuts it short), and anything it "
-        f"changes about the entities it involves -- write those changes "
-        f"directly onto each affected entity itself (e.g. a `location` "
-        f"or `state` component on it), not only described in {alias}'s "
+        f"{alias} is due (world time {due_time:g}). Look up whatever you "
+        f"need (view_entity/view_registry, including its involved_entity "
+        f"links) to work out what happens, then record it: {alias}'s own "
+        f"outcome, {alias}'s own event_state (complete if this fully "
+        f"resolves it, interrupted if something cuts it short), and "
+        f"anything it changes about the entities it involves -- write "
+        f"those changes directly onto each affected entity itself (e.g. a "
+        f"`location` component on it), not only described in {alias}'s "
         f"own outcome text -- all via update_registry."
     )
 
@@ -112,7 +112,7 @@ def test_due_order_matches_true_arrival_order(tmp_path):
 
     result = asyncio.run(advance_simulation(ctx))
     assert result["status"] == "input_required"
-    assert result["prompt"] == _resolve_prompt("car_b_trip")
+    assert result["prompt"] == _resolve_prompt("car_b_trip", due_time=1020)
 
 
 def test_full_walkthrough_exact_prompts_and_registry_state(tmp_path):
@@ -124,15 +124,15 @@ def test_full_walkthrough_exact_prompts_and_registry_state(tmp_path):
     start_world(str(save_dir), ctx, scenario_dir=str(PARKING_SCENARIO_DIR))
 
     plan = [
-        ("car_b_trip", "car_b", "parked in parking_spot_1"),
-        ("car_c_trip", "car_c", "parked in parking_spot_2"),
-        ("car_a_trip", "car_a", "parked on the street"),
+        ("car_b_trip", "car_b", "parked in parking_spot_1", 1020),
+        ("car_c_trip", "car_c", "parked in parking_spot_2", 1080),
+        ("car_a_trip", "car_a", "parked on the street", 1800),
     ]
 
     result = asyncio.run(advance_simulation(ctx))
-    for event_alias, car_alias, location in plan:
+    for event_alias, car_alias, location, due_time in plan:
         assert result["status"] == "input_required"
-        assert result["prompt"] == _resolve_prompt(event_alias)
+        assert result["prompt"] == _resolve_prompt(event_alias, due_time)
         assert result["responder"] == "host"
 
         _mark_resolved(ctx, event_alias, car_alias, location)
@@ -156,5 +156,5 @@ def test_full_walkthrough_exact_prompts_and_registry_state(tmp_path):
     assert result == {"status": "done", "narration": "Nothing scheduled."}
 
     # Final state: every car ended up exactly where the puzzle says it should.
-    for event_alias, car_alias, location in plan:
+    for event_alias, car_alias, location, due_time in plan:
         assert _location(save_dir, car_alias) == location

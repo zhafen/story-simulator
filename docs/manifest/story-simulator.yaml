@@ -126,6 +126,27 @@ story_simulator_mission:
               type: developer_experience
               value: 0.4
         - work_state: done
+    scenario_agnostic_reasoning_prompts:
+        - description: >
+              Any prompt/instruction change meant to improve a responder's
+              reasoning (e.g. the recurring arrival-order confusion tracked
+              in the parking live test, or a component-choice confusion
+              like writing a car's location under `todo` instead of
+              `location`) must be a general rule for reasoning through the
+              event-resolution process itself -- never something tailored
+              to one specific scenario's particular entities or narrative
+              (e.g. hard-coding a reminder about a specific car in the
+              parking scenario). A scenario-specific hint would defeat the
+              purpose of story-simulator being a general-purpose
+              simulation, not a fix for one playtest. `resolve_event`'s own
+              "nothing with an earlier end_time is still unresolved"
+              language is the model to follow: a general rule any scenario
+              benefits from, not one keyed to a particular entity or story.
+        - requirement
+        - impact:
+              type: architecture_clarity
+              value: 0.5
+        - work_state: done
     tool_catalog:
         data:
             - description: The MCP tools story-simulator exposes, and what each must guarantee.

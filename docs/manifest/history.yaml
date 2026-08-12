@@ -268,3 +268,24 @@ project_history:
               tests/data/scenarios/race/scenario.yaml (reusing the parking
               scenario's exact start_time/duration facts, reframed as a
               three-car race with no parking-spot consequence at all).
+    nested_component_name_collision_check_added:
+        - description: >
+              Fix for #58: `car_b:\n    location:\n        - value: x`
+              (a real component type's name used as a nested dict key,
+              missing the leading `- ` that would make it a component-list
+              item) parses as "car_b has a nested child entity named
+              location", not "attach a location component to car_b" --
+              structurally identical to a genuine nested entity (e.g.
+              journaling_desk's desk/journal, shelved/tests/data/scenarios/
+              move/scenario.yaml), so `_find_malformed_entities`'s own
+              shape-only disambiguation can't and doesn't catch it.
+              Added `_find_component_named_as_nested_entity`
+              (story_simulator/core.py), a third, separate
+              update_registry check alongside `_find_malformed_entities`
+              and `_find_unknown_component_types`: flags a top-level
+              alias's dict value whenever one of its own keys names an
+              already-known, real component type. Deliberately mechanical,
+              not semantic, and deliberately scoped to one level of
+              nesting below a top-level alias -- matching the one live
+              mistake actually observed, same scoping philosophy as #54's
+              own unknown-component-type check.

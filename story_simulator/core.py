@@ -519,6 +519,48 @@ def _component_types_defined_inline(parsed: dict) -> set[str]:
     return defined
 
 
+def _find_component_named_as_nested_entity(yaml_string: str, known: set[str]) -> list[str]:
+    """Scan for an alias whose value is a dict (`_find_malformed_entities`'s
+    "legitimate nested-entity" shape) where one of that dict's own keys
+    names an already-known, real component type -- e.g.
+    `car_b:\n    location:\n        - value: x` (missing the leading `- `
+    that would make `location` a list item, i.e. a component attachment,
+    rather than a dict key, i.e. a nested child entity's own alias).
+    Confirmed live: iacs's parser reads this shape as "car_b has a nested
+    child entity named `location`", not "attach a `location` component to
+    car_b" -- structurally identical to a genuine nested entity (e.g.
+    tests/data/scenarios/move/scenario.yaml's journaling_desk/desk/journal),
+    so `_find_malformed_entities` doesn't, and structurally can't on shape
+    alone, catch it.
+
+    Mechanical, not semantic, like `_find_unknown_component_types`: a
+    nested child entity's alias coinciding with a real component type's
+    name is vanishingly unlikely to be intentional, so this flags every
+    such collision -- see docs/manifest/history.yaml: project_history.
+    nested_component_name_collision_check_added.
+
+    Only checks nesting one level below a top-level alias, matching the
+    one live mistake actually observed -- not a general recursive walk
+    like `_find_malformed_entities`'s own disambiguation, since a
+    collision at a deeper nesting level has no evidence behind it yet.
+    """
+    try:
+        parsed = yaml.safe_load(yaml_string)
+    except yaml.YAMLError:
+        return []
+    if not isinstance(parsed, dict):
+        return []
+
+    suspicious: list[str] = []
+    for alias, value in parsed.items():
+        if alias == "data" or not isinstance(value, dict):
+            continue
+        for key, sub_value in value.items():
+            if key != "data" and key in known and isinstance(sub_value, list):
+                suspicious.append(f"{alias}.{key}")
+    return suspicious
+
+
 def _find_unknown_component_types(yaml_string: str, known: set[str]) -> dict[str, list[str]]:
     """Component types this write references that aren't in `known` and
     aren't being defined inline (see `_component_types_defined_inline`) --
@@ -556,10 +598,14 @@ def _find_unknown_component_types(yaml_string: str, known: set[str]) -> dict[str
 def _update_registry_and_sync(registrar: Registrar, save_dir: Path, yaml_string: str, session) -> None:
     """Merge `yaml_string` into the registry, then sync `save_dir`'s YAML to match.
 
-    Two checks before merging at all -- see `_find_malformed_entities` for
-    the first. The second, `_find_unknown_component_types`, rejects a
-    write that references a component type nothing has ever declared,
-    unless that same write also declares it (see
+    Three checks before merging at all -- see `_find_malformed_entities`
+    for the first. The second, `_find_component_named_as_nested_entity`,
+    rejects a write where a known component type's name appears as a
+    nested dict key instead of a component-list item -- a shape
+    `_find_malformed_entities` can't distinguish from legitimate entity
+    nesting on structure alone. The third, `_find_unknown_component_types`,
+    rejects a write that references a component type nothing has ever
+    declared, unless that same write also declares it (see
     `_component_types_defined_inline`) -- a mechanical backstop against
     the recurring live-test bug where a weak model invents a plausible
     but nonexistent component name (`parked_at`, `parking_location`)
@@ -577,6 +623,19 @@ def _update_registry_and_sync(registrar: Registrar, save_dir: Path, yaml_string:
         )
 
     known = set(registrar.registry.known_component_types)
+
+    nested = _find_component_named_as_nested_entity(yaml_string, known)
+    if nested:
+        raise ValueError(
+            "Found a real component type used as a nested dict key instead of a "
+            "component-list item, which iacs parses as a nested child entity, not a "
+            f"component attachment: {', '.join(nested)}. If you meant to attach that "
+            "component, use the list form instead, e.g. `alias:\n    - component:\n"
+            "        value: x` rather than `alias:\n    component:\n        - value: x`. "
+            "If you genuinely meant a nested child entity that happens to share a name "
+            "with a real component type, rename it to something unambiguous."
+        )
+
     unknown = _find_unknown_component_types(yaml_string, known)
     if unknown:
         details = "; ".join(

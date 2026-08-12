@@ -262,6 +262,38 @@ class TestRegistryTools:
         registrar = _registrars[ctx.request_context.session]
         assert registrar.get_entity_id("desk.journal") is not None
 
+    def test_update_registry_rejects_component_name_used_as_nested_entity_key(self, tmp_path):
+        """The live-test bug this backstops: a component name used as a
+        nested dict key (missing the leading `- ` that would make it a
+        list item) parses as "car_b has a nested child entity named
+        location", not "attach a location component to car_b" --
+        structurally identical to
+        test_update_registry_accepts_legitimate_nested_entities' genuine
+        nesting, distinguished only by `location` being a real,
+        already-declared component type."""
+        ctx = _make_ctx()
+        start_world(str(tmp_path / "save"), ctx)
+        with pytest.raises(ValueError, match="location"):
+            update_registry("car_b:\n    location:\n        - value: parked in parking_spot_1\n", ctx)
+        registrar = _registrars[ctx.request_context.session]
+        assert registrar.get_entity_id("car_b.location") is None
+
+    def test_update_registry_accepts_correct_list_form_for_known_component(self, tmp_path):
+        """Sanity check alongside the rejection above: the correct list
+        form for the very same component (`location` as a list item, not
+        a nested dict key) must not be caught by the new check."""
+        ctx = _make_ctx()
+        start_world(str(tmp_path / "save"), ctx)
+        result = update_registry(
+            "car_b:\n"
+            "    - object:\n"
+            "        type: car\n"
+            "    - location:\n"
+            "        value: parked in parking_spot_1\n",
+            ctx,
+        )
+        assert "Merged" in result
+
     def test_update_registry_writes_collapsed_and_full_history_yaml(self, tmp_path):
         ctx = _make_ctx()
         save_dir = tmp_path / "save"

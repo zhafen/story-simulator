@@ -537,6 +537,21 @@ async def resolve_event(alias: str, replay: TurnReplay, end_time: float) -> str:
     part of why this uses "end_time" rather than "due" throughout, not
     just here.
 
+    The prompt also states outright that nothing with an earlier end_time
+    is still unresolved -- `pop_event`'s own sort guarantees this is the
+    earliest-end_time event still pending, so nothing else has resolved
+    yet either. Confirmed live that, without this stated explicitly, a
+    weak model sometimes assumes a *different*, not-yet-resolved entity's
+    event has already happened -- reasoning from that other event's
+    start_time or its row's position in a `view_registry` table instead of
+    checking its actual `event_state` -- and writes a wrong outcome for
+    `alias` on top of that wrong assumption (e.g. deciding a shared
+    resource a different car "already took" is unavailable, when that
+    other car's own trip hasn't resolved at all). Deliberately points at
+    checking `event_state` itself (already the one place this loop
+    records whether an event is done) rather than adding a second,
+    redundant field elsewhere for the same fact.
+
     Never responder="human": no player is ever behind an event here
     (there's no `character.interaction_type` to branch on, since the
     character module isn't what's driving this popped entity). Between
@@ -548,7 +563,12 @@ async def resolve_event(alias: str, replay: TurnReplay, end_time: float) -> str:
     request = JudgmentRequest(
         prompt=(
             f"{alias}'s end_time (world time {end_time:g}) has been "
-            f"reached. Look up whatever you need (view_entity/"
+            f"reached. Nothing else with an earlier end_time is still "
+            f"unresolved -- if another entity's own event hasn't reached "
+            f"event_state: complete yet (check via view_entity/"
+            f"view_registry, not assumed from its start_time or where it "
+            f"appears in a table), treat it as not having happened yet. "
+            f"Look up whatever you need (view_entity/"
             f"view_registry, including its involved_entity links) to "
             f"work out what happens, then record it: {alias}'s own "
             f"outcome, {alias}'s own event_state "

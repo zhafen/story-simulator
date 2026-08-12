@@ -90,7 +90,8 @@ class HeadlessSession:
     with no chance to inspect state along the way.
     """
 
-    def __init__(self, *, model: str = LOW_QUALITY_MODEL, turn_timeout: float = 240):
+    def __init__(self, save_dir: Path, *, model: str = LOW_QUALITY_MODEL, turn_timeout: float = 240):
+        self.save_dir = save_dir
         self.model = model
         self.turn_timeout = turn_timeout
         self.proc: subprocess.Popen | None = None
@@ -110,7 +111,18 @@ class HeadlessSession:
         # could act on a nudge -- otherwise a hook's feedback derails the
         # turn into answering the nudge instead of the test's own
         # instruction, and the test sees that as an unrelated failure.
-        env = {**os.environ, "STORY_SIM_HEADLESS_TEST": "1"}
+        #
+        # IACS_DATABASE_URL points the sibling iacs-mcp server (also
+        # allowed via _MCP_TOOL_ARGS) at this exact save's own Postgres
+        # schema -- the same URL story-simulator's own registrar connects
+        # to (see registry_url) -- computed here, before either MCP child
+        # process spawns, since it can't be known until save_dir is
+        # chosen. Without this, iacs-mcp would default to its own
+        # unrelated example manifest, making its tools (list_component_types,
+        # view_component, ...) useless against this save's actual state --
+        # exactly the gap that let the model invent a nonexistent
+        # component name instead of finding the real `location` schema.
+        env = {**os.environ, "STORY_SIM_HEADLESS_TEST": "1", "IACS_DATABASE_URL": registry_url(self.save_dir)}
         self.proc = subprocess.Popen(
             [
                 "claude",
@@ -324,7 +336,7 @@ def test_car_parking_core_sim(tmp_path):
     """
     save_dir = tmp_path / "test_save"
 
-    with HeadlessSession() as session:
+    with HeadlessSession(save_dir) as session:
         print(f"HeadlessSession trace: {session.trace_path}")
         narration = session.send_turn(
             f"Use start_world with save_dir={save_dir} and scenario_dir={PARKING_SCENARIO_DIR} "

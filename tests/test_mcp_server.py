@@ -156,7 +156,7 @@ class TestRegistryTools:
         with pytest.raises(ValueError, match="start_world"):
             _get_registrar(ctx.request_context.session)
 
-    def test_view_registry_returns_csv_of_positions(self, tmp_path):
+    def test_view_registry_returns_markdown_table_of_positions(self, tmp_path):
         ctx = _make_ctx()
         start_world(str(tmp_path / "save"), ctx)
         result = view_registry("position", ctx)

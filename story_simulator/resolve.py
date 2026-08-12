@@ -145,12 +145,17 @@ def _frame_for_responder(request: JudgmentRequest, responder: str) -> str:
     if responder == "host":
         # Framed as "decide it yourself" rather than naming a role (e.g.
         # "orchestrator") this call expects but can't actually confirm --
-        # see this module's own docstring's "host" entry.
+        # see this module's own docstring's "host" entry. Leads with the
+        # actual instruction rather than the "no human/no subagent is
+        # behind this" double-negative that used to open this (confusing
+        # to read); still says plainly not to wait or delegate, since a
+        # model aware of this project's other responder modes could
+        # otherwise try one unprompted.
         return (
-            "No human and no subagent is behind this -- decide the answer "
-            "yourself, standing in for whichever role this call needed "
-            "(a player's own absent character, an NPC, a base-module "
-            "entity that's come due, ...).\n\n" + body
+            "Decide the answer yourself, standing in for whichever role "
+            "this call needs (a player's own absent character, an NPC, a "
+            "base-module entity that's come due, ...) -- don't wait for "
+            "input and don't hand this off.\n\n" + body
         )
     raise ValueError(f"unknown responder {responder!r}")
 

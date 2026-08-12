@@ -78,19 +78,23 @@ _save_dirs: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
 _current_world_time: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
 
 
-def safe_view(registrar: Registrar, fields: str | list[str]) -> pd.DataFrame | None:
-    """Execute `registrar.view(fields)`, or None if that component type isn't loaded yet."""
+def safe_view(
+    registrar: Registrar, fields: str | list[str], aliases: str | list[str] | None = None
+) -> pd.DataFrame | None:
+    """Execute `registrar.view(fields, aliases)`, or None if that component type isn't loaded yet."""
     names = [fields] if isinstance(fields, str) else fields
     tables = {name.split(".", 1)[0] for name in names}
     if not tables <= set(registrar.registry.component_types):
         return None
     try:
-        return registrar.view(fields).execute()
+        return registrar.view(fields, aliases).execute()
     except KeyError:
         return None
 
 
-def safe_view_current(registrar: Registrar, fields: str | list[str]) -> pd.DataFrame | None:
+def safe_view_current(
+    registrar: Registrar, fields: str | list[str], aliases: str | list[str] | None = None
+) -> pd.DataFrame | None:
     """Like `safe_view`, but resolves each field's current row per entity.
 
     Uses `registrar.view_current`.  A component type with no `time_dimension` field
@@ -101,7 +105,7 @@ def safe_view_current(registrar: Registrar, fields: str | list[str]) -> pd.DataF
     if not tables <= set(registrar.registry.component_types):
         return None
     try:
-        return registrar.view_current(fields).execute()
+        return registrar.view_current(fields, aliases).execute()
     except KeyError:
         return None
 
@@ -765,14 +769,38 @@ def view_registry(session, component_type: str) -> str:
     """View all recorded data for one component type (e.g. "position", "object", "character").
 
     Covers both the starting scenario and everything recorded since, since
-    it reads straight from the registry.
+    it reads straight from the registry. Rendered as a markdown table, not
+    CSV -- published format comparisons put CSV among the worst-parsed
+    formats for LLMs, which is what actually reads this (the responder
+    standing in for this call), not another program.
     """
     registrar = _get_registrar(session)
-    return registrar.view_df(component_type).to_csv()
+    return registrar.view_df(component_type).fillna("null").to_markdown()
+
+
+def _format_field_value(value) -> str:
+    """Render a field value the way a caller reading this as plain text
+    expects -- YAML/JSON-style true/false/null rather than Python's
+    True/False/None or pandas's float NaN for a missing value, none of
+    which mean anything outside their own library's repr."""
+    if value is True:
+        return "true"
+    if value is False:
+        return "false"
+    if value is None or (isinstance(value, float) and pd.isna(value)):
+        return "null"
+    return str(value)
 
 
 def view_entity(session, entity_id: str) -> str:
-    """Return every recorded component instance for a specific entity.
+    """Return every recorded component instance for a specific entity, as
+    a markdown outline (one heading per component type, one `key: value`
+    bullet per field) -- not a Python dict repr. Markdown key/value text
+    is both the most token-efficient structured format and, per published
+    format comparisons, the most accurately parsed by LLMs of the formats
+    tested (CSV/JSONL trailed noticeably) -- exactly the two things this
+    output needs, since it's read by whichever model is standing in as
+    this call's responder, not by another program.
 
     Args:
         entity_id: Entity hash, alias, or unambiguous path fragment (e.g.
@@ -782,18 +810,23 @@ def view_entity(session, entity_id: str) -> str:
     resolved_id = registrar.get_entity_id(entity_id)
     if resolved_id is None:
         return f"No data found for {entity_id!r}."
-    lines = []
+    lines = [f"# {entity_id}"]
     for component_type in sorted(registrar.registry.component_types):
         df = safe_view(registrar, component_type)
         if df is None or df.empty or "entity_id" not in df.columns:
             continue
         matches = df[df["entity_id"] == resolved_id]
+        prefix = f"{component_type}."
         for _, row in matches.iterrows():
-            fields = {k: v for k, v in row.items() if k not in ("entity_id", "entity_id.alias")}
-            lines.append(f"{component_type}: {fields}")
-    if not lines:
+            lines.append(f"\n## {component_type}")
+            for k, v in row.items():
+                if k in ("entity_id", "entity_id.alias"):
+                    continue
+                field = k[len(prefix):] if k.startswith(prefix) else k
+                lines.append(f"- {field}: {_format_field_value(v)}")
+    if len(lines) == 1:
         return f"No data found for {entity_id!r}."
-    return f"# {entity_id}\n" + "\n".join(lines)
+    return "\n".join(lines)
 
 
 def update_registry(session, yaml_string: str) -> str:

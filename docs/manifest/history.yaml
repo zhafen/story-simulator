@@ -320,3 +320,26 @@ project_history:
               behavior (core.py/mcp_server.py's own loop/prompt design) is
               untouched; see #62 for whole-simulation stop conditions,
               a related but separate question.
+    parking_split_test_added:
+        - description: >
+              New test for #65, investigating #57. #61's own post-rewrite
+              verification pointed at the *combined* driving+parking
+              decision, not turn pacing or arrival-order reasoning in
+              isolation, as what elicits the confusion (the isolated race
+              test kept passing 3/3 under the same pacing that made the
+              parking test fail 0/3). This test isolates the other half of
+              that question: keeps the full parking-spot consequence
+              (unlike the race test, which dropped it), but structurally
+              splits each car's drive and its parking decision into two
+              separate, pre-planned events --
+              tests/data/scenarios/parking_split/scenario.yaml (car_X_drive
+              + car_X_park per car, six events total) and
+              tests/test_parking_split_live.py. Each car's parking event is
+              pre-planned (per the user's explicit choice) to start the
+              moment its own driving event ends, with a fixed 10-second
+              duration, keeping pop_event's mechanical sort in the intended
+              order without ever tying a driving and parking event at the
+              same end_time. Verified mechanically (no LLM) before any live
+              run that the six events pop in the intended order: car_b
+              drives, car_b parks, car_c drives, car_c parks, car_a drives,
+              car_a parks.

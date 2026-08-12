@@ -1,0 +1,60 @@
+file_info:
+    - description: >
+        Isolation fixture for tests/test_arrival_order_live.py -- same
+        start_time/duration facts as tests/data/scenarios/parking/scenario.yaml
+        (so end_times, and therefore the correct arrival order, match exactly),
+        but with no restaurant, no parking spots, and no consequence riding on
+        the answer at all. Tests whether a weak model reasons about *arrival
+        order* correctly in isolation, separate from whether it also picks the
+        right component to write a resulting location to.
+
+car_a:
+    - object:
+        type: car
+    - description:
+        value: The car for friend A.
+
+car_a_trip:
+    - event:
+        start_time: 0
+        duration: 1800
+    - event_state:
+        value: planned
+    - involved_entity:
+        - value: car_a
+    - description:
+        value: car_a's drive.
+
+car_b:
+    - object:
+        type: car
+    - description:
+        value: The car for friend B.
+
+car_b_trip:
+    - event:
+        start_time: 300
+        duration: 720
+    - event_state:
+        value: planned
+    - involved_entity:
+        - value: car_b
+    - description:
+        value: car_b's drive.
+
+car_c:
+    - object:
+        type: car
+    - description:
+        value: The car for friend C.
+
+car_c_trip:
+    - event:
+        start_time: 480
+        duration: 600
+    - event_state:
+        value: planned
+    - involved_entity:
+        - value: car_c
+    - description:
+        value: car_c's drive.

@@ -12,11 +12,14 @@ parking event, one spot) -- separate from arrival-order reasoning
 (tests/test_race_placement_live.py) or driving/parking separation
 (tests/test_parking_split_live.py), which are already covered elsewhere.
 
-Two approaches are compared: "baseline" (today's direct single-shot
-update_registry write) and "confirm" (#74's opt-in preview=True /
+Three approaches are compared: "baseline" (today's direct single-shot
+update_registry write), "confirm" (#74's opt-in preview=True /
 confirm_token round trip -- write, review what it's about to commit
-against what's already there, then confirm or correct). Both share the
-same run/measurement machinery below; only the instruction text differs.
+against what's already there, then confirm or correct BEFORE committing),
+and "consolidate" (#76's post-write alternative -- write normally, then
+call consolidate_review to see everything recorded so far and fix
+anything wrong AFTER committing). All three share the same run/
+measurement machinery below; only the instruction text differs.
 """
 
 import argparse
@@ -55,9 +58,23 @@ _CONFIRM_INSTRUCTION = (
     "Don't narrate anything back to me."
 )
 
+# #76's post-write alternative: write normally (no confirmation step in
+# advance), then call consolidate_review to see everything recorded so
+# far and fix anything wrong via a follow-up update_registry call.
+_CONSOLIDATE_INSTRUCTION = (
+    "Call advance_simulation and answer its prompts (resolve, then plan) until its "
+    "status is \"done\" -- there is only one event. Record via update_registry that "
+    "car_a parked in parking_spot_1, plus car_a_park's own outcome and event_state. "
+    "Then call consolidate_review to see everything recorded so far, and check it "
+    "against what you actually intended to record. If you notice anything wrong -- the "
+    "same fact recorded under the wrong or an invented component name -- fix it with a "
+    "follow-up update_registry call. Don't narrate anything back to me."
+)
+
 _APPROACHES = {
     "baseline": _BASELINE_INSTRUCTION,
     "confirm": _CONFIRM_INSTRUCTION,
+    "consolidate": _CONSOLIDATE_INSTRUCTION,
 }
 
 

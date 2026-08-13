@@ -1129,6 +1129,29 @@ def view_entity(session, entity_id: str) -> str:
     return registrar.view_entity(entity_id, format="markdown")
 
 
+def consolidate_review(session, limit: int = 20) -> str:
+    """Show every component type recorded in this world so far, for the
+    host to review and consolidate. Delegates straight to iacs's own
+    `Registrar.summarize_components` -- reinstated here as a
+    story-simulator tool for the same discoverability reason
+    view_registry/view_entity already are (docs/manifest/history.yaml:
+    project_history.story_simulator_view_tools_reinstated_as_iacs_delegates)
+    rather than relying on a connected host to find iacs-mcp's own copy
+    of this tool.
+
+    #76's post-write alternative to #74's pre-write preview/confirm flow:
+    instead of reviewing one write before committing it, review
+    everything committed so far and fix anything wrong after the fact.
+    Compared against #74 (and the plain baseline) via
+    tests/location_write_harness.py.
+
+    Args:
+        limit: Max sample rows shown per component type (default 20).
+    """
+    registrar = _get_registrar(session)
+    return registrar.summarize_components(limit)
+
+
 def update_registry(
     session,
     yaml_string: str | None = None,

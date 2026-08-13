@@ -195,6 +195,21 @@ story_simulator_mission:
                   type: reliability
                   value: 0.9
             - work_state: done
+        consolidate_review:
+            - description: >
+                  Every component type recorded so far, in one call, for the
+                  host to review and consolidate anything wrong -- #76's
+                  post-write alternative to update_registry's own pre-write
+                  preview/confirm flow. Delegates to iacs's own Registrar.
+                  summarize_components rather than reimplementing it -- same
+                  reason view_registry/view_entity are thin wrappers (see
+                  docs/manifest/history.yaml: project_history.
+                  story_simulator_view_tools_reinstated_as_iacs_delegates).
+            - requirement
+            - impact:
+                  type: reliability
+                  value: 0.6
+            - work_state: done
         perceive:
             - description: >
                   Computes nearby entities for a reference alias, tags them

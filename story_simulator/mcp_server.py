@@ -192,6 +192,25 @@ def update_registry(
 
 
 @server.tool()
+def consolidate_review(ctx: Context, limit: int = 20) -> str:
+    """Show every component type recorded in this world so far, for you to review and consolidate.
+
+    Unlike view_registry (one component type at a time), this covers
+    everything written so far in one call, so you can notice the same
+    fact recorded twice under different (possibly invented) component
+    names, or a wrong-but-real component holding data that belongs under
+    the correct one instead -- without already having to suspect which
+    type to check. Nothing is changed automatically: if you find
+    something, write a correction yourself via update_registry.
+
+    Args:
+        limit: Max sample rows shown per component type (default 20).
+    """
+    __iacs__ = {"solution of": "story_simulator_mission.tool_catalog.consolidate_review"}
+    return core.consolidate_review(ctx.request_context.session, limit)
+
+
+@server.tool()
 async def advance_simulation(ctx: Context, resume_token: str | None = None, answer: str | None = None) -> dict:
     """Fast-forward through any events whose end_time has been reached,
     and pause whenever a turn needs input only outside story-simulator's

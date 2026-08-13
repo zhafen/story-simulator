@@ -1,0 +1,35 @@
+file_info:
+    - description: >
+        Minimal isolated fixture for #73's comparative write-approach
+        harness (tests/location_write_harness.py). One car, one
+        already-resolvable parking event, one spot -- no arrival-order
+        reasoning, no multi-car complexity, nothing to get right except
+        correctly recording the car's final location. Deliberately
+        strips away every OTHER kind of reasoning this session's other
+        scenarios exercise (tests/test_race_placement_live.py for
+        arrival order, tests/test_parking_split_live.py for driving/
+        parking separation), isolating just the write-formatting step
+        itself.
+
+parking_spot_1:
+    - object:
+        type: parking_spot
+    - description:
+        value: The only parking spot near the restaurant.
+
+car_a:
+    - object:
+        type: car
+    - description:
+        value: The only car.
+
+car_a_park:
+    - event:
+        start_time: 0
+        duration: 1
+    - event_state:
+        value: planned
+    - involved_entity:
+        - value: car_a
+    - description:
+        value: car_a's parking decision -- it has already arrived and parking_spot_1 is open.

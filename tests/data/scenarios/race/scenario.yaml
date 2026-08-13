@@ -8,7 +8,7 @@ file_info:
         exactly: car_b=1020, car_c=1080, car_a=1800) but frames it as a
         three-car race with no restaurant/parking-spot consequence riding
         on the answer at all -- there is nothing to reason about except
-        finishing order, recorded via each car's own race_placement.place.
+        finishing order, recorded via each car's own race_placement.value.
 
 car_a:
     - object:

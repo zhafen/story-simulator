@@ -19,7 +19,7 @@ start_time/duration facts as tests/data/scenarios/parking/scenario.yaml
 (so the correct finishing order is identical: car_b end_time 1020, car_c
 1080, car_a 1800) but drops the restaurant/parking-spot framing entirely
 in favor of a three-car race -- nothing to reason about except finishing
-order, recorded via each car's own `race_placement.place` (see
+order, recorded via each car's own `race_placement.value` (see
 manifest/builtins.yaml).
 """
 
@@ -50,12 +50,12 @@ _RUN_TO_DONE_RACE_INSTRUCTION = (
 
 
 def _placement(registrar: Registrar, alias: str) -> int | None:
-    """The current `race_placement.place` recorded for an aliased car, or
+    """The current `race_placement.value` recorded for an aliased car, or
     None if it has none yet."""
-    df = safe_view_current(registrar, "race_placement.place", aliases=alias)
+    df = safe_view_current(registrar, "race_placement.value", aliases=alias)
     if df is None or df.empty:
         return None
-    return int(df.iloc[-1]["race_placement.place"])
+    return int(df.iloc[-1]["race_placement.value"])
 
 
 @pytest.mark.live

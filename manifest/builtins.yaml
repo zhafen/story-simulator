@@ -77,7 +77,7 @@ race_placement:
         state's/location's pattern.
     - component_type
     - field:
-        place:
+        value:
             description: 1-indexed finishing position, e.g. 1 for first place.
             type: int
         time:

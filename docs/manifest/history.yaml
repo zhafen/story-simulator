@@ -411,3 +411,21 @@ project_history:
               action and needs the user's own go-ahead too, not just
               CLAUDE.md's new instruction to avoid the mistake going
               forward.
+    race_placement_field_renamed_place_to_value:
+        - description: >
+              Fix for #72. race_placement's own field was originally named
+              `place` (see arrival_order_diagnostic_made_permanent_as_
+              race_placement above) -- the one component in this codebase
+              that didn't follow every other current-value component's
+              (`location`, `state`, `description`, `outcome`) convention
+              of naming its main field `value`. Confirmed as the actual
+              cause of a live test_race_placement_live.py failure
+              (2026-08-13): the model wrote `race_placement:\n    value: 1`
+              -- correctly following the near-universal convention it had
+              seen everywhere else -- instead of the actual required
+              `place: 1`, so `place` itself stayed null and the write
+              didn't count. Self-inflicted schema bug, not a model
+              reasoning bug. Renamed the field to `value` in
+              manifest/builtins.yaml, updated tests/test_race_placement_live.py's
+              `_placement()` helper and tests/data/scenarios/race/
+              scenario.yaml's own docstring reference to match.

@@ -50,7 +50,7 @@ def _schedule_event(ctx, alias: str, start_time: float, duration: float) -> None
         f"        duration: {duration}\n"
         f"    - event_state:\n"
         f"        value: planned\n",
-        ctx,
+        ctx=ctx,
     )
 
 
@@ -65,7 +65,7 @@ def _mark_resolved(ctx, alias: str, progress: str = "complete") -> None:
         f"        value: {alias} resolved.\n"
         f"    - event_state:\n"
         f"        value: {progress}\n",
-        ctx,
+        ctx=ctx,
     )
 
 

@@ -29,7 +29,7 @@ def test_default_config_runs_the_character_branch_instead(tmp_path):
     scenario_dir = tmp_path / "empty_scenario"
     scenario_dir.mkdir()
     start_world(str(tmp_path / "save"), ctx, scenario_dir=str(scenario_dir))
-    update_registry("gizmo:\n    - next_due:\n        value: 0\n", ctx)
+    update_registry("gizmo:\n    - next_due:\n        value: 0\n", ctx=ctx)
 
     result = asyncio.run(advance_simulation(ctx))
     assert result == {"status": "done", "narration": "Nothing scheduled."}

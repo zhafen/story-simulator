@@ -164,7 +164,8 @@ def view_entity(entity_id: str, ctx: Context) -> str:
 
 @server.tool()
 def update_registry(
-    yaml_string: str | None,
+    yaml_string: str | None = None,
+    *,
     ctx: Context,
     preview: bool = False,
     confirm_token: str | None = None,

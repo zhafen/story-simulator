@@ -26,7 +26,7 @@ import argparse
 import tempfile
 from pathlib import Path
 
-from test_human_validated import HeadlessSession, _load_registrar, _location, _parked_at
+from test_human_validated import LOW_QUALITY_MODEL, HeadlessSession, _load_registrar, _location, _parked_at
 
 REPO_ROOT = Path(__file__).parent.parent
 SCENARIO_DIR = REPO_ROOT / "tests" / "data" / "scenarios" / "location_write_isolated"
@@ -78,16 +78,18 @@ _APPROACHES = {
 }
 
 
-def run_one(approach: str, tmp_dir: Path) -> tuple[bool, str, dict]:
+def run_one(approach: str, tmp_dir: Path, model: str = LOW_QUALITY_MODEL) -> tuple[bool, str, dict]:
     """One rep: opens a fresh world, asks the model to record car_a's
     location under the given approach, returns (success, narration,
     usage) -- narration kept for diagnosing failures after the fact, not
     just the pass/fail count; usage (see HeadlessSession.usage_summary)
     kept so #75's cost comparison isn't limited to whichever approach
-    happens to get run last."""
+    happens to get run last. `model` defaults to this harness's usual
+    weak-model target, but #85 needs a stronger-model comparison point
+    (Sonnet vs. Haiku spend on the identical task) -- see --model."""
     save_dir = tmp_dir / "save"
     instruction = _APPROACHES[approach]
-    with HeadlessSession(save_dir) as session:
+    with HeadlessSession(save_dir, model=model) as session:
         narration = session.send_turn(
             f"Use start_world with save_dir={save_dir} and scenario_dir={SCENARIO_DIR} "
             f"to open a story-simulator world. Then {instruction}"
@@ -101,6 +103,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--approach", choices=sorted(_APPROACHES), default="baseline")
     parser.add_argument("--reps", type=int, default=3)
+    parser.add_argument("--model", default=LOW_QUALITY_MODEL, help="claude -p --model value, e.g. claude-sonnet-5")
     args = parser.parse_args()
 
     successes = 0
@@ -108,26 +111,29 @@ def main() -> None:
     total_cost_usd = 0.0
     total_input_tokens = 0
     total_output_tokens = 0
+    total_duration_api_ms = 0
     for i in range(args.reps):
         with tempfile.TemporaryDirectory() as tmp:
-            ok, narration, usage = run_one(args.approach, Path(tmp))
+            ok, narration, usage = run_one(args.approach, Path(tmp), model=args.model)
             successes += ok
             total_cost_usd += usage["total_cost_usd"]
             total_input_tokens += usage["input_tokens"]
             total_output_tokens += usage["output_tokens"]
+            total_duration_api_ms += usage["duration_api_ms"]
             print(
-                f"[{args.approach}] rep {i + 1}/{args.reps}: {'PASS' if ok else 'FAIL'} "
-                f"(${usage['total_cost_usd']:.4f})"
+                f"[{args.approach}/{args.model}] rep {i + 1}/{args.reps}: {'PASS' if ok else 'FAIL'} "
+                f"(${usage['total_cost_usd']:.4f}, {usage['duration_api_ms'] / 1000:.1f}s active)"
             )
             if not ok:
                 failures.append(narration)
 
     rate = successes / args.reps
-    print(f"\n[{args.approach}] {successes}/{args.reps} = {rate:.0%}")
+    print(f"\n[{args.approach}/{args.model}] {successes}/{args.reps} = {rate:.0%}")
     print(
-        f"[{args.approach}] total: ${total_cost_usd:.4f}, "
-        f"{total_input_tokens} input tokens, {total_output_tokens} output tokens "
-        f"(${total_cost_usd / args.reps:.4f}/rep)"
+        f"[{args.approach}/{args.model}] total: ${total_cost_usd:.4f}, "
+        f"{total_input_tokens} input tokens, {total_output_tokens} output tokens, "
+        f"{total_duration_api_ms / 1000:.1f}s active API time "
+        f"(${total_cost_usd / args.reps:.4f}/rep, {total_duration_api_ms / 1000 / args.reps:.1f}s/rep)"
     )
     if failures:
         print("\nFailure narrations:")

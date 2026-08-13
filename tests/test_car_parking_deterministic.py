@@ -106,7 +106,7 @@ def _mark_resolved(ctx, event_alias: str, car_alias: str, location: str) -> None
         f"{car_alias}:\n"
         f"    - location:\n"
         f"        value: {location}\n",
-        ctx,
+        ctx=ctx,
     )
 
 

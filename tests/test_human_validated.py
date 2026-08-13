@@ -116,6 +116,7 @@ class HeadlessSession:
         self.total_output_tokens: int = 0
         self.total_cache_read_tokens: int = 0
         self.total_cache_creation_tokens: int = 0
+        self.total_duration_api_ms: int = 0
 
     def __enter__(self) -> "HeadlessSession":
         if shutil.which("claude") is None:
@@ -211,15 +212,22 @@ class HeadlessSession:
         self.total_output_tokens += usage.get("output_tokens", 0) or 0
         self.total_cache_read_tokens += usage.get("cache_read_input_tokens", 0) or 0
         self.total_cache_creation_tokens += usage.get("cache_creation_input_tokens", 0) or 0
+        self.total_duration_api_ms += result_event.get("duration_api_ms", 0) or 0
 
     def usage_summary(self) -> dict:
-        """This session's usage so far, summed across every send_turn call."""
+        """This session's usage so far, summed across every send_turn call.
+
+        `duration_api_ms` is time actually spent generating (the model's
+        own "active" time), not this process's wall-clock time -- the
+        metric that maps onto a usage-plan's hours-per-week allotment.
+        """
         return {
             "total_cost_usd": self.total_cost_usd,
             "input_tokens": self.total_input_tokens,
             "output_tokens": self.total_output_tokens,
             "cache_read_input_tokens": self.total_cache_read_tokens,
             "cache_creation_input_tokens": self.total_cache_creation_tokens,
+            "duration_api_ms": self.total_duration_api_ms,
         }
 
     def _fail(self, message: str) -> None:

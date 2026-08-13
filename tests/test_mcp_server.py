@@ -79,7 +79,7 @@ class TestStartWorld:
         save_dir = tmp_path / "save"
         ctx = _make_ctx()
         start_world(str(save_dir), ctx)
-        update_registry("custom_entity:\n    - origin\n", ctx)
+        update_registry("custom_entity:\n    - origin\n", ctx=ctx)
 
         ctx2 = _make_ctx()
         start_world(str(save_dir), ctx2)
@@ -173,7 +173,7 @@ class TestRegistryTools:
     def test_update_registry_merges_new_entity(self, tmp_path):
         ctx = _make_ctx()
         start_world(str(tmp_path / "save"), ctx)
-        result = update_registry("new_thing:\n    - origin\n", ctx)
+        result = update_registry("new_thing:\n    - origin\n", ctx=ctx)
         assert "Merged" in result
         registrar = _registrars[ctx.request_context.session]
         assert registrar.get("origin").count().execute() == 2
@@ -188,7 +188,7 @@ class TestRegistryTools:
         ctx = _make_ctx()
         start_world(str(tmp_path / "save"), ctx)
         with pytest.raises(ValueError, match="car_a"):
-            update_registry("car_a:\n    state: parked on street\n", ctx)
+            update_registry("car_a:\n    state: parked on street\n", ctx=ctx)
         registrar = _registrars[ctx.request_context.session]
         assert "state" not in registrar.registry.component_types
 
@@ -199,7 +199,7 @@ class TestRegistryTools:
         ctx = _make_ctx()
         start_world(str(tmp_path / "save"), ctx)
         with pytest.raises(ValueError, match="parked_at"):
-            update_registry("car_a:\n    - parked_at: parking_spot_1\n", ctx)
+            update_registry("car_a:\n    - parked_at: parking_spot_1\n", ctx=ctx)
         registrar = _registrars[ctx.request_context.session]
         assert "parked_at" not in registrar.registry.component_types
 
@@ -207,7 +207,7 @@ class TestRegistryTools:
         ctx = _make_ctx()
         start_world(str(tmp_path / "save"), ctx)
         with pytest.raises(ValueError, match="locaton.*location"):
-            update_registry("car_a:\n    - locaton: parked on street\n", ctx)
+            update_registry("car_a:\n    - locaton: parked on street\n", ctx=ctx)
 
     def test_update_registry_allows_declared_but_previously_unused_component_type(self, tmp_path):
         """A real component type nothing has written to yet (declared in
@@ -217,7 +217,7 @@ class TestRegistryTools:
         first place (see iacs's own known_component_types)."""
         ctx = _make_ctx()
         start_world(str(tmp_path / "save"), ctx)
-        result = update_registry("car_a:\n    - location:\n        value: parked on street\n", ctx)
+        result = update_registry("car_a:\n    - location:\n        value: parked on street\n", ctx=ctx)
         assert "Merged" in result
 
     def test_update_registry_allows_unknown_type_defined_in_the_same_write(self, tmp_path):
@@ -238,7 +238,7 @@ class TestRegistryTools:
             "car_a:\n"
             "    - brand_new_component:\n"
             "        value: hello\n",
-            ctx,
+            ctx=ctx,
         )
         assert "Merged" in result
 
@@ -256,7 +256,7 @@ class TestRegistryTools:
             "    journal:\n"
             "        - object:\n"
             "            type: journal\n",
-            ctx,
+            ctx=ctx,
         )
         assert "Merged" in result
         registrar = _registrars[ctx.request_context.session]
@@ -274,7 +274,7 @@ class TestRegistryTools:
         ctx = _make_ctx()
         start_world(str(tmp_path / "save"), ctx)
         with pytest.raises(ValueError, match="location"):
-            update_registry("car_b:\n    location:\n        - value: parked in parking_spot_1\n", ctx)
+            update_registry("car_b:\n    location:\n        - value: parked in parking_spot_1\n", ctx=ctx)
         registrar = _registrars[ctx.request_context.session]
         assert registrar.get_entity_id("car_b.location") is None
 
@@ -290,7 +290,7 @@ class TestRegistryTools:
             "        type: car\n"
             "    - location:\n"
             "        value: parked in parking_spot_1\n",
-            ctx,
+            ctx=ctx,
         )
         assert "Merged" in result
 
@@ -298,8 +298,8 @@ class TestRegistryTools:
         ctx = _make_ctx()
         save_dir = tmp_path / "save"
         start_world(str(save_dir), ctx)
-        update_registry("door:\n    - description: first\n", ctx)
-        update_registry("door:\n    - description: second\n", ctx)
+        update_registry("door:\n    - description: first\n", ctx=ctx)
+        update_registry("door:\n    - description: second\n", ctx=ctx)
 
         world_text = (save_dir / "world" / "world.yaml").read_text()
         assert "second" in world_text

@@ -365,3 +365,29 @@ project_history:
               than a hand-authored scenario pattern, including events
               dynamically scheduled during real gameplay's own plan step)
               tracked separately as its own not-yet-worked task.
+    ci_fixed_by_merging_iacs_pr97:
+        - description: >
+              Fix for #67 (CI kept failing on this branch since commit
+              7b07a86, 2026-08-12): the actual cause had nothing to do with
+              live tests -- ci.yml already correctly excludes them
+              (`pytest -m "not live"`). story_simulator/core.py's own
+              mechanical validation (#54/#58) calls
+              `registrar.registry.known_component_types`, and test helpers
+              (#36) pass `aliases` to `Registry.view_current` -- both only
+              existed on a locally-advanced iacs submodule checkout
+              (submodule.iacs.ignore=all hid the drift from ordinary `git
+              status`), never on the actually-committed submodule pointer
+              (2b60e17, from iacs PR#95). CI's fresh checkout used the real
+              pointer, which predates both features, so every run since
+              failed with AttributeError/TypeError.
+
+              Fixed for real, not worked around: merged iacs PR#97 (zhafen/
+              iacs#97 -- the bare-mapping check, `aliases` filter, and
+              `known_component_types`, all already tested locally against
+              this exact commit all session -- 496 passed, 1 skipped,
+              verified again immediately before merging), then bumped
+              story-simulator's own submodule pointer to iacs's new main
+              (fd50850) and confirmed `uv run pytest -m "not live"` -- the
+              exact command CI runs -- passes clean (42 passed, 2
+              deselected) against it. Completes the "stays open until
+              PR#97 merges" follow-up #35/#36/#38 had each been waiting on.

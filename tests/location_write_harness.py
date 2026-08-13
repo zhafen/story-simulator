@@ -20,16 +20,39 @@ and "consolidate" (#76's post-write alternative -- write normally, then
 call consolidate_review to see everything recorded so far and fix
 anything wrong AFTER committing). All three share the same run/
 measurement machinery below; only the instruction text differs.
+
+#83: every rep also records which component type(s) car_a actually got
+written to beyond what a correct run produces (_EXPECTED_CAR_A_COMPONENTS)
+-- e.g. `parent` instead of `location` -- so a run's printed summary names
+what a wrong write actually contained, not just that `location` came up
+empty. Collected on every rep, not just failures, since an unexpected
+component alongside a PASS is itself worth seeing.
 """
 
 import argparse
 import tempfile
 from pathlib import Path
 
-from test_human_validated import LOW_QUALITY_MODEL, HeadlessSession, _load_registrar, _location, _parked_at
+from collections import Counter
+
+from test_human_validated import (
+    LOW_QUALITY_MODEL,
+    HeadlessSession,
+    _load_registrar,
+    _location,
+    _parked_at,
+    _unexpected_components,
+)
 
 REPO_ROOT = Path(__file__).parent.parent
 SCENARIO_DIR = REPO_ROOT / "tests" / "data" / "scenarios" / "location_write_isolated"
+
+# The scenario seed's own starting components (object, description) plus
+# `location`, the one thing a correct run is supposed to add to car_a --
+# see tests/data/scenarios/location_write_isolated/scenario.yaml. Anything
+# else showing up on car_a is a #83 misfire candidate (see
+# _unexpected_components).
+_EXPECTED_CAR_A_COMPONENTS = {"object", "description", "location"}
 
 # Today's only approach: the model composes and writes correctly-formatted
 # entity-first YAML directly via update_registry, same mechanism
@@ -78,15 +101,19 @@ _APPROACHES = {
 }
 
 
-def run_one(approach: str, tmp_dir: Path, model: str = LOW_QUALITY_MODEL) -> tuple[bool, str, dict]:
+def run_one(approach: str, tmp_dir: Path, model: str = LOW_QUALITY_MODEL) -> tuple[bool, str, dict, set[str]]:
     """One rep: opens a fresh world, asks the model to record car_a's
     location under the given approach, returns (success, narration,
-    usage) -- narration kept for diagnosing failures after the fact, not
-    just the pass/fail count; usage (see HeadlessSession.usage_summary)
-    kept so #75's cost comparison isn't limited to whichever approach
-    happens to get run last. `model` defaults to this harness's usual
-    weak-model target, but #85 needs a stronger-model comparison point
-    (Sonnet vs. Haiku spend on the identical task) -- see --model."""
+    usage, misfires) -- narration kept for diagnosing failures after the
+    fact, not just the pass/fail count; usage (see
+    HeadlessSession.usage_summary) kept so #75's cost comparison isn't
+    limited to whichever approach happens to get run last; misfires (see
+    _unexpected_components) names which component(s) car_a actually got
+    written to beyond what a correct run produces -- #83, collected every
+    rep (not just failures) since a false positive here is itself useful
+    signal. `model` defaults to this harness's usual weak-model target,
+    but #85 needs a stronger-model comparison point (Sonnet vs. Haiku
+    spend on the identical task) -- see --model."""
     save_dir = tmp_dir / "save"
     instruction = _APPROACHES[approach]
     with HeadlessSession(save_dir, model=model) as session:
@@ -96,7 +123,8 @@ def run_one(approach: str, tmp_dir: Path, model: str = LOW_QUALITY_MODEL) -> tup
         )
         r = _load_registrar(save_dir, narration)
         success = _parked_at(_location(r, "car_a"), "parking_spot_1")
-        return success, narration, session.usage_summary()
+        misfires = _unexpected_components(r, "car_a", _EXPECTED_CAR_A_COMPONENTS)
+        return success, narration, session.usage_summary(), misfires
 
 
 def main() -> None:
@@ -108,21 +136,25 @@ def main() -> None:
 
     successes = 0
     failures: list[str] = []
+    misfire_tally: Counter[str] = Counter()
     total_cost_usd = 0.0
     total_input_tokens = 0
     total_output_tokens = 0
     total_duration_api_ms = 0
     for i in range(args.reps):
         with tempfile.TemporaryDirectory() as tmp:
-            ok, narration, usage = run_one(args.approach, Path(tmp), model=args.model)
+            ok, narration, usage, misfires = run_one(args.approach, Path(tmp), model=args.model)
             successes += ok
             total_cost_usd += usage["total_cost_usd"]
             total_input_tokens += usage["input_tokens"]
             total_output_tokens += usage["output_tokens"]
             total_duration_api_ms += usage["duration_api_ms"]
+            misfire_tally.update(misfires)
+            misfire_note = f" [wrote: {', '.join(sorted(misfires))}]" if misfires else ""
             print(
                 f"[{args.approach}/{args.model}] rep {i + 1}/{args.reps}: {'PASS' if ok else 'FAIL'} "
                 f"(${usage['total_cost_usd']:.4f}, {usage['duration_api_ms'] / 1000:.1f}s active)"
+                f"{misfire_note}"
             )
             if not ok:
                 failures.append(narration)
@@ -135,6 +167,8 @@ def main() -> None:
         f"{total_duration_api_ms / 1000:.1f}s active API time "
         f"(${total_cost_usd / args.reps:.4f}/rep, {total_duration_api_ms / 1000 / args.reps:.1f}s/rep)"
     )
+    if misfire_tally:
+        print(f"[{args.approach}/{args.model}] unexpected components written (any rep): {dict(misfire_tally)}")
     if failures:
         print("\nFailure narrations:")
         for n in failures:

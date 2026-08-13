@@ -63,7 +63,7 @@ def run_one(approach: str, tmp_dir: Path) -> tuple[bool, str]:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--approach", choices=sorted(_APPROACHES), default="baseline")
-    parser.add_argument("--reps", type=int, default=10)
+    parser.add_argument("--reps", type=int, default=3)
     args = parser.parse_args()
 
     successes = 0

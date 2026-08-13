@@ -595,23 +595,27 @@ def _find_unknown_component_types(yaml_string: str, known: set[str]) -> dict[str
     return {name: difflib.get_close_matches(name, known, n=3) for name in sorted(unknown)}
 
 
-def _update_registry_and_sync(registrar: Registrar, save_dir: Path, yaml_string: str, session) -> None:
-    """Merge `yaml_string` into the registry, then sync `save_dir`'s YAML to match.
+def _validate_registry_write(registrar: Registrar, yaml_string: str) -> set[str]:
+    """The three checks a write must pass before it's safe to merge (or,
+    for the preview flow below, safe to show a confirm token for) --
+    raises on the first one that fails. Returns the set of component
+    types this write actually references, since both callers
+    (`_update_registry_and_sync` and `_preview_registry_write`) need it
+    and `_find_unknown_component_types` already computes it internally.
 
-    Three checks before merging at all -- see `_find_malformed_entities`
-    for the first. The second, `_find_component_named_as_nested_entity`,
-    rejects a write where a known component type's name appears as a
-    nested dict key instead of a component-list item -- a shape
-    `_find_malformed_entities` can't distinguish from legitimate entity
-    nesting on structure alone. The third, `_find_unknown_component_types`,
-    rejects a write that references a component type nothing has ever
-    declared, unless that same write also declares it (see
-    `_component_types_defined_inline`) -- a mechanical backstop against
-    the recurring live-test bug where a weak model invents a plausible
-    but nonexistent component name (`parked_at`, `parking_location`)
-    instead of using the real, already-declared one (`location`),
-    independent of whether it ever bothers to check first via
-    view_entity/view_registry.
+    See `_find_malformed_entities` for the first check. The second,
+    `_find_component_named_as_nested_entity`, rejects a write where a
+    known component type's name appears as a nested dict key instead of
+    a component-list item -- a shape `_find_malformed_entities` can't
+    distinguish from legitimate entity nesting on structure alone. The
+    third, `_find_unknown_component_types`, rejects a write that
+    references a component type nothing has ever declared, unless that
+    same write also declares it (see `_component_types_defined_inline`)
+    -- a mechanical backstop against the recurring live-test bug where a
+    weak model invents a plausible but nonexistent component name
+    (`parked_at`, `parking_location`) instead of using the real,
+    already-declared one (`location`), independent of whether it ever
+    bothers to check first via view_entity/view_registry.
     """
     malformed = _find_malformed_entities(yaml_string)
     if malformed:
@@ -652,12 +656,81 @@ def _update_registry_and_sync(registrar: Registrar, save_dir: Path, yaml_string:
             "(see manifest/builtins.yaml for examples, e.g. `location`)."
         )
 
+    parsed = yaml.safe_load(yaml_string)
+    return _referenced_component_types(parsed) if isinstance(parsed, dict) else set()
+
+
+def _update_registry_and_sync(registrar: Registrar, save_dir: Path, yaml_string: str, session) -> None:
+    """Merge `yaml_string` into the registry, then sync `save_dir`'s YAML to match."""
+    _validate_registry_write(registrar, yaml_string)
     registrar.update(
         input_dirs=[str(MANIFEST_DIR)],
         yaml_strings={WORLD_FILE_ID: yaml_string},
         time=_next_time_stamp(session),
     )
     _export_world_yaml(registrar, save_dir)
+
+
+def _component_write_summary(registrar: Registrar, component_type: str, limit: int = 3) -> str:
+    """Stats + peek for one component type -- row count, plus up to
+    `limit` existing sample rows -- so a caller about to write this
+    component type can see the shape/convention already in use for it.
+    Part of update_registry's preview flow (see `_preview_registry_write`,
+    #74/docs/manifest/history.yaml: project_history.
+    update_registry_preview_confirm_flow_added).
+    """
+    try:
+        df = registrar.view_df(component_type)
+    except KeyError:
+        return f"- {component_type}: declared, but no data written yet."
+    if df.empty:
+        return f"- {component_type}: declared, 0 rows written yet."
+    sample = df.head(limit).fillna("null").to_markdown()
+    return f"- {component_type}: {len(df)} row(s) so far. Sample:\n{sample}"
+
+
+def _encode_pending_write(yaml_string: str) -> str:
+    """Self-contained confirm_token for update_registry's preview flow --
+    encodes `yaml_string` directly, the same way `_encode_token` encodes
+    `advance_simulation`'s resume state, rather than stashing it in
+    server-side session state that a subprocess restart between the
+    preview and confirm calls would silently lose (see this project's
+    own `stateless_client` mandate)."""
+    return base64.urlsafe_b64encode(yaml_string.encode()).decode()
+
+
+def _decode_pending_write(confirm_token: str) -> str:
+    return base64.urlsafe_b64decode(confirm_token.encode()).decode()
+
+
+def _preview_registry_write(registrar: Registrar, yaml_string: str) -> str:
+    """Validate `yaml_string` (same checks `_update_registry_and_sync`
+    runs before merging) without merging it yet, and build a
+    confirmation preview: the component types this write references,
+    every component type actually available to compare against, and a
+    stats+peek summary for each referenced type -- so a caller can
+    notice a wrong-but-real component choice (e.g. `parent`/`todo`/
+    `position` instead of `location` -- see #63/docs/manifest/
+    history.yaml) before committing, not after. The returned text
+    includes a confirm_token (see `_encode_pending_write`) to pass back
+    to actually merge this exact write.
+    """
+    referenced = _validate_registry_write(registrar, yaml_string)
+    known = sorted(registrar.registry.known_component_types)
+    token = _encode_pending_write(yaml_string)
+    summaries = "\n".join(_component_write_summary(registrar, c) for c in sorted(referenced)) or "(none referenced)"
+    return (
+        "Not yet merged -- review below, then confirm or correct it.\n\n"
+        f"Components this write references: {sorted(referenced)}\n"
+        f"All component types actually available: {known}\n\n"
+        f"Stats + peek for each referenced component type:\n{summaries}\n\n"
+        "If this looks right, call update_registry again with this exact "
+        f"confirm_token (and no yaml_string) to merge it:\n{token}\n\n"
+        "If something looks wrong -- a component you referenced isn't the one you "
+        "meant, or the peek shows existing rows shaped differently than what you "
+        "wrote -- call update_registry again with corrected yaml_string (and "
+        "preview=True) instead of this token."
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1056,16 +1129,54 @@ def view_entity(session, entity_id: str) -> str:
     return registrar.view_entity(entity_id, format="markdown")
 
 
-def update_registry(session, yaml_string: str) -> str:
+def update_registry(
+    session,
+    yaml_string: str | None = None,
+    preview: bool = False,
+    confirm_token: str | None = None,
+) -> str:
     """Merge entity-first YAML into the world registry, run through the same ETL as save files.
 
+    Default behavior (`preview` omitted/False, `confirm_token` omitted)
+    is unchanged from before this flow existed: `yaml_string` merges
+    immediately. `preview=True` opts into a two-round-trip alternative
+    instead, for #73/#74's comparison against that default (see
+    docs/manifest/history.yaml: project_history.
+    update_registry_preview_confirm_flow_added) -- existing callers that
+    never pass `preview`/`confirm_token` see no behavior change at all.
+
     Args:
-        yaml_string: Entity-first YAML content to merge in.
+        yaml_string: Entity-first YAML content to merge (or, with
+            `preview=True`, to preview before merging). Omit when passing
+            `confirm_token` instead.
+        preview: If True, don't merge `yaml_string` yet -- validate it and
+            return a review (components referenced, all components
+            actually available, a stats+peek summary for each referenced
+            type) plus a confirm_token to merge it with, on a follow-up
+            call. Ignored if `confirm_token` is given.
+        confirm_token: A token from a prior `preview=True` call -- merges
+            that exact previously-previewed write now. `yaml_string` is
+            not needed (and ignored) in this call.
     """
     registrar = _get_registrar(session)
     save_dir = _get_save_dir(session)
-    _update_registry_and_sync(registrar, save_dir, yaml_string, session)
-    return "Merged into the registry and synced to save_dir/world.yaml."
+
+    if confirm_token is not None:
+        pending_yaml = _decode_pending_write(confirm_token)
+        _update_registry_and_sync(registrar, save_dir, pending_yaml, session)
+        return "Merged into the registry and synced to save_dir/world.yaml."
+
+    if yaml_string is None:
+        raise ValueError(
+            "Provide yaml_string to merge (optionally with preview=True to review it "
+            "first), or confirm_token from a prior preview to merge that write now."
+        )
+
+    if not preview:
+        _update_registry_and_sync(registrar, save_dir, yaml_string, session)
+        return "Merged into the registry and synced to save_dir/world.yaml."
+
+    return _preview_registry_write(registrar, yaml_string)
 
 
 async def advance_simulation(session, resume_token: str | None = None, answer: str | None = None) -> dict:

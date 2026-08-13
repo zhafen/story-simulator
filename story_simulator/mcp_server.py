@@ -163,14 +163,32 @@ def view_entity(entity_id: str, ctx: Context) -> str:
 
 
 @server.tool()
-def update_registry(yaml_string: str, ctx: Context) -> str:
+def update_registry(
+    yaml_string: str | None,
+    ctx: Context,
+    preview: bool = False,
+    confirm_token: str | None = None,
+) -> str:
     """Merge entity-first YAML into the world registry, run through the same ETL as save files.
 
+    Ordinary use: call with just `yaml_string` -- it merges immediately,
+    exactly as always. `preview=True` is an opt-in alternative: instead of
+    merging, you get back a review (which component types your write
+    references, every component type actually available, and a stats+peek
+    summary of existing rows for each referenced type) plus a
+    confirm_token. If the review looks right, call again with that
+    confirm_token (no yaml_string needed) to actually merge it; if
+    something looks off, call again with corrected yaml_string instead.
+
     Args:
-        yaml_string: Entity-first YAML content to merge in.
+        yaml_string: Entity-first YAML content to merge (or preview).
+            Omit when passing confirm_token instead.
+        preview: Review before merging instead of merging immediately.
+        confirm_token: From a prior preview=True call -- merges that exact
+            write now.
     """
     __iacs__ = {"solution of": "story_simulator_mission.tool_catalog.update_registry"}
-    return core.update_registry(ctx.request_context.session, yaml_string)
+    return core.update_registry(ctx.request_context.session, yaml_string, preview, confirm_token)
 
 
 @server.tool()

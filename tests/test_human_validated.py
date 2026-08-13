@@ -104,6 +104,18 @@ class HeadlessSession:
             LIVE_TRACE_DIR / f"{time.strftime('%Y%m%dT%H%M%S')}_{uuid.uuid4().hex[:8]}.jsonl"
         )
         self._trace_file = None
+        # Accumulated across every send_turn call this session makes (a
+        # session is usually several turns -- resolve/plan per event) --
+        # each turn's "result" event already reports its own cost/usage
+        # (see send_turn), this just sums them so a caller can read one
+        # total for the whole session instead of re-deriving it from the
+        # trace file after the fact. #75: needed to compare live-test
+        # spend against the user's weekly usage allotment.
+        self.total_cost_usd: float = 0.0
+        self.total_input_tokens: int = 0
+        self.total_output_tokens: int = 0
+        self.total_cache_read_tokens: int = 0
+        self.total_cache_creation_tokens: int = 0
 
     def __enter__(self) -> "HeadlessSession":
         if shutil.which("claude") is None:
@@ -187,9 +199,28 @@ class HeadlessSession:
                 if event.get("type") == "result":
                     if event.get("is_error"):
                         self._fail(f"turn errored: {event}")
+                    self._accumulate_usage(event)
                     return event["result"]
         finally:
             sel.close()
+
+    def _accumulate_usage(self, result_event: dict) -> None:
+        self.total_cost_usd += result_event.get("total_cost_usd", 0.0) or 0.0
+        usage = result_event.get("usage") or {}
+        self.total_input_tokens += usage.get("input_tokens", 0) or 0
+        self.total_output_tokens += usage.get("output_tokens", 0) or 0
+        self.total_cache_read_tokens += usage.get("cache_read_input_tokens", 0) or 0
+        self.total_cache_creation_tokens += usage.get("cache_creation_input_tokens", 0) or 0
+
+    def usage_summary(self) -> dict:
+        """This session's usage so far, summed across every send_turn call."""
+        return {
+            "total_cost_usd": self.total_cost_usd,
+            "input_tokens": self.total_input_tokens,
+            "output_tokens": self.total_output_tokens,
+            "cache_read_input_tokens": self.total_cache_read_tokens,
+            "cache_creation_input_tokens": self.total_cache_creation_tokens,
+        }
 
     def _fail(self, message: str) -> None:
         stderr = self.proc.stderr.read() if self.proc and self.proc.stderr else ""
@@ -201,6 +232,14 @@ class HeadlessSession:
         if self._trace_file is not None:
             self._trace_file.close()
             self._trace_file = None
+            # Persisted next to the trace unconditionally (not just when a
+            # caller like location_write_harness.py bothers to read
+            # usage_summary() itself) so every live test's spend is
+            # recoverable after the fact, matching how the raw trace
+            # itself is already kept regardless of whether a given test
+            # happens to fail.
+            usage_path = self.trace_path.with_suffix(".usage.json")
+            usage_path.write_text(json.dumps(self.usage_summary(), indent=2))
         if self.proc is None:
             return
         proc, self.proc = self.proc, None

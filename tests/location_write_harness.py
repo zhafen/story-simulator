@@ -61,11 +61,13 @@ _APPROACHES = {
 }
 
 
-def run_one(approach: str, tmp_dir: Path) -> tuple[bool, str]:
+def run_one(approach: str, tmp_dir: Path) -> tuple[bool, str, dict]:
     """One rep: opens a fresh world, asks the model to record car_a's
-    location under the given approach, returns (success, narration) --
-    narration kept for diagnosing failures after the fact, not just the
-    pass/fail count."""
+    location under the given approach, returns (success, narration,
+    usage) -- narration kept for diagnosing failures after the fact, not
+    just the pass/fail count; usage (see HeadlessSession.usage_summary)
+    kept so #75's cost comparison isn't limited to whichever approach
+    happens to get run last."""
     save_dir = tmp_dir / "save"
     instruction = _APPROACHES[approach]
     with HeadlessSession(save_dir) as session:
@@ -75,7 +77,7 @@ def run_one(approach: str, tmp_dir: Path) -> tuple[bool, str]:
         )
         r = _load_registrar(save_dir, narration)
         success = _parked_at(_location(r, "car_a"), "parking_spot_1")
-        return success, narration
+        return success, narration, session.usage_summary()
 
 
 def main() -> None:
@@ -86,16 +88,30 @@ def main() -> None:
 
     successes = 0
     failures: list[str] = []
+    total_cost_usd = 0.0
+    total_input_tokens = 0
+    total_output_tokens = 0
     for i in range(args.reps):
         with tempfile.TemporaryDirectory() as tmp:
-            ok, narration = run_one(args.approach, Path(tmp))
+            ok, narration, usage = run_one(args.approach, Path(tmp))
             successes += ok
-            print(f"[{args.approach}] rep {i + 1}/{args.reps}: {'PASS' if ok else 'FAIL'}")
+            total_cost_usd += usage["total_cost_usd"]
+            total_input_tokens += usage["input_tokens"]
+            total_output_tokens += usage["output_tokens"]
+            print(
+                f"[{args.approach}] rep {i + 1}/{args.reps}: {'PASS' if ok else 'FAIL'} "
+                f"(${usage['total_cost_usd']:.4f})"
+            )
             if not ok:
                 failures.append(narration)
 
     rate = successes / args.reps
     print(f"\n[{args.approach}] {successes}/{args.reps} = {rate:.0%}")
+    print(
+        f"[{args.approach}] total: ${total_cost_usd:.4f}, "
+        f"{total_input_tokens} input tokens, {total_output_tokens} output tokens "
+        f"(${total_cost_usd / args.reps:.4f}/rep)"
+    )
     if failures:
         print("\nFailure narrations:")
         for n in failures:

@@ -3,6 +3,10 @@
     "allow": [
       "mcp__story-simulator__*",
       "mcp__iacs__*"
+    ],
+    "deny": [
+      "mcp__github__merge_pull_request",
+      "mcp__github__enable_pr_auto_merge"
     ]
   },
   "hooks": {

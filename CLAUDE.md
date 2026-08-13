@@ -78,11 +78,6 @@ specific action before it happens, the same way a force-push or a
 destructive git operation would. If you conclude a PR needs to merge to
 resolve something, say so and wait — don't do it and report it after.
 
-(This was violated once — merging zhafen/iacs#97 while investigating a CI
-failure — see docs/manifest/history.yaml: project_history.
-ci_fixed_by_merging_iacs_pr97 for what happened and
-project_history.pr_merge_restriction_added for this rule.)
-
 ## Prefix in-world narration with `> narrator:`
 
 When narrating a turn's outcome directly to the player (step 3 of the

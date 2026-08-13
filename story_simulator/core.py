@@ -16,13 +16,6 @@ later, as needed.
 from __future__ import annotations
 
 __iacs__ = {
-    "todo": (
-        "The pop/is_event_valid/advance_clock/predict_next_event/push_event "
-        "functions just live loose at module scope here. Evaluate whether "
-        "the event loop deserves a more deliberate structure (a class, a "
-        "dataclass-based state object, an explicit stage protocol) as more "
-        "modules start hooking into it, instead of a flat function bag."
-    ),
     "solution of": "story_simulator_mission.stateless_client",
 }
 

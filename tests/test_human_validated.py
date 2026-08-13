@@ -312,20 +312,33 @@ def _parked_at(location: str | None, spot: str) -> bool:
     return location is not None and spot in location
 
 
+# Intrinsic iacs bookkeeping component types every entity has a row in
+# regardless of what anyone wrote -- entity_id (alias/filepath/hash) and
+# component_type (which types this entity declares/uses). Not something
+# a model ever chooses to write, so always excluded from
+# _unexpected_components's result rather than making every caller repeat
+# this same exclusion in its own `expected` set. Caught live: the first
+# #83-instrumented run reported these on literally every rep, burying the
+# one real misfire (`state`) in constant noise.
+_ALWAYS_PRESENT_META_COMPONENTS = {"entity_id", "component_type"}
+
+
 def _unexpected_components(registrar: Registrar, alias: str, expected: set[str]) -> set[str]:
-    """Component types currently recorded on `alias` beyond `expected` --
-    #83: names *what* got written instead of the intended field when a
-    check like `_parked_at(_location(...))` fails, rather than just
-    noting that the intended field is empty. `expected` should cover
-    both the scenario's starting components and whatever a fully correct
-    write is supposed to add (e.g. {"object", "description", "location"}
-    for tests/data/scenarios/location_write_isolated's car_a) -- any
+    """Component types currently recorded on `alias` beyond `expected`
+    (plus the always-present meta types, see
+    _ALWAYS_PRESENT_META_COMPONENTS) -- #83: names *what* got written
+    instead of the intended field when a check like
+    `_parked_at(_location(...))` fails, rather than just noting that the
+    intended field is empty. `expected` should cover both the scenario's
+    starting components and whatever a fully correct write is supposed
+    to add (e.g. {"object", "description", "location"} for
+    tests/data/scenarios/location_write_isolated's car_a) -- any
     component type showing up outside that set is a plausible
     misattribution candidate (see #63's `parent`/`todo`/`parking_location`
     pattern), not proof of one: a legitimate future scenario could add
     components beyond `expected` for reasons unrelated to any bug.
     """
-    return set(registrar.view_entity_df(alias)) - expected
+    return set(registrar.view_entity_df(alias)) - expected - _ALWAYS_PRESENT_META_COMPONENTS
 
 
 def _event_states(registrar: Registrar) -> dict[str, str]:

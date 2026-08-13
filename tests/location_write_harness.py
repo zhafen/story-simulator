@@ -12,11 +12,11 @@ parking event, one spot) -- separate from arrival-order reasoning
 (tests/test_race_placement_live.py) or driving/parking separation
 (tests/test_parking_split_live.py), which are already covered elsewhere.
 
-Currently one approach is implemented: "baseline" (today's direct-write
-update_registry mechanism, the only approach that exists right now). More
-approaches -- variations on it, and #74's guided multi-round-trip
-formatting once that's built -- get added to _APPROACHES as they're
-designed; the run/measurement machinery below doesn't change per-approach.
+Two approaches are compared: "baseline" (today's direct single-shot
+update_registry write) and "confirm" (#74's opt-in preview=True /
+confirm_token round trip -- write, review what it's about to commit
+against what's already there, then confirm or correct). Both share the
+same run/measurement machinery below; only the instruction text differs.
 """
 
 import argparse
@@ -38,8 +38,26 @@ _BASELINE_INSTRUCTION = (
     "Don't narrate anything back to me."
 )
 
+# #74's preview/confirm alternative: write with preview=True first, check
+# the returned review (referenced/available component types, stats+peek
+# for each referenced type) against what was intended, then either confirm
+# with the returned confirm_token or correct and re-preview.
+_CONFIRM_INSTRUCTION = (
+    "Call advance_simulation and answer its prompts (resolve, then plan) until its "
+    "status is \"done\" -- there is only one event. Record via update_registry that "
+    "car_a parked in parking_spot_1, plus car_a_park's own outcome and event_state -- "
+    "but first call update_registry with preview=True (and your yaml_string) to review "
+    "what it would write before committing. Check the review's list of components your "
+    "write references and the stats+peek for each against what you actually intend to "
+    "record; if anything looks wrong, correct your yaml_string and preview again instead "
+    "of confirming. Once it looks right, call update_registry again with the exact "
+    "confirm_token it gave you (and no yaml_string) to actually merge it. "
+    "Don't narrate anything back to me."
+)
+
 _APPROACHES = {
     "baseline": _BASELINE_INSTRUCTION,
+    "confirm": _CONFIRM_INSTRUCTION,
 }
 
 

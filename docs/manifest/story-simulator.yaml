@@ -258,28 +258,6 @@ story_simulator_mission:
                   type: gameplay_richness
                   value: 0.7
             - work_state: done
-    npc_authority_separation:
-        - description: >
-              An NPC's decide step must stay restricted (perceive-scoped view,
-              no tools) while its resolve+record step, which needs broader
-              authority to call update_registry, should not implicitly carry the
-              same unrestricted write authority a human-narrating client has.
-              Split advance_npc_turn's resolve+record step from unrestricted
-              update_registry authority — either scope it down or hand that
-              step to whichever narrator already holds full authority, reserving
-              true autonomy for when genuinely nobody is watching.
-        - requirement
-        - impact:
-              - type: reliability
-                value: 0.6
-              - type: architecture_clarity
-                value: 0.5
-        - cost:
-              - type: engineering_hours
-                value: 6
-              - type: regression_risk
-                value: 0.5
-        - work_state: in progress
     seed_yaml_reflects_live_state:
         - description: >
               An agent that reads a save's YAML directly should see current
@@ -408,10 +386,26 @@ story_simulator_mission:
               handling (resolve_anthropic_api_key). Every other LiteLLM-supported
               provider relies on that provider's own standard env-var discovery;
               there's no general per-user, per-provider credential story yet.
+
+              Sharpened 2026-08-16: today every API key (any provider) is
+              stored the same way regardless of who's running the server --
+              a plain process environment variable, read straight off the
+              host. Before designing the per-provider story above, assess
+              whether that storage mechanism itself is still right once
+              this isn't just one developer's local env: is a bare env var
+              adequate for a shared/hosted deployment (Epic E's stranger-
+              distribution options), or does it need something more
+              deliberate (a secrets manager, an encrypted per-save
+              credential store, a documented rotation story)? Feeds Epic
+              D's "no secrets committed" / "auth/session-isolation
+              documented" release-checklist bullets and Epic E's
+              auth-token-to-save_dir design either way.
         - requirement
         - impact:
-              type: gameplay_richness
-              value: 0.2
+              - type: gameplay_richness
+                value: 0.2
+              - type: reliability
+                value: 0.3
         - cost:
               type: engineering_hours
               value: 4
@@ -463,6 +457,50 @@ story_simulator_mission:
               - type: regression_risk
                 value: 0.1
         - work_state: new
+    config_as_ec_files:
+        - description: >
+              story_simulator/config.py hardcodes file paths, source
+              identifiers, and other project constants in Python rather than
+              letting a world-author override them via EC data. Evaluate
+              moving as much of that config as reasonably can be into EC
+              files instead. Migrated 2026-08-13 from a loose
+              `__iacs__ = {"todo": ...}` marker in config.py itself, so this
+              backlog note isn't split across code docstrings and the
+              manifest.
+        - requirement
+        - impact:
+              type: developer_experience
+              value: 0.2
+        - cost:
+              - type: engineering_hours
+                value: 3
+              - type: regression_risk
+                value: 0.2
+        - work_state: new
+    event_loop_structure:
+        - description: >
+              The pop_event/is_event_valid/advance_clock/resolve_event/
+              plan_events functions just live loose at module scope in
+              core.py. Evaluate whether the event loop deserves a more
+              deliberate structure (a class, a dataclass-based state object,
+              an explicit stage protocol) as more modules start hooking into
+              it, instead of a flat function bag. Migrated 2026-08-13 from a
+              loose `__iacs__ = {"todo": ...}` marker in core.py itself
+              (which also carries `"solution of":
+              story_simulator_mission.stateless_client` -- that part stays
+              in the code, only the todo note moved here). Function names
+              updated 2026-08-16 to match the event-entity rework
+              (predict_next_event/push_event no longer exist).
+        - requirement
+        - impact:
+              type: architecture_clarity
+              value: 0.3
+        - cost:
+              - type: engineering_hours
+                value: 4
+              - type: regression_risk
+                value: 0.3
+        - work_state: new
     scd_time_data:
         data:
             - description: >
@@ -480,6 +518,15 @@ story_simulator_mission:
                   in-fiction-time axis distinct from mere row-ordering) --
                   next_due/clock are this session's first attempt at that
                   axis, not a replacement for evaluating it properly.
+
+                  Impact estimates below were lowered on 2026-08-13: a
+                  working solution (zhafen/iacs#94's `_seq_{field}` fix)
+                  already resolves the concrete tie-breaking bug that made
+                  this cluster urgent, even though it isn't merged yet. What
+                  remains open here is naming/architecture cleanup, not an
+                  active correctness gap -- kept in this manifest rather
+                  than pulled into a GitHub issue, since it's no longer
+                  actively worked at that urgency.
         deterministic_current_resolution:
             - description: >
                   Two rows sharing the same time_dimension value must still
@@ -513,7 +560,7 @@ story_simulator_mission:
             - requirement
             - impact:
                   type: reliability
-                  value: 0.8
+                  value: 0.3
             - work_state: in progress
         single_ordering_vocabulary:
             - description: >
@@ -536,7 +583,7 @@ story_simulator_mission:
             - requirement
             - impact:
                   type: architecture_clarity
-                  value: 0.5
+                  value: 0.2
             - cost:
                   type: engineering_hours
                   value: 2
@@ -552,7 +599,7 @@ story_simulator_mission:
             - requirement
             - impact:
                   type: architecture_clarity
-                  value: 0.4
+                  value: 0.2
             - cost:
                   - type: engineering_hours
                     value: 1
@@ -570,7 +617,7 @@ story_simulator_mission:
             - requirement
             - impact:
                   type: architecture_clarity
-                  value: 0.3
+                  value: 0.15
             - cost:
                   type: engineering_hours
                   value: 1

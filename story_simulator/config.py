@@ -4,10 +4,6 @@ Every other story_simulator module imports from here rather than
 hardcoding these paths/constants itself.
 """
 
-__iacs__ = {
-    "todo": "Evaluate moving as much config as possible to EC files."
-}
-
 import hashlib
 import os
 import urllib.parse

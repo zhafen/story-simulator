@@ -7,15 +7,25 @@ good tools for playing a text simulation whose state lives in a structured
 entity/component registry ([`iacs`](../iacs)), not in the connected agent's
 own context.
 
-What each tool must guarantee, what code satisfies it, and every open
-follow-up are modeled as `requirement`/`solution` entities in
+What each tool must guarantee and what code satisfies it are modeled as
+`requirement`/`solution` entities in
 [`docs/manifest/story-simulator.yaml`](manifest/story-simulator.yaml), not
 duplicated here as prose — load it with the iacs MCP server
 (`load_manifest(["docs/manifest", "story_simulator"])`, since most solutions
-now live as `__iacs__` metadata in code docstrings rather than in the YAML)
-and run `run_dataflow("audit.requirement_coverage")`/`("audit.traceability")`
-to check current status, or query `resolved_impact_cost` for a cost-vs-impact
-read on what's still open.
+now live as `__iacs__` metadata in code docstrings rather than in the YAML).
+
+As of [Epic B](https://github.com/zhafen/story-simulator/issues/47)
+(2026-08-13), that manifest is scoped specifically to the *candidate-goal
+backlog*: not-yet-started or undecided work, each scored with `impact`/`cost`
+so `resolved_impact_cost` can drive a cost-vs-impact read on what's worth
+picking up next. A goal graduates out of the manifest the moment it becomes
+actively worked — it's filed as its own GitHub issue instead, for richer
+tracking/visualization, and its manifest entry is removed at that point.
+`run_dataflow("audit.requirement_coverage")`/`("audit.traceability")` still
+run the same way over whatever's left in the tree; they just no longer double
+as the project's active-work tracker. The requirement/solution schema itself
+— how requirements get modeled and how solution options get picked between —
+is a separate, unsolved problem, deliberately out of scope here.
 
 ## Who plays which role
 

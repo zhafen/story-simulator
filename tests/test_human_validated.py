@@ -139,7 +139,28 @@ class HeadlessSession:
         # view_component, ...) useless against this save's actual state --
         # exactly the gap that let the model invent a nonexistent
         # component name instead of finding the real `location` schema.
-        env = {**os.environ, "STORY_SIM_HEADLESS_TEST": "1", "IACS_DATABASE_URL": registry_url(self.save_dir)}
+        #
+        # Dropping every CLAUDE*/AI_AGENT env var (not just adding the two
+        # above) is load-bearing, not cosmetic -- confirmed live: run from
+        # inside a Claude Code Cloud session, this process's own
+        # environment carries CLAUDE_CODE_SESSION_ID (plus its messaging
+        # socket/token, oauth fd, container id, ...) for *this* session.
+        # Passed through via a plain `{**os.environ, ...}`, the nested
+        # `claude -p` subprocess picked that session ID up and attached to
+        # this exact outer session's own transcript/state instead of
+        # starting a fresh, isolated one -- confirmed by inspecting its
+        # trace file, which showed a `SessionStart:startup` hook firing
+        # and this outer session's own unrelated reasoning, not the test's
+        # prompt at all. A local terminal invocation never had these vars
+        # set in the first place, which is presumably why this went
+        # unnoticed until this codebase was first run from a Cloud session.
+        env = {
+            k: v
+            for k, v in os.environ.items()
+            if not k.startswith("CLAUDE") and k != "AI_AGENT"
+        }
+        env["STORY_SIM_HEADLESS_TEST"] = "1"
+        env["IACS_DATABASE_URL"] = registry_url(self.save_dir)
         self.proc = subprocess.Popen(
             [
                 "claude",

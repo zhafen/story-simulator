@@ -296,10 +296,26 @@ story_simulator_mission:
               handling (resolve_anthropic_api_key). Every other LiteLLM-supported
               provider relies on that provider's own standard env-var discovery;
               there's no general per-user, per-provider credential story yet.
+
+              Sharpened 2026-08-16: today every API key (any provider) is
+              stored the same way regardless of who's running the server --
+              a plain process environment variable, read straight off the
+              host. Before designing the per-provider story above, assess
+              whether that storage mechanism itself is still right once
+              this isn't just one developer's local env: is a bare env var
+              adequate for a shared/hosted deployment (Epic E's stranger-
+              distribution options), or does it need something more
+              deliberate (a secrets manager, an encrypted per-save
+              credential store, a documented rotation story)? Feeds Epic
+              D's "no secrets committed" / "auth/session-isolation
+              documented" release-checklist bullets and Epic E's
+              auth-token-to-save_dir design either way.
         - requirement
         - impact:
-              type: gameplay_richness
-              value: 0.2
+              - type: gameplay_richness
+                value: 0.2
+              - type: reliability
+                value: 0.3
         - cost:
               type: engineering_hours
               value: 4

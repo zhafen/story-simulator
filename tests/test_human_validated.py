@@ -62,13 +62,18 @@ LIVE_TRACE_DIR = REPO_ROOT / ".live_test_traces"
 # mistakes, not just a good one's, so that's the model these tests exercise.
 LOW_QUALITY_MODEL = "claude-haiku-4-5-20251001"
 
-# Bash/Task are explicitly denied everywhere below, not just left off the
-# allowlist: a weak model, given the choice, sometimes reaches for "write a
-# Python script that calls these functions directly" instead of just calling
-# the MCP tools it already has -- confirmed happening in practice -- and an
-# unapproved Bash call in headless mode doesn't fail fast, it sits waiting
-# for an approval that never comes. Denying it outright removes the option
-# instead of hoping the model doesn't reach for it.
+# --tools "" strips every built-in Claude Code tool (Bash, Read, Write,
+# Edit, Glob, Grep, WebFetch, WebSearch, Task, ...), leaving only the two
+# MCP tool namespaces below -- not just Bash/Task denied via
+# --disallowedTools, which still left Glob/Read/Grep/etc. available.
+# Confirmed happening in practice: a weak model, hitting an MCP tool
+# timeout, used Glob+Read to go read story-simulator's own source code
+# trying to self-diagnose the failure instead of retrying or reporting
+# it -- burning the rest of the run on unrelated exploration. A model
+# should have no legitimate reason to read this repo's own files during
+# a headless test; removing the option outright is more robust than a
+# denylist of specific tool names, which only covers what's been caught
+# happening so far.
 _MCP_TOOL_ARGS = [
     "--mcp-config",
     ".mcp.json",
@@ -76,9 +81,8 @@ _MCP_TOOL_ARGS = [
     "--allowedTools",
     "mcp__story-simulator__*",
     "mcp__iacs__*",
-    "--disallowedTools",
-    "Bash",
-    "Task",
+    "--tools",
+    "",
 ]
 
 
@@ -94,10 +98,29 @@ class HeadlessSession:
     with no chance to inspect state along the way.
     """
 
-    def __init__(self, save_dir: Path, *, model: str = LOW_QUALITY_MODEL, turn_timeout: float = 240):
+    def __init__(
+        self,
+        save_dir: Path,
+        *,
+        model: str = LOW_QUALITY_MODEL,
+        turn_timeout: float = 240,
+        session_timeout: float = 300,
+    ):
         self.save_dir = save_dir
         self.model = model
         self.turn_timeout = turn_timeout
+        # Separate from turn_timeout: bounds the whole session's wall-clock
+        # runtime (every send_turn call combined), not just a single one.
+        # Confirmed happening in practice: a model that hits an unexpected
+        # error can wander off-task (see _MCP_TOOL_ARGS's comment) for far
+        # longer than any single turn_timeout would individually catch,
+        # since each successive send_turn call gets its own fresh budget --
+        # this is the backstop for a run that's technically still replying
+        # within each turn_timeout but never doing anything useful. 300s is
+        # deliberately generous, not tuned tight -- a first backstop, not a
+        # precise budget.
+        self.session_timeout = session_timeout
+        self._session_deadline: float | None = None
         self.proc: subprocess.Popen | None = None
         LIVE_TRACE_DIR.mkdir(exist_ok=True)
         self.trace_path = (
@@ -121,6 +144,7 @@ class HeadlessSession:
     def __enter__(self) -> "HeadlessSession":
         if shutil.which("claude") is None:
             pytest.skip("claude CLI not on PATH")
+        self._session_deadline = time.monotonic() + self.session_timeout
         self._trace_file = open(self.trace_path, "w")
         # STORY_SIM_HEADLESS_TEST tells this repo's own Stop hooks (see
         # .claude/hooks/stop-docstring-check.sh) that this subprocess is an
@@ -200,11 +224,18 @@ class HeadlessSession:
 
         sel = selectors.DefaultSelector()
         sel.register(self.proc.stdout, selectors.EVENT_READ)
-        deadline = time.monotonic() + self.turn_timeout
+        assert self._session_deadline is not None
+        turn_deadline = time.monotonic() + self.turn_timeout
+        deadline = min(turn_deadline, self._session_deadline)
         try:
             while True:
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
+                    if self._session_deadline <= turn_deadline:
+                        self._fail(
+                            f"session timed out after {self.session_timeout}s total "
+                            "(this turn was still waiting for a reply)"
+                        )
                     self._fail(f"turn timed out after {self.turn_timeout}s waiting for a reply")
                 if not sel.select(timeout=remaining):
                     continue

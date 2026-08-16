@@ -73,6 +73,7 @@ state -- see `core.advance_simulation`.
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass, field
 
 
@@ -185,12 +186,43 @@ class TurnReplay:
 
     answers: list[str] = field(default_factory=list)
     call_index: int = field(default=0, init=False)
+    # Absolute time.monotonic() value "keyed_subagent" must stop answering
+    # inline by, for *this* advance_simulation call -- set fresh by
+    # core._run_event_loop on every call (including a resumed one), not
+    # carried over from a prior call's own deadline. None for any other
+    # responder, which never reads it. See resolve()'s keyed_subagent
+    # branch for why this exists at all.
+    deadline: float | None = None
 
     async def resolve(self, request: JudgmentRequest, *, responder: str) -> str:
         i, self.call_index = self.call_index, self.call_index + 1
         if i < len(self.answers):
             return self.answers[i]
         if responder == "keyed_subagent":
+            # Budget check first: keyed_subagent never pauses on its own,
+            # so with nothing bounding it, a single advance_simulation call
+            # can chain arbitrarily many DeepSeek round-trips together
+            # (confirmed live: 31 in one call) and blow past Claude Code's
+            # own ~60s per-MCP-tool-call timeout, which aborts the whole
+            # call and leaves the host with nothing to show for it. Past
+            # the budget, check in with the host instead of placing
+            # another call -- same NeedsExternalInput/MRTR pause host
+            # answers already resume through, just host-initiated instead
+            # of judgment-initiated. This call_index's own answer is left
+            # unrecorded (nothing appended to self.answers), so resuming
+            # re-asks this exact judgment call fresh, with a new budget.
+            if self.deadline is not None and time.monotonic() >= self.deadline:
+                checkin_prompt = (
+                    "The \"keyed_subagent\" responder has reached its time budget "
+                    "for this advance_simulation call without needing your input on "
+                    "anything -- it's been answering judgment calls on its own. "
+                    f"{self.call_index - 1} judgment call(s) already answered this way "
+                    "so far this call (already reflected in the registry). Call "
+                    "advance_simulation again with the same resume_token to keep the "
+                    "simulation running from exactly where it left off, or stop here "
+                    "if this is a reasonable checkpoint."
+                )
+                raise NeedsExternalInput(prompt=checkin_prompt, responder="host")
             # No NeedsExternalInput here -- nothing external to wait on.
             # Framed the same way "host" is ("decide it yourself, don't
             # wait for input") since that instruction is about how the

@@ -40,6 +40,7 @@ from story_simulator.config import (
     MANIFEST_DIR,
     WORLD_FILE_ID,
     event_responder,
+    keyed_subagent_time_budget_seconds,
     registry_schema_name,
     registry_url,
     resolve_database_dsn,
@@ -911,6 +912,17 @@ async def _run_event_loop(
     if resume_alias is not None:
         assert replay is not None
 
+    # Computed once per call (fresh or resumed), not per event/TurnReplay:
+    # the constraint this bounds -- Claude Code's own per-MCP-tool-call
+    # timeout -- applies to the whole advance_simulation invocation, not
+    # to any one event within it. A resumed replay's own deadline (set by
+    # some earlier, now-expired call) is deliberately overwritten here,
+    # not preserved -- each call gets its own fresh clock. See
+    # TurnReplay.deadline / resolve()'s keyed_subagent branch.
+    deadline = time.monotonic() + keyed_subagent_time_budget_seconds()
+    if replay is not None:
+        replay.deadline = deadline
+
     alias = resume_alias
     while True:
         if alias is None:
@@ -920,7 +932,7 @@ async def _run_event_loop(
             if not is_event_valid(registrar, alias):
                 alias = None
                 continue
-            replay = TurnReplay(answers=[])
+            replay = TurnReplay(answers=[], deadline=deadline)
         try:
             await process_event(registrar, alias, replay, session)
         except NeedsExternalInput as e:

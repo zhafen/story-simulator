@@ -30,6 +30,7 @@ component alongside a PASS is itself worth seeing.
 """
 
 import argparse
+import sys
 import tempfile
 from pathlib import Path
 
@@ -46,6 +47,30 @@ from test_human_validated import (
 
 REPO_ROOT = Path(__file__).parent.parent
 SCENARIO_DIR = REPO_ROOT / "tests" / "data" / "scenarios" / "location_write_isolated"
+
+# scripts/ isn't a package (no __init__.py, deliberately -- it's a
+# directory of standalone CLI scripts, see scripts/check-submodule-
+# pointers.sh), so this is a plain sys.path addition rather than a normal
+# import.
+sys.path.insert(0, str(REPO_ROOT / "scripts"))
+from get_usage import get_usage  # noqa: E402
+
+
+def _snapshot_usage(label: str) -> dict | None:
+    """Best-effort /usage snapshot -- see scripts/get_usage.py.
+
+    Usage tracking is auxiliary instrumentation, not something a test run's
+    success should ever hinge on: it spawns a whole nested interactive
+    claude session, which can fail for reasons that have nothing to do with
+    whether the harness itself works (no claude CLI, no PTY in this
+    environment, a slow/absent MCP handshake, ...). Any failure here is
+    swallowed and reported, not raised -- the reps loop always runs either way.
+    """
+    try:
+        return get_usage()
+    except Exception as exc:  # noqa: BLE001 -- deliberately broad, see docstring
+        print(f"[usage] could not capture usage snapshot ({label}): {exc}", file=sys.stderr)
+        return None
 
 # The scenario seed's own starting components (object, description) plus
 # `location`, the one thing a correct run is supposed to add to car_a --
@@ -134,6 +159,8 @@ def main() -> None:
     parser.add_argument("--model", default=LOW_QUALITY_MODEL, help="claude -p --model value, e.g. claude-sonnet-5")
     args = parser.parse_args()
 
+    usage_before = _snapshot_usage("before")
+
     successes = 0
     failures: list[str] = []
     misfire_tally: Counter[str] = Counter()
@@ -173,6 +200,25 @@ def main() -> None:
         print("\nFailure narrations:")
         for n in failures:
             print(f"  - {n!r}")
+
+    usage_after = _snapshot_usage("after")
+    if usage_before is not None and usage_after is not None:
+        session_delta = usage_after["session_pct_used"] - usage_before["session_pct_used"]
+        week_delta = usage_after["week_pct_used"] - usage_before["week_pct_used"]
+        print(
+            f"\n[{args.approach}/{args.model}] usage before: "
+            f"session {usage_before['session_pct_used']}%, week {usage_before['week_pct_used']}%"
+        )
+        print(
+            f"[{args.approach}/{args.model}] usage after:  "
+            f"session {usage_after['session_pct_used']}%, week {usage_after['week_pct_used']}%"
+        )
+        print(
+            f"[{args.approach}/{args.model}] usage delta:  "
+            f"session +{session_delta}pp, week +{week_delta}pp over {args.reps} reps"
+        )
+    else:
+        print(f"\n[{args.approach}/{args.model}] usage tracking unavailable for this run (see warnings above)")
 
 
 if __name__ == "__main__":

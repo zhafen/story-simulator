@@ -146,9 +146,20 @@ def run_one(approach: str, tmp_dir: Path, model: str = LOW_QUALITY_MODEL) -> tup
             f"Use start_world with save_dir={save_dir} and scenario_dir={SCENARIO_DIR} "
             f"to open a story-simulator world. Then {instruction}"
         )
-        r = _load_registrar(save_dir, narration)
-        success = _parked_at(_location(r, "car_a"), "parking_spot_1")
-        misfires = _unexpected_components(r, "car_a", _EXPECTED_CAR_A_COMPONENTS)
+        try:
+            r = _load_registrar(save_dir, narration)
+            success = _parked_at(_location(r, "car_a"), "parking_spot_1")
+            misfires = _unexpected_components(r, "car_a", _EXPECTED_CAR_A_COMPONENTS)
+        except AssertionError as exc:
+            # _load_registrar's own assertion: the model never actually
+            # called start_world (confirmed happening live -- a weak model
+            # can narrate a plausible-sounding scene, or wander off into an
+            # unrelated tangent, without calling it). This is itself a rep
+            # outcome to count and report, not a harness bug -- letting it
+            # propagate would abort the whole batch on rep 1's bad luck.
+            success = False
+            misfires = set()
+            narration = f"{narration}\n\n[harness: {exc}]"
         return success, narration, session.usage_summary(), misfires
 
 
@@ -170,7 +181,29 @@ def main() -> None:
     total_duration_api_ms = 0
     for i in range(args.reps):
         with tempfile.TemporaryDirectory() as tmp:
-            ok, narration, usage, misfires = run_one(args.approach, Path(tmp), model=args.model)
+            try:
+                ok, narration, usage, misfires = run_one(args.approach, Path(tmp), model=args.model)
+            except KeyboardInterrupt:
+                raise
+            except BaseException as exc:
+                # Anything run_one doesn't already turn into a normal (False,
+                # ...) result -- e.g. HeadlessSession's own timeout/crash
+                # handling, which raises via pytest.fail (a BaseException,
+                # not Exception -- a plain `except Exception` here would
+                # miss it). One rep's crash still shouldn't cost the other
+                # 9; usage for this rep is unknown, so it's counted as zero
+                # rather than guessed.
+                ok = False
+                narration = f"[harness error: {exc!r}]"
+                usage = {
+                    "total_cost_usd": 0.0,
+                    "input_tokens": 0,
+                    "output_tokens": 0,
+                    "cache_read_input_tokens": 0,
+                    "cache_creation_input_tokens": 0,
+                    "duration_api_ms": 0,
+                }
+                misfires = set()
             successes += ok
             total_cost_usd += usage["total_cost_usd"]
             total_input_tokens += usage["input_tokens"]

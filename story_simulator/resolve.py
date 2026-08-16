@@ -19,15 +19,23 @@ Same request shape (`JudgmentRequest`) at every call site, dispatched by
   `resolve()` accepts, kept for whichever character-facing code eventually
   returns from `shelved/` (see docs/architecture.md) and needs it again,
   but nothing currently calls this with "human".
+- "keyed_subagent" -- answered directly, in-process, via
+  `story_simulator.keyed_subagent.call_keyed_subagent` and
+  `config.keyed_subagent_model()` (LiteLLM, DeepSeek by default -- see
+  #89). No MCP round-trip: never raises `NeedsExternalInput`, so a turn
+  using it never pauses for this call the way "human"/"subagent"/"host"
+  always do. Opt in via `STORY_SIM_RESPONDER=keyed_subagent`.
 
-A fourth responder, "keyed_subagent" (a nested specialist call on
+A responder of this same name (a nested specialist call on
 story-simulator's own API key, no MCP round-trip, via
 `TurnReplay.resolve_preferring_keyed_subagent`) was removed along with its
 only caller (`get_character_input`) and its dependency on
 `story_simulator.agents` (now shelved too) -- see git history, and PR #42
 ("Rename responders and add isolated subagent delegation option") for the
-fuller four-way design this is a subset of, to bring it back alongside the
-character/npc module it served.
+fuller four-way design this is a subset of. The version above is a
+narrower revival: no `AgentSpec`/YAML config, no NPC/character framing,
+just a direct LiteLLM call -- see `story_simulator.keyed_subagent`'s own
+docstring.
 
 "human"/"subagent"/"host" are reached by raising `NeedsExternalInput`, resumed
 through MRTR (Multi Round-Trip Requests, MCP spec 2026-07-28) rather than
@@ -35,7 +43,9 @@ MCP sampling. Sampling would have offered a third option -- the connected
 client's own model/provider, not ours -- but it's gone: deprecated
 protocol-wide by that same spec revision, not just unsupported by this
 project's actual client (Claude Code CLI 2.1.222 declared no `sampling`
-capability, confirmed live before the deprecation).
+capability, confirmed live before the deprecation). "keyed_subagent" is
+the odd one out here: it answers inline, in the same `await`, without
+ever raising -- there is no host to round-trip to for this responder.
 
 Raising is what lets a judgment call reach either from any nesting depth
 without every intervening function having to be a generator (`yield from`
@@ -180,6 +190,23 @@ class TurnReplay:
         i, self.call_index = self.call_index, self.call_index + 1
         if i < len(self.answers):
             return self.answers[i]
+        if responder == "keyed_subagent":
+            # No NeedsExternalInput here -- nothing external to wait on.
+            # Framed the same way "host" is ("decide it yourself, don't
+            # wait for input") since that instruction is about how the
+            # *model* answering should behave, not about who's asking; a
+            # directly-called subagent needs exactly the same instruction
+            # an inline host would. Appended to self.answers immediately
+            # (matching what a resumed host/subagent answer would look
+            # like at this same index) so that if a *later* judgment call
+            # in this same turn pauses and gets resumed, this call replays
+            # from the cached answer instead of hitting the model again --
+            # see _wrap_loop_result's `_encode_token(alias, replay.answers)`.
+            from story_simulator.keyed_subagent import call_keyed_subagent
+
+            answer = await call_keyed_subagent(_frame_for_responder(request, "host"))
+            self.answers.append(answer)
+            return answer
         if responder in ("human", "subagent", "host"):
             raise NeedsExternalInput(prompt=_frame_for_responder(request, responder), responder=responder)
         raise ValueError(f"unknown responder {responder!r}")

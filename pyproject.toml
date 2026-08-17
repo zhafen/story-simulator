@@ -10,7 +10,6 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "iacs",
-    "litellm>=1.97.0",
     "matplotlib>=3.11.0",
     "mcp>=1.28.1",
     "psycopg[binary]>=3.2",
@@ -19,10 +18,8 @@ dependencies = [
     "pyyaml>=6.0.3",
     "tabulate>=0.10.0",
 ]
-# litellm: the "keyed_subagent" event_responder's model call (see
-# story_simulator/keyed_subagent.py, story_simulator/resolve.py) --
-# previously only used by shelved/story_simulator/agents.py and removed
-# alongside it; back for a narrower, non-character-module reason now.
+# litellm (used only by shelved/story_simulator/agents.py -- see
+# shelved/README.md) removed pending that code's return.
 
 [project.scripts]
 story-simulator-mcp = "story_simulator.mcp_server:main"

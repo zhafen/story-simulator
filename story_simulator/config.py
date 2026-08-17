@@ -99,25 +99,16 @@ def resolve_anthropic_api_key() -> str | None:
 # optional-module toggle) removed along with the code it gated -- see
 # docs/architecture.md and git history for what it looked like.
 
-_EVENT_RESPONDERS = ("host", "subagent", "keyed_subagent")
-
-# LiteLLM model string `keyed_subagent_model()` falls back to -- any
-# provider LiteLLM supports, not just DeepSeek, but DeepSeek is the
-# current pick per #89's cost/capability investigation (see
-# docs/manifest/history.yaml).
-DEFAULT_KEYED_SUBAGENT_MODEL = "deepseek/deepseek-chat"
+_EVENT_RESPONDERS = ("host", "subagent")
 
 
 def event_responder() -> str:
     """Which responder `core.resolve_event` should ask each time a base
     event's end_time is reached: "host" (default -- the connected agent
-    decides inline, from its own accumulated context), "subagent" (ask it
-    to delegate to its own isolated subagent mechanism instead, e.g. Claude
-    Code's Agent/Task tool), or "keyed_subagent" (answered directly,
-    in-process, via `keyed_subagent_model()` and story-simulator's own API
-    key -- no MCP round-trip to the host at all) -- see
-    `story_simulator.resolve`'s module docstring for what each buys and
-    "subagent"'s one known gap.
+    decides inline, from its own accumulated context) or "subagent" (ask it to
+    delegate to its own isolated subagent mechanism instead, e.g. Claude
+    Code's Agent/Task tool -- see `story_simulator.resolve`'s module
+    docstring for what that buys and its one known gap).
 
     Read from STORY_SIM_RESPONDER rather than a `start_world`
     argument -- a deployment-wide choice about how its connected agent
@@ -131,15 +122,3 @@ def event_responder() -> str:
     if value not in _EVENT_RESPONDERS:
         raise ValueError(f"STORY_SIM_RESPONDER must be one of {_EVENT_RESPONDERS}, got {value!r}")
     return value
-
-
-def keyed_subagent_model() -> str:
-    """Which LiteLLM model string the "keyed_subagent" responder calls
-    directly (see `story_simulator.resolve`/`story_simulator.keyed_subagent`).
-    Read from STORY_SIM_SUBAGENT_MODEL so swapping models (DeepSeek, a
-    Groq-hosted Llama, ...) is a config change, not a code change; the
-    corresponding API key is resolved by LiteLLM itself from whichever
-    env var that provider's LiteLLM integration expects (e.g.
-    DEEPSEEK_API_KEY), not from anything in this module.
-    """
-    return os.environ.get("STORY_SIM_SUBAGENT_MODEL", DEFAULT_KEYED_SUBAGENT_MODEL)

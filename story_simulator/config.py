@@ -107,16 +107,6 @@ _EVENT_RESPONDERS = ("host", "subagent", "keyed_subagent")
 # docs/manifest/history.yaml).
 DEFAULT_KEYED_SUBAGENT_MODEL = "deepseek/deepseek-chat"
 
-# Wall-clock seconds `keyed_subagent_time_budget_seconds()` falls back to.
-# Deliberately well under Claude Code's own ~60s per-MCP-tool-call
-# timeout -- confirmed live: with no budget at all, a single
-# advance_simulation call chained 31 DeepSeek round-trips together (since
-# "keyed_subagent" never pauses/returns control the way "host"/"subagent"
-# do) and blew past it, timing out and leaving the host stuck. 30s leaves
-# margin for MCP transit overhead and whatever call is still in flight
-# when the budget is checked.
-DEFAULT_KEYED_SUBAGENT_TIME_BUDGET_SECONDS = 30.0
-
 
 def event_responder() -> str:
     """Which responder `core.resolve_event` should ask each time a base
@@ -153,17 +143,3 @@ def keyed_subagent_model() -> str:
     DEEPSEEK_API_KEY), not from anything in this module.
     """
     return os.environ.get("STORY_SIM_SUBAGENT_MODEL", DEFAULT_KEYED_SUBAGENT_MODEL)
-
-
-def keyed_subagent_time_budget_seconds() -> float:
-    """How many wall-clock seconds the "keyed_subagent" responder may keep
-    answering judgment calls inline within one `advance_simulation` call
-    before checking in with the host instead of continuing unattended --
-    see `story_simulator.resolve.TurnReplay.resolve`. Read from
-    STORY_SIM_SUBAGENT_TIME_BUDGET_SECONDS.
-    """
-    return float(
-        os.environ.get(
-            "STORY_SIM_SUBAGENT_TIME_BUDGET_SECONDS", DEFAULT_KEYED_SUBAGENT_TIME_BUDGET_SECONDS
-        )
-    )

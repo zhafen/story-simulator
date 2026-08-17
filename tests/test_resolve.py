@@ -7,7 +7,6 @@ for that kind of comparison.
 """
 
 import asyncio
-import time
 
 import pytest
 
@@ -65,51 +64,6 @@ def test_keyed_subagent_answer_is_cached_into_replay_answers(monkeypatch):
     # must still be sitting in replay.answers at this point, ready to be
     # encoded into the resume token.
     assert replay.answers == ["resolved via deepseek"]
-
-
-def test_keyed_subagent_checks_in_once_deadline_passes(monkeypatch):
-    """See TurnReplay.deadline / resolve()'s keyed_subagent branch: past
-    the time budget, keyed_subagent must check in with the host instead of
-    placing another (possibly slow) model call -- confirmed live that with
-    no budget at all, one advance_simulation call chained 31 DeepSeek
-    round-trips and blew past Claude Code's own ~60s MCP tool-call
-    timeout."""
-    called = False
-
-    async def fake_call_keyed_subagent(prompt: str) -> str:
-        nonlocal called
-        called = True
-        return "should not be reached"
-
-    monkeypatch.setattr(
-        "story_simulator.keyed_subagent.call_keyed_subagent", fake_call_keyed_subagent
-    )
-
-    replay = TurnReplay(answers=[], deadline=time.monotonic() - 1)  # already expired
-    with pytest.raises(NeedsExternalInput) as exc_info:
-        asyncio.run(
-            replay.resolve(JudgmentRequest(prompt="what happened?"), responder="keyed_subagent")
-        )
-    assert exc_info.value.responder == "host"
-    assert not called
-    # This call_index's own answer must be left unrecorded so a resume
-    # re-asks it fresh (with a new budget), not from a cached non-answer.
-    assert replay.answers == []
-
-
-def test_keyed_subagent_answers_normally_before_deadline(monkeypatch):
-    async def fake_call_keyed_subagent(prompt: str) -> str:
-        return "still within budget"
-
-    monkeypatch.setattr(
-        "story_simulator.keyed_subagent.call_keyed_subagent", fake_call_keyed_subagent
-    )
-
-    replay = TurnReplay(answers=[], deadline=time.monotonic() + 60)
-    result = asyncio.run(
-        replay.resolve(JudgmentRequest(prompt="what happened?"), responder="keyed_subagent")
-    )
-    assert result == "still within budget"
 
 
 def test_unknown_responder_raises_value_error():

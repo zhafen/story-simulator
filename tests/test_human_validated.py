@@ -104,7 +104,7 @@ class HeadlessSession:
         *,
         model: str = LOW_QUALITY_MODEL,
         turn_timeout: float = 240,
-        session_timeout: float = 300,
+        session_timeout: float = 120,
     ):
         self.save_dir = save_dir
         self.model = model
@@ -116,9 +116,19 @@ class HeadlessSession:
         # longer than any single turn_timeout would individually catch,
         # since each successive send_turn call gets its own fresh budget --
         # this is the backstop for a run that's technically still replying
-        # within each turn_timeout but never doing anything useful. 300s is
-        # deliberately generous, not tuned tight -- a first backstop, not a
-        # precise budget.
+        # within each turn_timeout but never doing anything useful.
+        #
+        # Deliberately tight (2min), not the original 5min-generous first
+        # cut -- until confidence is built back up in this harness (the
+        # session-identity leak, the keyed_subagent chaining, and the
+        # _fail deadlock were all only found by watching runs go
+        # unexpectedly long), fail fast and investigate rather than wait
+        # out a long budget on the chance it's still making progress.
+        # Loosen once that confidence exists. Below turn_timeout's own
+        # default on purpose right now, which makes session_timeout the
+        # practically-binding one of the two in most cases -- turn_timeout
+        # still matters independently for any caller that raises
+        # session_timeout back up without also raising turn_timeout.
         self.session_timeout = session_timeout
         self._session_deadline: float | None = None
         self.proc: subprocess.Popen | None = None
@@ -283,9 +293,19 @@ class HeadlessSession:
         }
 
     def _fail(self, message: str) -> None:
-        stderr = self.proc.stderr.read() if self.proc and self.proc.stderr else ""
-        message = f"{message}\ntrace: {self.trace_path}\nstderr: {stderr}"
+        # close() first, not stderr.read() first: read() blocks until EOF,
+        # which only arrives once the subprocess exits -- but the process
+        # is still alive at this point (that's the whole reason _fail was
+        # called), and nothing kills it until close() runs. Reading before
+        # closing deadlocks forever, silently swallowing every timeout this
+        # method exists to enforce -- confirmed live: session_timeout never
+        # once fired, the process just sat there indefinitely instead.
+        # close() sets self.proc to None, so the proc handle is captured
+        # first for the stderr read afterward.
+        proc = self.proc
         self.close()
+        stderr = proc.stderr.read() if proc and proc.stderr else ""
+        message = f"{message}\ntrace: {self.trace_path}\nstderr: {stderr}"
         pytest.fail(message)
 
     def close(self) -> None:

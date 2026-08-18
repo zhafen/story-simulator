@@ -9,6 +9,14 @@ prompts appear (first-run onboarding, workspace trust, MCP-server-enable),
 sends `/usage`, and parses the two numbers that matter for comparing usage
 before/after a test batch: current-session % used and current-week % used.
 
+This whole PTY-driving approach is a workaround for the lack of a direct,
+scriptable way to read this data (a `claude usage`-style CLI flag or
+non-interactive API, not `/usage`'s TUI-only rendering). If/when such a
+feature ships, this script should be deprecated in favor of it -- the PTY
+approach is inherently fragile (depends on `/usage`'s exact screen text
+and this container's onboarding-prompt sequence, both of which can change
+out from under it).
+
 Onboarding wizard: this container's `~/.claude.json` has never been through
 the interactive TUI, so `theme`/`hasCompletedOnboarding` are unset and a
 fresh interactive launch shows a theme picker followed by a login-method

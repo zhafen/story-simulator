@@ -20,7 +20,6 @@ __iacs__ = {
 }
 
 import base64
-import difflib
 import json
 import shutil
 import subprocess
@@ -34,6 +33,7 @@ import psycopg
 import psycopg.sql
 import yaml
 from iacs.registrar import Registrar
+from iacs.validate_write import CONSOLIDATION_GUIDANCE
 
 from story_simulator.config import (
     DEFAULT_WORLD_DIR,
@@ -403,254 +403,40 @@ def _export_world_yaml(registrar: Registrar, save_dir: Path) -> None:
             Path(path).unlink(missing_ok=True)
 
 
-def _find_malformed_entities(yaml_string: str) -> list[str]:
-    """Scan for entities whose components aren't given as a YAML list --
-    the shape iacs's EC parser requires. A component written as a bare
-    mapping under an alias (`alias:\\n    component:\\n        value: x`
-    instead of the required list form, `alias:\\n    - component:\\n
-    value: x`) is silently accepted by `registrar.update()` -- no error,
-    no `invalid_field` row -- yet merges nothing at all, confirmed
-    happening live: a responder had no signal its own write never took
-    effect (an event's own lifecycle transition never actually recorded,
-    so the event loop kept re-popping the same event forever).
-    `_update_registry_and_sync` raises on whatever this finds, before
-    ever merging, so that mistake surfaces as an ordinary tool error the
-    caller can react to instead.
-
-    A dict value is ambiguous on its own: it's either a malformed
-    component list (the mistake above) or a legitimate nested-entity dict
-    (each key its own child entity, e.g.
-    tests/data/scenarios/move/scenario.yaml's `journaling_desk`, whose
-    sub-keys are themselves proper component lists). Distinguished here
-    by recursing only when *every* value at this level is itself a list
-    or dict -- a bare scalar anywhere means this level was meant as a
-    component list, not further nesting. `"data"` is skipped everywhere,
-    matching EC's own freeform-notes convention (never itself a component
-    list).
-
-    Best-effort: a parse failure or an unexpected top-level shape just
-    finds nothing rather than raising here -- `registrar.update()`'s own
-    error handling is authoritative for those, this only adds a check for
-    the one silent-failure mode it has none for.
-    """
-    try:
-        parsed = yaml.safe_load(yaml_string)
-    except yaml.YAMLError:
-        return []
-    if not isinstance(parsed, dict):
-        return []
-
-    malformed: list[str] = []
-
-    def check(path: str, value) -> None:
-        if isinstance(value, list):
-            return
-        if isinstance(value, dict) and value and all(
-            isinstance(v, (list, dict)) for k, v in value.items() if k != "data"
-        ):
-            for key, sub_value in value.items():
-                if key != "data":
-                    check(f"{path}.{key}", sub_value)
-            return
-        malformed.append(path)
-
-    for alias, value in parsed.items():
-        if alias != "data":
-            check(alias, value)
-    return malformed
-
-
-def _referenced_component_types(parsed: dict) -> set[str]:
-    """Collect every component-type name referenced anywhere in `parsed`
-    (already-`yaml.safe_load`-ed entity-first YAML) -- the component-list
-    keys/bare-string markers at whatever nesting depth they actually
-    appear, not the entity-path segments above them.
-
-    Mirrors `_find_malformed_entities`'s own traversal: recurse through
-    dict-of-dicts-or-lists (entity nesting), and once an actual list is
-    reached (a component list), that's where real component-type names
-    live -- either a bare string marker (e.g. `component_type`) or the
-    single key of a one-key dict (e.g. `{"location": {"value": ...}}`).
-    Assumes `parsed` is already well-formed (no bare-mapping mistakes) --
-    call this only after `_find_malformed_entities` finds nothing.
-    """
-    types: set[str] = set()
-
-    def walk(value) -> None:
-        if isinstance(value, list):
-            for item in value:
-                if isinstance(item, str):
-                    types.add(item)
-                elif isinstance(item, dict):
-                    types.update(k for k in item if k != "data")
-            return
-        if isinstance(value, dict):
-            for key, sub_value in value.items():
-                if key != "data":
-                    walk(sub_value)
-
-    for alias, value in parsed.items():
-        if alias != "data":
-            walk(value)
-    return types
-
-
-def _component_types_defined_inline(parsed: dict) -> set[str]:
-    """Names of component types being freshly declared in this same YAML
-    batch -- an entity named after the type itself, carrying a bare
-    `component_type` marker in its own component list, the same shape
-    manifest/builtins.yaml's own definitions use (see CLAUDE.md's "Define
-    a component type's schema..." section): `location:\n    -
-    description: ...\n    - component_type\n    - field: ...`.
-    """
-    defined: set[str] = set()
-    for alias, value in parsed.items():
-        if alias == "data" or not isinstance(value, list):
-            continue
-        if any(item == "component_type" for item in value):
-            defined.add(alias)
-    return defined
-
-
-def _find_component_named_as_nested_entity(yaml_string: str, known: set[str]) -> list[str]:
-    """Scan for an alias whose value is a dict (`_find_malformed_entities`'s
-    "legitimate nested-entity" shape) where one of that dict's own keys
-    names an already-known, real component type -- e.g.
-    `car_b:\n    location:\n        - value: x` (missing the leading `- `
-    that would make `location` a list item, i.e. a component attachment,
-    rather than a dict key, i.e. a nested child entity's own alias).
-    Confirmed live: iacs's parser reads this shape as "car_b has a nested
-    child entity named `location`", not "attach a `location` component to
-    car_b" -- structurally identical to a genuine nested entity (e.g.
-    tests/data/scenarios/move/scenario.yaml's journaling_desk/desk/journal),
-    so `_find_malformed_entities` doesn't, and structurally can't on shape
-    alone, catch it.
-
-    Mechanical, not semantic, like `_find_unknown_component_types`: a
-    nested child entity's alias coinciding with a real component type's
-    name is vanishingly unlikely to be intentional, so this flags every
-    such collision -- see docs/manifest/history.yaml: project_history.
-    nested_component_name_collision_check_added.
-
-    Only checks nesting one level below a top-level alias, matching the
-    one live mistake actually observed -- not a general recursive walk
-    like `_find_malformed_entities`'s own disambiguation, since a
-    collision at a deeper nesting level has no evidence behind it yet.
-    """
-    try:
-        parsed = yaml.safe_load(yaml_string)
-    except yaml.YAMLError:
-        return []
-    if not isinstance(parsed, dict):
-        return []
-
-    suspicious: list[str] = []
-    for alias, value in parsed.items():
-        if alias == "data" or not isinstance(value, dict):
-            continue
-        for key, sub_value in value.items():
-            if key != "data" and key in known and isinstance(sub_value, list):
-                suspicious.append(f"{alias}.{key}")
-    return suspicious
-
-
-def _find_unknown_component_types(yaml_string: str, known: set[str]) -> dict[str, list[str]]:
-    """Component types this write references that aren't in `known` and
-    aren't being defined inline (see `_component_types_defined_inline`) --
-    mapping each unknown name to its closest known matches, if any, so the
-    caller's own error message can suggest a likely-intended real name
-    instead of leaving the caller to guess again.
-
-    Best-effort like `_find_malformed_entities`: a parse failure or
-    unexpected top-level shape just finds nothing here too, since
-    `registrar.update()`'s own error handling is authoritative for those.
-
-    Deliberately mechanical, not semantic -- catches an invented name
-    (`parked_at`) that was never declared anywhere, but not a real,
-    already-declared type used for the wrong purpose (e.g. writing a
-    car's location under `todo` instead of `location` -- both are
-    genuine, known component types, so this check has nothing to object
-    to). See docs/manifest/history.yaml: project_history.
-    mechanical_component_type_validation_added for that scope decision.
-    """
-    try:
-        parsed = yaml.safe_load(yaml_string)
-    except yaml.YAMLError:
-        return {}
-    if not isinstance(parsed, dict):
-        return {}
-
-    referenced = _referenced_component_types(parsed)
-    defined_inline = _component_types_defined_inline(parsed)
-    unknown = referenced - known - defined_inline
-    if not unknown:
-        return {}
-    return {name: difflib.get_close_matches(name, known, n=3) for name in sorted(unknown)}
-
-
 def _validate_registry_write(registrar: Registrar, yaml_string: str) -> set[str]:
-    """The three checks a write must pass before it's safe to merge (or,
-    for the preview flow below, safe to show a confirm token for) --
-    raises on the first one that fails. Returns the set of component
-    types this write actually references, since both callers
-    (`_update_registry_and_sync` and `_preview_registry_write`) need it
-    and `_find_unknown_component_types` already computes it internally.
+    """The checks a write must pass before it's safe to merge (or, for the
+    preview flow below, safe to show a confirm token for) -- raises on
+    the first one that fails. Returns the set of component types this
+    write actually references, since both callers
+    (`_update_registry_and_sync` and `_preview_registry_write`) need it.
 
-    See `_find_malformed_entities` for the first check. The second,
-    `_find_component_named_as_nested_entity`, rejects a write where a
-    known component type's name appears as a nested dict key instead of
-    a component-list item -- a shape `_find_malformed_entities` can't
-    distinguish from legitimate entity nesting on structure alone. The
-    third, `_find_unknown_component_types`, rejects a write that
-    references a component type nothing has ever declared, unless that
-    same write also declares it (see `_component_types_defined_inline`)
-    -- a mechanical backstop against the recurring live-test bug where a
-    weak model invents a plausible but nonexistent component name
-    (`parked_at`, `parking_location`) instead of using the real,
-    already-declared one (`location`), independent of whether it ever
-    bothers to check first via view_entity/view_registry.
+    All the actual check logic now lives in iacs, generalized from what
+    this function used to hand-roll itself (see
+    docs/manifest/history.yaml: project_history.
+    validate_registry_write_checks_moved_to_iacs). The bare-mapping check
+    (a component given as a dict instead of a list) is
+    `iacs.dataflows.etl.load_yaml`'s own `_find_malformed_entities` --
+    private there since its only other caller is `registrar.update()`
+    itself, reused directly here rather than duplicated because the
+    preview flow below needs this same check without actually merging.
+    The other two (component-named-as-nested-entity, unknown component
+    type) are `registrar.validate_write`'s own job -- see its docstring
+    for what each rejects.
     """
-    malformed = _find_malformed_entities(yaml_string)
-    if malformed:
-        raise ValueError(
-            "Each entity's components must be a YAML list (a leading `- ` before each "
-            "component name), e.g. `alias:\n    - component:\n        value: x` -- a bare "
-            "mapping (`alias:\n    component:\n        value: x`) is silently ignored "
-            f"rather than merged. Malformed here: {', '.join(malformed)}."
-        )
-
-    known = set(registrar.registry.known_component_types)
-
-    nested = _find_component_named_as_nested_entity(yaml_string, known)
-    if nested:
-        raise ValueError(
-            "Found a real component type used as a nested dict key instead of a "
-            "component-list item, which iacs parses as a nested child entity, not a "
-            f"component attachment: {', '.join(nested)}. If you meant to attach that "
-            "component, use the list form instead, e.g. `alias:\n    - component:\n"
-            "        value: x` rather than `alias:\n    component:\n        - value: x`. "
-            "If you genuinely meant a nested child entity that happens to share a name "
-            "with a real component type, rename it to something unambiguous."
-        )
-
-    unknown = _find_unknown_component_types(yaml_string, known)
-    if unknown:
-        details = "; ".join(
-            f"{name!r} (did you mean {' or '.join(repr(c) for c in candidates)}?)"
-            if candidates
-            else f"{name!r} (no similar existing component type found)"
-            for name, candidates in unknown.items()
-        )
-        raise ValueError(
-            f"Unknown component type(s): {details}. Check view_entity/view_registry for "
-            "the real one before guessing a name. If this is genuinely a new component "
-            "type, define it in this same write: an entity named after the type itself, "
-            "with a `component_type` marker and a `field:` block describing each field "
-            "(see manifest/builtins.yaml for examples, e.g. `location`)."
-        )
+    from iacs.dataflows.etl.load_yaml import _find_malformed_entities
 
     parsed = yaml.safe_load(yaml_string)
-    return _referenced_component_types(parsed) if isinstance(parsed, dict) else set()
+    if isinstance(parsed, dict):
+        malformed = _find_malformed_entities(parsed)
+        if malformed:
+            raise ValueError(
+                "Each entity's components must be a YAML list (a leading `- ` before each "
+                "component name), e.g. `alias:\n    - component:\n        value: x` -- a bare "
+                "mapping (`alias:\n    component:\n        value: x`) is silently ignored "
+                f"rather than merged. Malformed here: {', '.join(malformed)}."
+            )
+
+    return registrar.validate_write(yaml_string)
 
 
 def _update_registry_and_sync(registrar: Registrar, save_dir: Path, yaml_string: str, session) -> None:
@@ -1070,7 +856,7 @@ def start_world(session, save_dir: str, scenario_dir: str | None = None) -> str:
     # its own (e.g. a resumed save whose player never happened to use
     # `location` before disconnecting). Without this, the first write to
     # an already-declared-but-not-yet-used type would look "unknown" to
-    # _find_unknown_component_types even though it's perfectly legitimate.
+    # registrar.validate_write even though it's perfectly legitimate.
     registrar.update(input_dirs=[str(MANIFEST_DIR)])
 
     _registrars[session] = registrar
@@ -1125,12 +911,17 @@ def view_entity(session, entity_id: str) -> str:
 def consolidate_review(session, limit: int = 20) -> str:
     """Show every component type recorded in this world so far, for the
     host to review and consolidate. Delegates straight to iacs's own
-    `Registrar.summarize_components` -- reinstated here as a
-    story-simulator tool for the same discoverability reason
+    `Registrar.summarize_components` for the data report -- reinstated
+    here as a story-simulator tool for the same discoverability reason
     view_registry/view_entity already are (docs/manifest/history.yaml:
     project_history.story_simulator_view_tools_reinstated_as_iacs_delegates)
     rather than relying on a connected host to find iacs-mcp's own copy
-    of this tool.
+    of this tool. The "please consolidate" instruction appended to the
+    report is `iacs.validate_write.CONSOLIDATION_GUIDANCE`, composed in
+    here rather than baked into `summarize_components` itself (iacs PR
+    #100: that method is a plain data report, not an agent-instruction
+    generator -- see this repo's docs/manifest/history.yaml:
+    project_history.validate_registry_write_checks_moved_to_iacs).
 
     #76's post-write alternative to #74's pre-write preview/confirm flow:
     instead of reviewing one write before committing it, review
@@ -1142,7 +933,7 @@ def consolidate_review(session, limit: int = 20) -> str:
         limit: Max sample rows shown per component type (default 20).
     """
     registrar = _get_registrar(session)
-    return registrar.summarize_components(limit)
+    return f"{registrar.summarize_components(limit)}\n\n{CONSOLIDATION_GUIDANCE}"
 
 
 def update_registry(

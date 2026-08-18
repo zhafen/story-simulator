@@ -28,8 +28,9 @@ from pathlib import Path
 
 import pytest
 
-from test_human_validated import HeadlessSession, _event_states, _load_registrar, _write_time
+from test_human_validated import HeadlessSession, _event_states, _load_registrar
 from emc2p.registrar import Registrar
+from emc2p.testing.registry_checks import write_time
 from story_simulator.core import safe_view_current
 
 REPO_ROOT = Path(__file__).parent.parent
@@ -108,7 +109,7 @@ def test_race_placement_recorded_in_order(tmp_path):
         assert states.get("car_c_trip") == "complete", states
         assert states.get("car_a_trip") == "complete", states
 
-        times = {alias: _write_time(r, "race_placement", alias) for alias in ("car_b", "car_c", "car_a")}
+        times = {alias: write_time(r, "race_placement", alias) for alias in ("car_b", "car_c", "car_a")}
         assert times["car_b"] == pytest.approx(1020), (
             f"car_b's race_placement should be recorded at car_b_trip's own end_time -- {times}, narration: {narration!r}"
         )

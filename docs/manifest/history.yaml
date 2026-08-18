@@ -446,3 +446,44 @@ project_history:
               _component_types_defined_inline,
               _find_component_named_as_nested_entity,
               _find_unknown_component_types) entirely.
+    headless_session_test_infra_moved_to_emc2p:
+        - description: >
+              HeadlessSession (the `claude -p` subprocess driver behind
+              tests/test_human_validated.py and every live test built on
+              it) and its registry-checking helpers
+              (_unexpected_components, _write_time) had nothing
+              story-simulator-specific in their actual mechanics -- only
+              in the MCP tool names/env vars/schema-naming scheme a
+              caller supplies. Moved the generic parts into
+              emc2p.testing (headless_session.HeadlessSession,
+              registry_checks.{schema_exists,unexpected_components,
+              write_time}), stacked on PR #60's iacs->emc2p migration so
+              emc2p's own test suite could gain a unit-tested "drive a
+              real MCP client, check what it wrote" toolkit any
+              emc2p-based project can reuse. story-simulator's own
+              tests/test_human_validated.py now defines a thin
+              HeadlessSession subclass fixing emc2p's generic constructor
+              to this repo's own .mcp.json/allowed-tools/env, so every
+              existing call site kept constructing it as
+              `HeadlessSession(save_dir)` unchanged. The HeadlessSession
+              timeout/kill unit tests (tests/test_headless_session.py)
+              moved wholesale to emc2p's own test suite along with the
+              class they test; story-simulator's copy was deleted rather
+              than kept as a duplicate.
+    write_stage_isolated_from_reasoning_for_race_and_parking:
+        - description: >
+              tests/test_write_accuracy.py: two new permanent live tests
+              extending tests/location_write_harness.py's write-isolation
+              idea (already covering a single car/single spot) to the
+              full multi-entity race and parking scenarios
+              tests/test_race_placement_live.py and
+              tests/test_parking_split_live.py already exercise --
+              handing the model the already-decided finishing
+              order/parking assignment directly in the instruction
+              instead of leaving it to derive from start_time/duration,
+              so a failure here isolates whether update_registry gets
+              called correctly (right component, right field, right
+              entity) independent of whether the model can also reason
+              out that same answer unaided. Single rep per test, same as
+              this suite's other live regressions -- not
+              location_write_harness.py's many-rep comparative mode.

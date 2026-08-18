@@ -30,8 +30,8 @@ from test_human_validated import (
     _load_registrar,
     _location,
     _parked_at,
-    _write_time,
 )
+from emc2p.testing.registry_checks import write_time
 
 REPO_ROOT = Path(__file__).parent.parent
 PARKING_SPLIT_SCENARIO_DIR = REPO_ROOT / "tests" / "data" / "scenarios" / "parking_split"
@@ -86,7 +86,7 @@ def test_parking_split_across_two_events_per_car(tmp_path):
         for alias in ("car_a_drive", "car_a_park", "car_b_drive", "car_b_park", "car_c_drive", "car_c_park"):
             assert states.get(alias) == "complete", (alias, states)
 
-        times = {alias: _write_time(r, "location", alias) for alias in ("car_b", "car_c", "car_a")}
+        times = {alias: write_time(r, "location", alias) for alias in ("car_b", "car_c", "car_a")}
         assert times["car_b"] == pytest.approx(1030), (
             f"car_b's location should be recorded at car_b_park's own end_time -- {times}, narration: {narration!r}"
         )

@@ -1,8 +1,11 @@
 """The "keyed_subagent" event responder: a nested specialist call on
-story-simulator's own API key, no MCP round-trip (see
+story-simulator's own API key, with its own registry tool access
+dispatched in-process rather than over MCP (see
 `story_simulator.resolve`'s module docstring for the full responder
-picture, and `story_simulator.config.event_responder`/
-`keyed_subagent_model` for how it's selected/configured).
+picture -- including the one case, its own time-budget check-in, where
+it does still round-trip to the host over MCP -- and
+`story_simulator.config.event_responder`/`keyed_subagent_model` for how
+it's selected/configured).
 
 The actual tool-calling loop (model completion, tool dispatch, iteration
 cap, usage logging) lives in `emc2p.agents.keyed_subagent` -- nothing

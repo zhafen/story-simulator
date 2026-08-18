@@ -125,9 +125,10 @@ def event_responder() -> str:
     to delegate to its own isolated subagent mechanism instead, e.g. Claude
     Code's Agent/Task tool), or "keyed_subagent" (answered directly,
     in-process, via `keyed_subagent_model()` and story-simulator's own API
-    key -- no MCP round-trip to the host at all) -- see
-    `story_simulator.resolve`'s module docstring for what each buys and
-    "subagent"'s one known gap.
+    key, with its own registry tool access dispatched in-process rather
+    than over MCP -- though it still checks in with the host over MCP once
+    its own time budget runs out) -- see `story_simulator.resolve`'s
+    module docstring for what each buys and "subagent"'s one known gap.
 
     Read from STORY_SIM_RESPONDER rather than a `start_world`
     argument -- a deployment-wide choice about how its connected agent

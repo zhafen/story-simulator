@@ -33,6 +33,7 @@ import psycopg
 import psycopg.sql
 import yaml
 from iacs.registrar import Registrar
+from iacs.validate_write import CONSOLIDATION_GUIDANCE
 
 from story_simulator.config import (
     DEFAULT_WORLD_DIR,
@@ -58,51 +59,36 @@ WORLD_HISTORY_DIRNAME = "world_history"
 _registrars: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
 _save_dirs: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
 # World time (seconds since world creation), per session -- set in
-# process_event from the popped entity's own `next_due` (see
-# advance_clock: "the popped entity's own next_due becomes 'now' for this
+# process_event from the popped event's own start_time + duration (see
+# advance_clock: "the popped event's own end_time becomes 'now' for this
 # turn") and read by _next_time_stamp for every write anything does while
-# resolving that entity's turn, so "how recent is this row" and "when is X
-# next due" share one clock instead of the wall clock. Session-scoped
-# process memory, not persisted -- a subprocess restart mid-turn resets it
-# to 0.0 until the next entity pop re-derives it, a known gap (see
-# docs/manifest/story-simulator.yaml: world_time_concept) accepted for now
-# in favor of not introducing a separate persisted clock entity.
+# resolving that event's turn, so "how recent is this row" and "when this
+# event's end_time was reached" share one clock instead of the wall clock.
+# Session-scoped process memory, not persisted -- a subprocess restart
+# mid-turn resets it to 0.0 until the next event pop re-derives it, a
+# known gap (see docs/manifest/story-simulator.yaml: world_time_concept)
+# accepted for now in favor of not introducing a separate persisted clock
+# entity.
 _current_world_time: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
 
-# It's how a base-module event tells the loop it's done (see
-# resolve_event's default=inf) when the next_due_in line is omitted,
-# not a mistake to fall back from with a hardcoded interval.
-_NEXT_DUE_IN_INSTRUCTION = (
-    "If there's more to happen, end your answer with a line formatted "
-    "exactly as `next_due_in: <seconds>` stating how long from now. Omit "
-    "that line entirely if this is finished and shouldn't happen again."
-)
 
-
-def merge_yaml_string(registrar: Registrar, yaml_text: str, time: float | None = None) -> None:
-    """Run the ETL pipeline on a raw YAML string and merge the result into `registrar`.
-
-    Same mechanism every write in this project uses.
-    `time`, when given, backfills the time_dimension field the merged data
-    declares (world time, seconds since world creation) so `Registry.view_current` can
-    resolve which of an entity's accumulated rows is current.
-    """
-    registrar.update(input_dirs=[str(MANIFEST_DIR)], yaml_strings={WORLD_FILE_ID: yaml_text}, time=time)
-
-
-def safe_view(registrar: Registrar, fields: str | list[str]) -> pd.DataFrame | None:
-    """Execute `registrar.view(fields)`, or None if that component type isn't loaded yet."""
+def safe_view(
+    registrar: Registrar, fields: str | list[str], aliases: str | list[str] | None = None
+) -> pd.DataFrame | None:
+    """Execute `registrar.view(fields, aliases)`, or None if that component type isn't loaded yet."""
     names = [fields] if isinstance(fields, str) else fields
     tables = {name.split(".", 1)[0] for name in names}
     if not tables <= set(registrar.registry.component_types):
         return None
     try:
-        return registrar.view(fields).execute()
+        return registrar.view(fields, aliases).execute()
     except KeyError:
         return None
 
 
-def safe_view_current(registrar: Registrar, fields: str | list[str]) -> pd.DataFrame | None:
+def safe_view_current(
+    registrar: Registrar, fields: str | list[str], aliases: str | list[str] | None = None
+) -> pd.DataFrame | None:
     """Like `safe_view`, but resolves each field's current row per entity.
 
     Uses `registrar.view_current`.  A component type with no `time_dimension` field
@@ -113,56 +99,56 @@ def safe_view_current(registrar: Registrar, fields: str | list[str]) -> pd.DataF
     if not tables <= set(registrar.registry.component_types):
         return None
     try:
-        return registrar.view_current(fields).execute()
+        return registrar.view_current(fields, aliases).execute()
     except KeyError:
         return None
 
 
 # ---------------------------------------------------------------------------
 # Event-driven simulation loop -- one function per box in the turn-anatomy
-# diagram (see docs/architecture.md). Schedule lives as registry data (a
-# `next_due` component), not an in-memory priority queue.
+# diagram (see docs/architecture.md). The schedule is `event` entities'
+# own start_time/duration (manifest/builtins.yaml's event_components),
+# not an in-memory priority queue and not a next_due component rescheduled
+# by code -- an event's timing is set once, either by whoever pre-plans it
+# or by a responder's own `plan_events` call, and never revised afterward.
 # ---------------------------------------------------------------------------
 
-
-def due_by_entity(registrar: Registrar) -> pd.DataFrame:
-    """One row per entity with a next_due of its own: `entity_id`, `due` (float).
-
-    Casts explicitly to `next_due.value: float`: a save with zero
-    `next_due` rows anywhere leaves the schema undeclared on a plain
-    `Registrar.load()` reconnect, so `get` falls back to a generic string
-    table that can't be compared against a float.
-    """
-    return (
-        registrar.get("next_due")
-        .group_by("entity_id")
-        .aggregate(due=lambda t: t["value"].cast("float64").max())
-        .execute()
-    )
+_TERMINAL_EVENT_STATES = ("complete", "interrupted")
 
 
 def pop_event(registrar: Registrar) -> str | None:
-    """Pop event box: whichever entity, of any kind, is due soonest, or
+    """Pop event box: whichever `event` entity's end_time comes soonest, or
     None if nothing is currently scheduled.
 
-    Logic is fully separated from any dependence on how the events are
-    resolved. An entity with no `next_due` row simply isn't a candidate
-    (not sorted as due immediately): an entity only enters the schedule
-    once something explicitly pushes it there (see `push_event`).
-    An entity most recently pushed at `due_at=inf` is treated as
-    permanently done, filtered out the same way -- see `resolve_event`.
+    An event only enters consideration once it has both start_time and
+    duration set -- one not yet scheduled (event_state "not started", or
+    no event_state row at all yet) isn't a candidate, the same way an
+    entity with no next_due row wasn't under the mechanism this replaces.
+    A terminal event (event_state "complete" or "interrupted") is filtered
+    out the same way an inf-valued next_due used to be. end_time is
+    start_time + duration, computed fresh from the registry every call --
+    there's no separate reschedule write to keep in sync with it, since an
+    event's own timing isn't revised once set (see this section's own
+    docstring).
 
     A plain read, not a destructive dequeue -- `story_simulator.resolve`'s
     replay-from-the-top mechanism depends on calling this again and again
     being safe.
     """
-    if "next_due" not in registrar.registry.component_types:
+    if "event" not in registrar.registry.component_types:
         return None
-    due_df = registrar.view_current("next_due.value").execute()
-    due_df = due_df[due_df["next_due.value"] < float("inf")]
-    if due_df.empty:
+    events = registrar.view_current(["event.start_time", "event.duration"]).execute()
+    events = events.dropna(subset=["event.start_time", "event.duration"])
+    if events.empty:
         return None
-    return due_df.sort_values("next_due.value").iloc[0]["entity_id.alias"]
+    states = safe_view_current(registrar, "event_state.value")
+    if states is not None:
+        terminal_ids = set(states[states["event_state.value"].isin(_TERMINAL_EVENT_STATES)]["entity_id"])
+        events = events[~events["entity_id"].isin(terminal_ids)]
+    if events.empty:
+        return None
+    end_time = events["event.start_time"] + events["event.duration"]
+    return events.assign(_end_time=end_time).sort_values("_end_time").iloc[0]["entity_id.alias"]
 
 
 def is_event_valid(registrar: Registrar, alias: str) -> bool:
@@ -177,45 +163,22 @@ def is_event_valid(registrar: Registrar, alias: str) -> bool:
 
 
 def advance_clock(registrar: Registrar, alias: str) -> float:
-    """Advance clock box: the popped entity's own `next_due` becomes "now" for this turn.
+    """Advance clock box: the popped event's own start_time + duration --
+    its end_time, the moment it actually resolves, not when it started --
+    becomes "now" for this turn.
 
-    No separate persisted global clock -- the popped event's own timestamp
+    No separate persisted global clock -- the popped event's own timing
     is the only notion of "current time" needed today.
     """
     entity_id = registrar.get_entity_id(alias)
     if entity_id is None:
         return 0.0
-    due_df = due_by_entity(registrar)
-    match = due_df[due_df["entity_id"] == entity_id]
-    return float(match.iloc[0]["due"]) if not match.empty else 0.0
-
-
-def predict_next_event(registrar: Registrar, alias: str, next_due_in: float) -> float:
-    """Predict next event / Predict next box: compute when `alias` should next be due.
-
-    Named for what the result actually is -- the event `alias`'s current
-    resolution causes to happen next -- rather than the more generic
-    "predict an event" `predict_event` used to read as.
-
-    Serves both call sites (initial per-entity setup and the
-    post-`Process event` reschedule) -- same computation either way.
-    Pure: doesn't write anything itself.
-    """
-    now = advance_clock(registrar, alias)
-    return now + next_due_in
-
-
-def push_event(registrar: Registrar, alias: str, due_at: float, time: float | None = None) -> None:
-    """Push to queue / Push events box: commit `alias`'s next_due to the registry.
-
-    Writing `next_due` IS "pushing to the queue" -- there's no separate
-    in-memory priority queue; `pop_event`'s live registry read *is* the
-    queue. `time` should get the same world-time stamp every other
-    time_dimension'd write uses, since `next_due.time` needs it to resolve
-    which row is current for an entity rescheduled more than once.
-    """
-    data = {f"{alias}_next_due": [{"same_as": {"value": alias}}, {"next_due": {"value": due_at}}]}
-    merge_yaml_string(registrar, yaml.safe_dump(data, sort_keys=False), time=time)
+    events = registrar.view_current(["event.start_time", "event.duration"]).execute()
+    match = events[events["entity_id"] == entity_id]
+    if match.empty:
+        return 0.0
+    row = match.iloc[0]
+    return float(row["event.start_time"]) + float(row["event.duration"])
 
 
 # ---------------------------------------------------------------------------
@@ -241,12 +204,12 @@ def _next_time_stamp(session) -> float:
     current in-fiction "now" (seconds since world creation).
 
     Reads `_current_world_time`, set in `process_event` from the popped
-    entity's own `next_due` (see `advance_clock`) -- every write made
-    while resolving one entity's turn shares that same "now", the same
-    world-time axis `next_due.value` itself uses, rather than a wall-clock
-    substitute. Falls back to 0.0 if nothing has been popped yet for this
-    session (e.g. a stray `update_registry` call before `advance_simulation`
-    is ever run).
+    event's own start_time + duration (see `advance_clock`) -- every write
+    made while resolving one event's turn shares that same "now", the
+    same world-time axis `event.start_time`/`event_state.time`/`outcome`
+    writes all use, rather than a wall-clock substitute. Falls back to 0.0
+    if nothing has been popped yet for this session (e.g. a stray
+    `update_registry` call before `advance_simulation` is ever run).
 
     Two writes at the same world time -- several update_registry calls
     resolving one turn, or any number of stray calls before the first event
@@ -402,43 +365,27 @@ def _ensure_postgres_schema(save_dir: Path) -> None:
 def _export_world_yaml(registrar: Registrar, save_dir: Path) -> None:
     """Re-export the registry's state to `save_dir`'s `world/`/`world_history/` dirs.
 
-    A straight, mechanical round-trip (`Registrar.export_manifest`) -- not
-    the old `IacsArchivist`'s LLM-driven read/write loop, removed along with
-    `EnsembleWorld`/`Interpreter` in the MCP rebuild (see
+    A straight, mechanical round-trip (`Registrar.export_manifest`), run
+    after every registry write so a save's own YAML reads as a live
+    mirror of the registry rather than frozen turn-zero seed data. See
     docs/manifest/history.yaml: project_history.turn_pipeline_removed and
-    .world_yaml_sync_reverses_old_archivist_design). Runs after every
-    registry write so a save's own YAML stops being frozen turn-zero seed
-    data and instead reads as a live mirror of the registry, which stays the
-    actual source of truth.
+    .world_yaml_sync_reverses_old_archivist_design for why this replaced
+    the old LLM-driven Archivist read/write loop.
 
     Writes to two directories, not one:
-    - `world/`: current state (the default, collapsed export -- a
-      time_dimension'd component type like `description`/`state`/`position`
-      shows only its current row per entity, not every historical
-      restatement).
-    - `world_history/`: the same content, uncollapsed -- every row ever
-      recorded, full change history. Kept because the registry itself still
-      accumulates full history forever (nothing here is deleted, only what
-      the *collapsed* export shows), but that history would otherwise only
-      ever exist in this process's own database connection -- worth having
-      committed alongside the save, not just inferable from it.
+    - `world/`: current state, collapsed -- a time_dimension'd component
+      type shows only its current row per entity, not every restatement.
+    - `world_history/`: the same content, uncollapsed -- full change
+      history, since the registry keeps it forever but it would
+      otherwise only exist in this process's own DB connection.
 
-    Each is a directory, not a single fixed filename, so a save can be
-    split across more files later without a format change, matching
-    iacs's own principle of letting an EC source be organized across as
-    many files as its author wants -- `start_world`'s loader recurses
-    into whichever directory it picks rather than assuming one file lives
-    there. An earlier revision used fixed filenames instead; see
-    docs/manifest/history.yaml:
-    project_history.world_save_format_switched_from_fixed_filenames_to_directories
-    for why that changed.
+    Each is a directory, not a fixed filename, so a save can be split
+    across multiple files later -- see docs/manifest/history.yaml:
+    project_history.world_save_format_switched_from_fixed_filenames_to_directories.
 
-    `export_manifest` also re-exports this project's own field-schema
-    manifest (merged into every registry via `input_dirs=[MANIFEST_DIR]`)
-    to its own `builtins.yaml` alongside `world.yaml` -- that's just a
-    normalized round-trip of `manifest/builtins.yaml`'s static content, not
-    game state, so it's deleted rather than left to accumulate confusingly
-    in each export directory.
+    Also re-exports the field-schema manifest to its own `builtins.yaml`
+    alongside `world.yaml`; deleted rather than left to accumulate, since
+    it's static schema, not game state.
     """
     __iacs__ = {"solution of": "story_simulator_mission.seed_yaml_reflects_live_state"}
     world_dir = save_dir / WORLD_DIRNAME
@@ -456,8 +403,45 @@ def _export_world_yaml(registrar: Registrar, save_dir: Path) -> None:
             Path(path).unlink(missing_ok=True)
 
 
+def _validate_registry_write(registrar: Registrar, yaml_string: str) -> set[str]:
+    """The checks a write must pass before it's safe to merge (or, for the
+    preview flow below, safe to show a confirm token for) -- raises on
+    the first one that fails. Returns the set of component types this
+    write actually references, since both callers
+    (`_update_registry_and_sync` and `_preview_registry_write`) need it.
+
+    All the actual check logic now lives in iacs, generalized from what
+    this function used to hand-roll itself (see
+    docs/manifest/history.yaml: project_history.
+    validate_registry_write_checks_moved_to_iacs). The bare-mapping check
+    (a component given as a dict instead of a list) is
+    `iacs.dataflows.etl.load_yaml`'s own `_find_malformed_entities` --
+    private there since its only other caller is `registrar.update()`
+    itself, reused directly here rather than duplicated because the
+    preview flow below needs this same check without actually merging.
+    The other two (component-named-as-nested-entity, unknown component
+    type) are `registrar.validate_write`'s own job -- see its docstring
+    for what each rejects.
+    """
+    from iacs.dataflows.etl.load_yaml import _find_malformed_entities
+
+    parsed = yaml.safe_load(yaml_string)
+    if isinstance(parsed, dict):
+        malformed = _find_malformed_entities(parsed)
+        if malformed:
+            raise ValueError(
+                "Each entity's components must be a YAML list (a leading `- ` before each "
+                "component name), e.g. `alias:\n    - component:\n        value: x` -- a bare "
+                "mapping (`alias:\n    component:\n        value: x`) is silently ignored "
+                f"rather than merged. Malformed here: {', '.join(malformed)}."
+            )
+
+    return registrar.validate_write(yaml_string)
+
+
 def _update_registry_and_sync(registrar: Registrar, save_dir: Path, yaml_string: str, session) -> None:
     """Merge `yaml_string` into the registry, then sync `save_dir`'s YAML to match."""
+    _validate_registry_write(registrar, yaml_string)
     registrar.update(
         input_dirs=[str(MANIFEST_DIR)],
         yaml_strings={WORLD_FILE_ID: yaml_string},
@@ -466,60 +450,203 @@ def _update_registry_and_sync(registrar: Registrar, save_dir: Path, yaml_string:
     _export_world_yaml(registrar, save_dir)
 
 
+def _component_write_summary(registrar: Registrar, component_type: str, limit: int = 3) -> str:
+    """Stats + peek for one component type -- row count, plus up to
+    `limit` existing sample rows -- so a caller about to write this
+    component type can see the shape/convention already in use for it.
+    Part of update_registry's preview flow (see `_preview_registry_write`,
+    #74/docs/manifest/history.yaml: project_history.
+    update_registry_preview_confirm_flow_added).
+    """
+    try:
+        df = registrar.view_df(component_type)
+    except KeyError:
+        return f"- {component_type}: declared, but no data written yet."
+    if df.empty:
+        return f"- {component_type}: declared, 0 rows written yet."
+    sample = df.head(limit).fillna("null").to_markdown()
+    return f"- {component_type}: {len(df)} row(s) so far. Sample:\n{sample}"
+
+
+def _encode_pending_write(yaml_string: str) -> str:
+    """Self-contained confirm_token for update_registry's preview flow --
+    encodes `yaml_string` directly, the same way `_encode_token` encodes
+    `advance_simulation`'s resume state, rather than stashing it in
+    server-side session state that a subprocess restart between the
+    preview and confirm calls would silently lose (see this project's
+    own `stateless_client` mandate)."""
+    return base64.urlsafe_b64encode(yaml_string.encode()).decode()
+
+
+def _decode_pending_write(confirm_token: str) -> str:
+    return base64.urlsafe_b64decode(confirm_token.encode()).decode()
+
+
+def _preview_registry_write(registrar: Registrar, yaml_string: str) -> str:
+    """Validate `yaml_string` (same checks `_update_registry_and_sync`
+    runs before merging) without merging it yet, and build a
+    confirmation preview: the component types this write references,
+    every component type actually available to compare against, and a
+    stats+peek summary for each referenced type -- so a caller can
+    notice a wrong-but-real component choice (e.g. `parent`/`todo`/
+    `position` instead of `location` -- see #63/docs/manifest/
+    history.yaml) before committing, not after. The returned text
+    includes a confirm_token (see `_encode_pending_write`) to pass back
+    to actually merge this exact write.
+    """
+    referenced = _validate_registry_write(registrar, yaml_string)
+    known = sorted(registrar.registry.known_component_types)
+    token = _encode_pending_write(yaml_string)
+    summaries = "\n".join(_component_write_summary(registrar, c) for c in sorted(referenced)) or "(none referenced)"
+    return (
+        "Not yet merged -- review below, then confirm or correct it.\n\n"
+        f"Components this write references: {sorted(referenced)}\n"
+        f"All component types actually available: {known}\n\n"
+        f"Stats + peek for each referenced component type:\n{summaries}\n\n"
+        "If this looks right, call update_registry again with this exact "
+        f"confirm_token (and no yaml_string) to merge it:\n{token}\n\n"
+        "If something looks wrong -- a component you referenced isn't the one you "
+        "meant, or the peek shows existing rows shaped differently than what you "
+        "wrote -- call update_registry again with corrected yaml_string (and "
+        "preview=True) instead of this token."
+    )
+
+
 # ---------------------------------------------------------------------------
 # Turn resolution
 # ---------------------------------------------------------------------------
 
 
-def _parse_next_due_in(answer: str, default: float = 1.0) -> tuple[str, float]:
-    """Split a resolve_event answer into (narration, next_due_in).
+async def resolve_event(alias: str, replay: TurnReplay, end_time: float) -> str:
+    """Resolve box: ask a responder to interpret `alias` now that its
+    end_time has been reached, and hand back whatever it says, for
+    narration.
 
-    Looks for a trailing `next_due_in: <seconds>` line (see
-    `_NEXT_DUE_IN_INSTRUCTION`) and falls back to `default` rather
-    than raising if it's missing or malformed -- a model's mistake here
-    shouldn't crash the turn.
+    No next_due_in convention to parse here, unlike the mechanism this
+    replaces: the responder is expected to record everything itself via
+    update_registry -- this event's own `outcome`, this event's own
+    `event_state` transition (complete or interrupted), and whatever it
+    changes about the entities it involves (see involved_entity) -- the
+    same direct tool-calling pattern it already uses for every other
+    write. The prompt spells out that last part explicitly (write changes
+    onto the affected entity itself, not just described in this event's
+    own outcome text) -- confirmed live that a weak model otherwise
+    narrates an involved entity's new state inside the event's outcome
+    without a separate update_registry write for that entity, leaving
+    nothing for a caller reading that entity directly to find. This
+    function's only job is to ask and hand back the answer;
+    persisting is entirely the responder's own, not a return value this
+    code applies on its behalf (see `plan_events`, and `process_event`'s
+    own docstring for why there's no separate mechanical "update" step).
+
+    Doesn't name a specific component type (e.g. `location`) as an
+    example, even though that's what most scenarios so far have needed:
+    this prompt is generic across every scenario, and not every event's
+    consequence is a location change, so hardcoding one component here
+    would bias every scenario toward it. Points at `view_entity` on the
+    component type's own name instead (its field descriptions carry
+    scenario-specific examples, e.g. `location`'s own doubles as the
+    phrasing convention) -- confirmed live that a model resolving its
+    first-ever write to an unfamiliar component type doesn't otherwise
+    think to look up that component type's own schema, and improvises a
+    reasonable-but-inconsistent phrasing instead.
+
+    `end_time` (the same value `process_event` just fed to `advance_clock`
+    -- `alias`'s own start_time + duration, plain arithmetic, not left for
+    the responder to infer) is stated explicitly in the prompt: confirmed
+    live that a weak model otherwise sometimes reads a due-style ("X is
+    due") framing against start_time alone (i.e. when the trip *starts*)
+    rather than start_time + duration (when it actually *arrives*),
+    misjudging which other events have already resolved by that point --
+    part of why this uses "end_time" rather than "due" throughout, not
+    just here.
+
+    The prompt also states outright that nothing with an earlier end_time
+    is still unresolved -- `pop_event`'s own sort guarantees this is the
+    earliest-end_time event still pending, so nothing else has resolved
+    yet either. Confirmed live that, without this stated explicitly, a
+    weak model sometimes assumes a *different*, not-yet-resolved entity's
+    event has already happened -- reasoning from that other event's
+    start_time or its row's position in a table instead of
+    checking its actual `event_state` -- and writes a wrong outcome for
+    `alias` on top of that wrong assumption (e.g. deciding a shared
+    resource a different car "already took" is unavailable, when that
+    other car's own trip hasn't resolved at all). Deliberately points at
+    checking `event_state` itself (already the one place this loop
+    records whether an event is done) rather than adding a second,
+    redundant field elsewhere for the same fact.
+
+    Never responder="human": no player is ever behind an event here
+    (there's no `character.interaction_type` to branch on, since the
+    character module isn't what's driving this popped entity). Between
+    "host" and "subagent" -- see `story_simulator.resolve`'s module
+    docstring for what "subagent" buys -- `config.event_responder()`
+    decides, defaulting to "host" so nothing changes unless a deployment
+    opts in via STORY_SIM_RESPONDER.
     """
-    lines = answer.strip().splitlines()
-    if lines and lines[-1].strip().lower().startswith("next_due_in:"):
-        try:
-            value = float(lines[-1].split(":", 1)[1].strip())
-            return "\n".join(lines[:-1]).strip(), value
-        except ValueError:
-            pass
-    return answer.strip(), default
+    request = JudgmentRequest(
+        prompt=(
+            f"{alias}'s end_time (world time {end_time:g}) has been "
+            f"reached. Nothing else with an earlier end_time is still "
+            f"unresolved -- if another entity's own event hasn't reached "
+            f"event_state: complete yet (check via view_entity/"
+            f"view_registry, not assumed from its start_time or where it "
+            f"appears in a table), treat it as not having happened yet. "
+            f"Look up whatever you need (view_entity/"
+            f"view_registry, including its involved_entity links) to "
+            f"work out what happens, then record it: {alias}'s own "
+            f"outcome, {alias}'s own event_state "
+            f"(complete if this fully resolves it, interrupted if "
+            f"something cuts it short), and anything it changes about the "
+            f"entities it involves -- write those changes directly onto "
+            f"each affected entity itself, using whichever component type "
+            f"actually fits (view_entity on the component type's own name, "
+            f"e.g. view_entity('location'), shows its field descriptions "
+            f"if you're unsure which one or how to phrase it), not only "
+            f"described in {alias}'s own outcome text -- all via "
+            f"update_registry."
+        )
+    )
+    return await replay.resolve(request, responder=event_responder())
 
 
-async def resolve_event(alias: str, replay: TurnReplay) -> tuple[str, float]:
-    """Resolve a base-module event: what happens now that `alias` is due,
-    and how long until it's next due -- inf (never again, see `pop_event`)
-    if the answer omits `next_due_in` entirely, unlike the character
-    module's 1-second default. A base event has no standing agenda to
-    keep acting on; it's done unless told otherwise.
+async def plan_events(alias: str, replay: TurnReplay) -> str:
+    """Plan box: ask a responder whether anything new needs to be
+    scheduled as a result of `alias` resolving, and let it create new
+    `event` entities via update_registry if so.
 
-    Never responder="human": no player is ever behind a base event (there's
-    no `character.interaction_type` to branch on, since the character
-    module isn't what's driving this popped entity). Between "host" and
-    "subagent" -- see `story_simulator.resolve`'s module docstring for what
-    "subagent" buys -- `config.event_responder()` decides, defaulting
-    to "host" so nothing changes unless a deployment opts in via
-    STORY_SIM_RESPONDER.
+    Always asked, even when nothing ends up being scheduled -- "nothing
+    follows from this" is this step's own answer to reach, not a case the
+    loop skips based on `alias`'s outcome alone (see `process_event`).
     """
-    request = JudgmentRequest(prompt=f"{alias} is due.\n\n{_NEXT_DUE_IN_INSTRUCTION}")
-    answer = await replay.resolve(request, responder=event_responder())
-    return _parse_next_due_in(answer, default=float("inf"))
+    request = JudgmentRequest(
+        prompt=(
+            f"Given how {alias} just resolved, does anything new need to "
+            f"happen as a result? If so, create it now: one or more new "
+            f"event entities (their own start_time/duration/event_state/"
+            f"involved_entity) via update_registry. If nothing follows "
+            f"from this, just say so -- no new events needed."
+        )
+    )
+    return await replay.resolve(request, responder=event_responder())
 
 
-async def process_event(registrar: Registrar, alias: str, replay: TurnReplay, session) -> str:
-    """Base module's process event box: Advance clock -> Resolve event ->
-    Predict next event -> Push event -- no character-communication step
-    first: a base event has no agency to ask "what do you do" of, it just
-    resolves.
+async def process_event(registrar: Registrar, alias: str, replay: TurnReplay, session) -> tuple[str, str]:
+    """Process event box: Advance clock -> Resolve event -> Plan events.
+
+    No update-data step: `resolve_event` and `plan_events` both write
+    everything they decide directly via update_registry (including
+    `alias`'s own event_state transition), so there's nothing left for
+    this function to persist mechanically afterward -- unlike the
+    next_due_in mechanism this replaces, which needed a code-driven
+    predict/push reschedule step because a plain float answer had nothing
+    else able to act on it.
     """
-    _current_world_time[session] = advance_clock(registrar, alias)
-    narration, next_due_in = await resolve_event(alias, replay)
-    due_at = predict_next_event(registrar, alias, next_due_in)
-    push_event(registrar, alias, due_at, time=_next_time_stamp(session))
-    return narration
+    end_time = advance_clock(registrar, alias)
+    _current_world_time[session] = end_time
+    resolve_narration = await resolve_event(alias, replay, end_time)
+    plan_narration = await plan_events(alias, replay)
+    return resolve_narration, plan_narration
 
 
 async def _run_event_loop(
@@ -530,40 +657,35 @@ async def _run_event_loop(
     replay: TurnReplay | None = None,
 ) -> tuple[str | None, TurnReplay | None, str, str | None]:
     """The Event-driven simulation subgraph itself: Pop event -> Valid? ->
-    Process event (which itself advances the clock first), looping until
-    either a NeedsExternalInput pauses it (returned to the caller, not
-    raised further) or the queue empties.
+    Process event (which itself advances the clock first, then asks two
+    separate responder calls -- resolve, then plan), looping until either
+    a NeedsExternalInput pauses it (returned to the caller, not raised
+    further) or the queue empties.
 
-    Always the base path today (`pop_event`/`process_event`, no notion of
-    character at all, what this module's own docstring promises works with
-    nothing character/npc/spatial layered on top) -- this loop used to
-    dispatch through its own `_process_due_entity` seam so a
-    character-aware pair (`spatial.pop_event`/`process_event`) could
-    branch in depending on `story_simulator.config.enabled_modules`; that
-    branch moved out to `shelved/` (see `docs/architecture.md`) pending a
-    rewrite, and with it gone there was no longer a second destination for
-    the seam to pick between, so it called `process_event` directly
-    instead. A future character-aware branch would need to reintroduce its
-    own dispatch step rather than assume this one still exists.
+    One `process_event` call is one full event's worth of work, but not
+    necessarily one pause: resolve's own judgment call and plan's own
+    judgment call are two separate entries in the same `TurnReplay`
+    (see that class's own docstring -- "a single turn can hit more than
+    one judgment call before it's done"), so a fresh event typically
+    pauses twice in a row (once to resolve, once to plan) before this
+    loop ever reaches the bottom and pops the next one -- both under the
+    same `resume_token` until the second answer lands, at which point
+    `process_event` returns normally and the loop moves on.
 
     `resume_alias`/`replay` re-enter the loop for a specific turn already
     in progress (what `advance_simulation` is resuming, decoded from its
     `resume_token`) instead of popping fresh -- `replay`'s answers-so-far
     mean everything up to the newest still-unanswered judgment call
-    replays from cache (see `story_simulator.resolve.TurnReplay`), and if
-    that call now completes, execution falls straight through into the
-    ordinary loop below for whatever's next, rather than returning
-    immediately. There's a single `process_event` call site, not one per
-    branch: `alias` starts as `resume_alias` (possibly None) and the loop
-    only pops/validates a fresh one when `alias` is still None, so a
-    resumed turn skips straight to processing while a fresh one falls
-    through the same two checks first -- deliberately, so `pop_event`/
-    `is_event_valid` read as happening *before* `process_event` in this
-    function's own source order too, not just at runtime for the common
-    case (an entity-reachability trace of this function orders its
-    dotted-arrow chain by first occurrence in source, and two separate
-    call sites -- the resume branch textually first -- used to make that
-    chain read backwards).
+    replays from cache, and if that call now completes, execution falls
+    straight through into the ordinary loop below for whatever's next,
+    rather than returning immediately. There's a single `process_event`
+    call site, not one per branch: `alias` starts as `resume_alias`
+    (possibly None) and the loop only pops/validates a fresh one when
+    `alias` is still None, so a resumed turn skips straight to processing
+    while a fresh one falls through the same two checks first --
+    deliberately, so `pop_event`/`is_event_valid` read as happening
+    *before* `process_event` in this function's own source order too, not
+    just at runtime for the common case.
 
     Returns (alias, replay, prompt, responder): `alias`/`replay`/`responder`
     are None only when the queue is empty (nothing left to stash);
@@ -589,11 +711,11 @@ async def _run_event_loop(
             await process_event(registrar, alias, replay, session)
         except NeedsExternalInput as e:
             return alias, replay, e.prompt, e.responder
-        # No exception: this turn resolved fully -- reset alias to force a
-        # fresh pop next iteration. A base event always pauses
-        # (responder="host" or "subagent", per config.event_responder() --
-        # never "human", see resolve_event) unless this exact call was
-        # already answered by a prior replay.
+        # No exception: both resolve and plan answered fully -- reset
+        # alias to force a fresh pop next iteration. Each one always
+        # pauses at least once (responder="host" or "subagent", per
+        # config.event_responder() -- never "human", see resolve_event)
+        # unless this exact call was already answered by a prior replay.
         alias = None
 
 
@@ -658,6 +780,23 @@ def start_world(session, save_dir: str, scenario_dir: str | None = None) -> str:
     every start_world call would re-merge the same starting entities
     repeatedly.
 
+    The returned message also mentions iacs's own `load_database` tool
+    (mcp__iacs__*, if connected) as an optional extra: pointing it at this
+    exact registry_url lets its deeper introspection (validate_yaml,
+    describe_format, ...) operate on this world instead of iacs's own
+    unrelated example manifest. Not required for ordinary reads any more --
+    view_registry/view_entity (below) cover that directly, via the same
+    underlying Registrar methods iacs's own tools use, so there's no
+    separate MCP server a host needs to discover just to look something
+    up. (An earlier version of this removed view_registry/view_entity
+    entirely in favor of requiring iacs's tools instead -- reverted before
+    that specific "required first step" framing was ever live-verified,
+    on the strength of prior evidence already in hand: across every live
+    rerun so far, a weak model has reliably discovered and used tools
+    already on this server, but never once discovered or called a tool on
+    a *separate* MCP server, nudged or not; see docs/manifest/history.yaml:
+    project_history.story_simulator_view_tools_reinstated_as_iacs_delegates.)
+
     Args:
         save_dir: Directory holding (or to hold) this world's save data.
         scenario_dir: Starting scenario to seed a brand-new save_dir from
@@ -708,11 +847,27 @@ def start_world(session, save_dir: str, scenario_dir: str | None = None) -> str:
                 input_dirs=[str(MANIFEST_DIR)], yaml_strings={WORLD_FILE_ID: seed_text}
             )
 
+    # Declares the manifest's own component-type schemas (location, event,
+    # ...) on this registrar object regardless of whether this was a fresh
+    # or resumed save, or whether the branch above already did it once --
+    # a declared-but-dataless schema lives only in a Registry's own
+    # in-memory state (Registry.declare_schema's docstring), never
+    # persisted as a physical table, so it doesn't survive a reconnect on
+    # its own (e.g. a resumed save whose player never happened to use
+    # `location` before disconnecting). Without this, the first write to
+    # an already-declared-but-not-yet-used type would look "unknown" to
+    # registrar.validate_write even though it's perfectly legitimate.
+    registrar.update(input_dirs=[str(MANIFEST_DIR)])
+
     _registrars[session] = registrar
     _save_dirs[session] = save_dir_path
     return (
         f"World opened at {save_dir_path}. Component types: {registrar.registry.component_types}. "
-        "Call view_registry or view_entity to see what's there."
+        "Call view_registry or view_entity to see what's there. "
+        f"If iacs's own tools are also available (mcp__iacs__*) and you want its deeper "
+        f"introspection (validate_yaml, describe_format, ...), call its load_database with "
+        f"database_url={registry_url(save_dir_path)!r} to point them at this exact world too -- "
+        f"optional, not required for ordinary reads."
     )
 
 
@@ -720,58 +875,135 @@ def view_registry(session, component_type: str) -> str:
     """View all recorded data for one component type (e.g. "position", "object", "character").
 
     Covers both the starting scenario and everything recorded since, since
-    it reads straight from the registry.
+    it reads straight from the registry -- the same `view_df` method
+    iacs's own `view_component` tool wraps too (see this module's own
+    docstring history for why this exists as a story-simulator tool
+    at all rather than relying on iacs's copy: docs/manifest/history.yaml,
+    project_history.story_simulator_view_tools_reinstated_as_iacs_delegates).
+    Rendered as a markdown table, not CSV -- published format comparisons
+    put CSV among the worst-parsed formats for LLMs, which is what
+    actually reads this (the responder standing in for this call), not
+    another program.
     """
     registrar = _get_registrar(session)
-    return registrar.view_df(component_type).to_csv()
+    return registrar.view_df(component_type).fillna("null").to_markdown()
 
 
 def view_entity(session, entity_id: str) -> str:
     """Return every recorded component instance for a specific entity.
+
+    Delegates straight to iacs's own `Registrar.view_entity` -- the same
+    entity-traversal logic iacs's own `view_entity` tool already wraps,
+    not reimplemented here a second time (an earlier version of this
+    function did reimplement it independently; see docs/manifest/
+    history.yaml: project_history.
+    story_simulator_view_tools_reinstated_as_iacs_delegates for why that
+    changed).
 
     Args:
         entity_id: Entity hash, alias, or unambiguous path fragment (e.g.
             "player", "desk", or "journaling_desk.desk").
     """
     registrar = _get_registrar(session)
-    resolved_id = registrar.get_entity_id(entity_id)
-    if resolved_id is None:
-        return f"No data found for {entity_id!r}."
-    lines = []
-    for component_type in sorted(registrar.registry.component_types):
-        df = safe_view(registrar, component_type)
-        if df is None or df.empty or "entity_id" not in df.columns:
-            continue
-        matches = df[df["entity_id"] == resolved_id]
-        for _, row in matches.iterrows():
-            fields = {k: v for k, v in row.items() if k not in ("entity_id", "entity_id.alias")}
-            lines.append(f"{component_type}: {fields}")
-    if not lines:
-        return f"No data found for {entity_id!r}."
-    return f"# {entity_id}\n" + "\n".join(lines)
+    return registrar.view_entity(entity_id, format="markdown")
 
 
-def update_registry(session, yaml_string: str) -> str:
-    """Merge entity-first YAML into the world registry, run through the same ETL as save files.
+def consolidate_review(session, limit: int = 20) -> str:
+    """Show every component type recorded in this world so far, for the
+    host to review and consolidate. Delegates straight to iacs's own
+    `Registrar.summarize_components` for the data report -- reinstated
+    here as a story-simulator tool for the same discoverability reason
+    view_registry/view_entity already are (docs/manifest/history.yaml:
+    project_history.story_simulator_view_tools_reinstated_as_iacs_delegates)
+    rather than relying on a connected host to find iacs-mcp's own copy
+    of this tool. The "please consolidate" instruction appended to the
+    report is `iacs.validate_write.CONSOLIDATION_GUIDANCE`, composed in
+    here rather than baked into `summarize_components` itself (iacs PR
+    #100: that method is a plain data report, not an agent-instruction
+    generator -- see this repo's docs/manifest/history.yaml:
+    project_history.validate_registry_write_checks_moved_to_iacs).
+
+    #76's post-write alternative to #74's pre-write preview/confirm flow:
+    instead of reviewing one write before committing it, review
+    everything committed so far and fix anything wrong after the fact.
+    Compared against #74 (and the plain baseline) via
+    tests/location_write_harness.py.
 
     Args:
-        yaml_string: Entity-first YAML content to merge in.
+        limit: Max sample rows shown per component type (default 20).
+    """
+    registrar = _get_registrar(session)
+    return f"{registrar.summarize_components(limit)}\n\n{CONSOLIDATION_GUIDANCE}"
+
+
+def update_registry(
+    session,
+    yaml_string: str | None = None,
+    preview: bool = False,
+    confirm_token: str | None = None,
+) -> str:
+    """Merge entity-first YAML into the world registry, run through the same ETL as save files.
+
+    Default behavior (`preview` omitted/False, `confirm_token` omitted)
+    is unchanged from before this flow existed: `yaml_string` merges
+    immediately. `preview=True` opts into a two-round-trip alternative
+    instead, for #73/#74's comparison against that default (see
+    docs/manifest/history.yaml: project_history.
+    update_registry_preview_confirm_flow_added) -- existing callers that
+    never pass `preview`/`confirm_token` see no behavior change at all.
+
+    Args:
+        yaml_string: Entity-first YAML content to merge (or, with
+            `preview=True`, to preview before merging). Omit when passing
+            `confirm_token` instead.
+        preview: If True, don't merge `yaml_string` yet -- validate it and
+            return a review (components referenced, all components
+            actually available, a stats+peek summary for each referenced
+            type) plus a confirm_token to merge it with, on a follow-up
+            call. Ignored if `confirm_token` is given.
+        confirm_token: A token from a prior `preview=True` call -- merges
+            that exact previously-previewed write now. `yaml_string` is
+            not needed (and ignored) in this call.
     """
     registrar = _get_registrar(session)
     save_dir = _get_save_dir(session)
-    _update_registry_and_sync(registrar, save_dir, yaml_string, session)
-    return "Merged into the registry and synced to save_dir/world.yaml."
+
+    if confirm_token is not None:
+        pending_yaml = _decode_pending_write(confirm_token)
+        _update_registry_and_sync(registrar, save_dir, pending_yaml, session)
+        return "Merged into the registry and synced to save_dir/world.yaml."
+
+    if yaml_string is None:
+        raise ValueError(
+            "Provide yaml_string to merge (optionally with preview=True to review it "
+            "first), or confirm_token from a prior preview to merge that write now."
+        )
+
+    if not preview:
+        _update_registry_and_sync(registrar, save_dir, yaml_string, session)
+        return "Merged into the registry and synced to save_dir/world.yaml."
+
+    return _preview_registry_write(registrar, yaml_string)
 
 
 async def advance_simulation(session, resume_token: str | None = None, answer: str | None = None) -> dict:
-    """Fast-forward through any due entities, and pause whenever a turn
-    needs input only outside story-simulator's own process can supply.
+    """Fast-forward through any events whose end_time has been reached,
+    and pause whenever a turn needs input only outside story-simulator's
+    own process can supply.
 
-    The base event-driven simulation (see this module's own docstring) --
-    every due entity resolves via responder="host" or "subagent" (see
-    `config.event_responder`), no character/NPC concept at all.
-    (A character-aware branch used to layer player/NPC turns on top of
-    this; moved out to `shelved/` pending a rewrite -- see
+    The event-driven simulation (see this module's own docstring): world
+    state is `event` entities, each ready to resolve once world time
+    reaches its own end_time -- start_time + duration
+    (manifest/builtins.yaml's event_components) -- not the acting
+    entities (a car, a door, ...) themselves, which carry no schedule of
+    their own. Every such event goes through two separate
+    responder calls in turn -- resolve (what happened) and plan (what, if
+    anything, follows from that) -- each via responder="host" or
+    "subagent" (see `config.event_responder`); a fresh event typically
+    means two pauses in a row, one per call, before the loop reaches the
+    next one. No character/NPC concept at all. (A character-aware branch
+    used to layer player/NPC turns on top of an earlier, next_due-based
+    version of this loop; moved out to `shelved/` pending a rewrite -- see
     `docs/architecture.md`.)
 
     Call with neither argument to start (or continue after a prior call
@@ -781,17 +1013,19 @@ async def advance_simulation(session, resume_token: str | None = None, answer: s
     "subagent", "resume_token": ...}``. On the latter, decide what happens
     yourself if `responder` is "host", or follow `prompt`'s own instruction
     to delegate to an isolated subagent if it's "subagent" -- either way,
-    call again with that exact `resume_token` and your `answer` -- no
-    separate tool, and no server-side state to lose: `resume_token` carries
+    record whatever you decide yourself via update_registry (there's no
+    structured return value this tool applies on your behalf), then call
+    again with that exact `resume_token` and your `answer` -- no separate
+    tool, and no server-side state to lose: `resume_token` carries
     everything needed to resume, so it survives an MCP disconnect/reconnect
     between calls too.
 
     Args:
         resume_token: The `resume_token` from this session's last
             `input_required` result, or omitted to start/continue fresh.
-        answer: What happens for the entity that result's `prompt` asked
-            about (optionally ending with a `next_due_in: <seconds>` line
-            -- omit it if there's nothing further to happen). Omit `answer`
+        answer: Your answer to that result's `prompt` -- what an event's
+            resolution was, or what (if anything) it schedules next,
+            recorded via update_registry before you answer. Omit `answer`
             itself along with `resume_token` on a fresh call.
     """
     registrar = _get_registrar(session)

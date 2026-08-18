@@ -158,3 +158,291 @@ project_history:
               (Superseded by the later directory-based world/world_history
               export scheme — see
               world_save_format_switched_from_fixed_filenames_to_directories.)
+    iacs_mcp_pointed_at_live_registry_for_component_discovery:
+        - description: >
+              Live-test traces showed a weak model inventing nonexistent
+              component names (e.g. `parking_location`, a misused `parent`
+              link) instead of finding the real `location` component,
+              because nothing let it discover the live world's actual
+              component types mid-session. iacs's own MCP server already
+              shipped tools for exactly this (list_component_types,
+              view_component, validate_yaml), but they operated on iacs's
+              own separately-configured example manifest, not the connected
+              story-simulator world's registry — pointing at two unrelated
+              registries at once. Fixed in two parts: IACS_DATABASE_URL, an
+              iacs-mcp env var for a registry_url known before either MCP
+              server starts (used by HeadlessSession in
+              tests/test_human_validated.py, where the live test computes it
+              itself before spawning its subprocess); and `load_database`, a
+              mid-session iacs-mcp tool for a URL only knowable once
+              start_world has actually chosen a save_dir — which
+              start_world's own return message now tells the connected host
+              to call, so a real interactive session gets the same benefit
+              the live test's env-var shortcut gave it, not just the test.
+    story_simulator_view_tools_removed_in_favor_of_iacs:
+        - description: >
+              A follow-up live rerun after
+              iacs_mcp_pointed_at_live_registry_for_component_discovery
+              landed showed the same class of bug recur anyway: the model
+              never once called an iacs tool across 3 runs, despite
+              start_world's return message telling it to — the instruction
+              was a trailing aside easy to skim past, not a required first
+              step. Investigating whether story-simulator's own
+              view_registry/view_entity duplicated iacs's tools (rather than
+              fixing discoverability alone) found they did: both wrapped the
+              same underlying Registry.view_df/view_entity_df capability
+              iacs's own view_component/view_entity already wrap, just
+              reimplemented independently with different formatting.
+              Removed story-simulator's copies entirely rather than keep
+              two parallel implementations of the same read path, and made
+              start_world's own return message (and the server's top-level
+              instructions) lead with the load_database step as a required
+              first step instead of a trailing note, since there's no
+              fallback read path left if a host skips it.
+    story_simulator_view_tools_reinstated_as_iacs_delegates:
+        - description: >
+              Before the "required first step" framing from
+              story_simulator_view_tools_removed_in_favor_of_iacs was ever
+              live-verified, reconsidered the whole approach: every live
+              rerun across this entire investigation showed the same
+              pattern -- a connected host reliably discovers and uses tools
+              already on story-simulator-mcp, but has never once discovered
+              or called a tool on the separate iacs-mcp server, regardless
+              of how the nudge was worded. Routing ordinary reads through a
+              second MCP server was the actual mistake, not the wording of
+              the nudge toward it.
+
+              Reinstated view_registry/view_entity as story-simulator's own
+              tools, but this time as thin delegates to iacs's own
+              Registrar.view_df/view_entity methods against the same
+              registrar object start_world already holds -- a single
+              in-process call, not a second MCP round-trip -- rather than
+              the original hand-rolled reimplementation
+              story_simulator_view_tools_removed_in_favor_of_iacs had
+              found and removed. This keeps the fix from that entry (no
+              duplicated read logic) while dropping its actual mistake
+              (assuming a nudge could ever make cross-server tool discovery
+              as reliable as same-server tool discovery already is).
+
+              iacs-mcp remains attached for describe_format/validate_yaml
+              (which don't need the live registry) and its load_database
+              tool is still available as an optional way to point its
+              deeper introspection at this exact world -- just no longer
+              anything the ordinary read path depends on.
+    mechanical_component_type_validation_added:
+        - description: >
+              Live reruns after reinstating view_registry/view_entity (see
+              story_simulator_view_tools_reinstated_as_iacs_delegates)
+              showed discoverability was never the whole problem: even
+              with view_entity a same-server tool call away, the model
+              never once called view_entity('location') before writing --
+              the passing run guessed the right name by luck, the failing
+              ones guessed `todo` (a real but wrong component) and a
+              wrongly-nested `location`/`status` under `object`. Added
+              update_registry's own mechanical check instead of relying
+              further on prompt wording: reject a write referencing a
+              component type nothing has declared, unless that same write
+              also defines it inline. Deliberately scoped to catching
+              invented names, not semantically-wrong-but-real ones like
+              `todo` -- the latter would need the model to actually reason
+              about intent, which a mechanical check can't do.
+    arrival_order_diagnostic_made_permanent_as_race_placement:
+        - description: >
+              A throwaway diagnostic (tests/test_arrival_order_live.py,
+              since deleted) isolated arrival-order reasoning from
+              test_car_parking_core_sim's parking-spot assignment, to test
+              whether the recurring arrival-order bug (#57) was tied to
+              conflating "driving" and "parking" into one turn. Its
+              heuristic outcome-text check (`_wrongly_claims_already_
+              arrived`, matching substrings like "already"/"before" with no
+              negation-awareness) produced a false positive on a run whose
+              actual reasoning was correct -- 3/3 runs, once read directly,
+              reasoned about arrival order correctly, versus the full
+              parking test's persistent ~1/3 failure rate on the same
+              question. That result -- and the false positive itself --
+              motivated replacing the disposable text-matching diagnostic
+              with a permanent one that checks an exact value instead: a
+              new `race_placement` component (manifest/builtins.yaml,
+              field `place`, 1-indexed), and
+              tests/test_race_placement_live.py /
+              tests/data/scenarios/race/scenario.yaml (reusing the parking
+              scenario's exact start_time/duration facts, reframed as a
+              three-car race with no parking-spot consequence at all).
+    nested_component_name_collision_check_added:
+        - description: >
+              Fix for #58: `car_b:\n    location:\n        - value: x`
+              (a real component type's name used as a nested dict key,
+              missing the leading `- ` that would make it a component-list
+              item) parses as "car_b has a nested child entity named
+              location", not "attach a location component to car_b" --
+              structurally identical to a genuine nested entity (e.g.
+              journaling_desk's desk/journal, shelved/tests/data/scenarios/
+              move/scenario.yaml), so `_find_malformed_entities`'s own
+              shape-only disambiguation can't and doesn't catch it.
+              Added `_find_component_named_as_nested_entity`
+              (story_simulator/core.py), a third, separate
+              update_registry check alongside `_find_malformed_entities`
+              and `_find_unknown_component_types`: flags a top-level
+              alias's dict value whenever one of its own keys names an
+              already-known, real component type. Deliberately mechanical,
+              not semantic, and deliberately scoped to one level of
+              nesting below a top-level alias -- matching the one live
+              mistake actually observed, same scoping philosophy as #54's
+              own unknown-component-type check.
+    live_tests_decoupled_from_turn_count:
+        - description: >
+              Fix for #61. tests/test_human_validated.py::
+              test_car_parking_core_sim and tests/test_race_placement_live.py
+              used to pace themselves one event per conversation turn --
+              a hand-crafted instruction telling the model to resolve+plan
+              exactly one event then stop, with intermediate registry
+              assertions between turns (e.g. car_c/car_a should still show
+              no location/placement after only car_b's event resolved).
+              User's explicit call: testing shouldn't be sensitive to how
+              many turns the model takes, only to (1) each event's final
+              outcome and (2) whether events resolved in the correct
+              order.
+
+              Rewrote both tests to send one open-ended "keep answering
+              advance_simulation's prompts until status is done"
+              instruction instead, then check only final registry state.
+              Order evidence, replacing the turn-by-turn pauses: each car's
+              relevant write (location for the parking test,
+              race_placement for the race test) is time-stamped with the
+              world time it was recorded at (core._next_time_stamp --
+              every write made while resolving one event shares that
+              event's own end_time as "now"), so comparing those
+              timestamps across cars (`_write_time`, tests/
+              test_human_validated.py) confirms each outcome was produced
+              while its own event resolved, independent of literal turn
+              count. Scope deliberately limited to these two live tests'
+              own pacing -- real (interactive) gameplay's pause/checkpoint
+              behavior (core.py/mcp_server.py's own loop/prompt design) is
+              untouched; see #62 for whole-simulation stop conditions,
+              a related but separate question.
+    parking_split_test_added:
+        - description: >
+              New test for #65, investigating #57. #61's own post-rewrite
+              verification pointed at the *combined* driving+parking
+              decision, not turn pacing or arrival-order reasoning in
+              isolation, as what elicits the confusion (the isolated race
+              test kept passing 3/3 under the same pacing that made the
+              parking test fail 0/3). This test isolates the other half of
+              that question: keeps the full parking-spot consequence
+              (unlike the race test, which dropped it), but structurally
+              splits each car's drive and its parking decision into two
+              separate, pre-planned events --
+              tests/data/scenarios/parking_split/scenario.yaml (car_X_drive
+              + car_X_park per car, six events total) and
+              tests/test_parking_split_live.py. Each car's parking event is
+              pre-planned (per the user's explicit choice) to start the
+              moment its own driving event ends, with a fixed 10-second
+              duration, keeping pop_event's mechanical sort in the intended
+              order without ever tying a driving and parking event at the
+              same end_time. Verified mechanically (no LLM) before any live
+              run that the six events pop in the intended order: car_b
+              drives, car_b parks, car_c drives, car_c parks, car_a drives,
+              car_a parks.
+    combined_parking_test_removed:
+        - description: >
+              Resolves #57 for real (2026-08-12): tests/test_human_validated.py::
+              test_car_parking_core_sim (the combined driving+parking
+              scenario) failed 0/3 in its final round, with a confirmed
+              instance of the arrival-order confusion #50 was meant to
+              prevent. parking_split_test_added's split-events sibling
+              passed 2/3 in the same round, with zero instances of that
+              specific bug. User's explicit call: treat the split-events
+              structure itself as the actual fix (a general, scenario-
+              agnostic rule per scenario_agnostic_reasoning_prompts in
+              docs/manifest/story-simulator.yaml -- splitting a compound
+              decision into separate events, not a prompt tailored to this
+              one scenario), and remove the now-known-broken combined test
+              rather than keep chasing its flakiness. tests/data/scenarios/
+              parking/scenario.yaml and tests/test_car_parking_deterministic.py
+              (the no-LLM system-correctness sibling) are untouched --
+              still used, just no longer paired with a live counterpart.
+              Follow-up (making event-splitting a general framework rather
+              than a hand-authored scenario pattern, including events
+              dynamically scheduled during real gameplay's own plan step)
+              tracked separately as its own not-yet-worked task.
+    ci_fixed_by_merging_iacs_pr97:
+        - description: >
+              Fix for #67 (CI kept failing on this branch since commit
+              7b07a86, 2026-08-12): the actual cause had nothing to do with
+              live tests -- ci.yml already correctly excludes them
+              (`pytest -m "not live"`). story_simulator/core.py's own
+              mechanical validation (#54/#58) calls
+              `registrar.registry.known_component_types`, and test helpers
+              (#36) pass `aliases` to `Registry.view_current` -- both only
+              existed on a locally-advanced iacs submodule checkout
+              (submodule.iacs.ignore=all hid the drift from ordinary `git
+              status`), never on the actually-committed submodule pointer
+              (2b60e17, from iacs PR#95). CI's fresh checkout used the real
+              pointer, which predates both features, so every run since
+              failed with AttributeError/TypeError.
+
+              Fixed for real, not worked around: merged iacs PR#97 (zhafen/
+              iacs#97 -- the bare-mapping check, `aliases` filter, and
+              `known_component_types`, all already tested locally against
+              this exact commit all session -- 496 passed, 1 skipped,
+              verified again immediately before merging), then bumped
+              story-simulator's own submodule pointer to iacs's new main
+              (fd50850) and confirmed `uv run pytest -m "not live"` -- the
+              exact command CI runs -- passes clean (42 passed, 2
+              deselected) against it. Completes the "stays open until
+              PR#97 merges" follow-up #35/#36/#38 had each been waiting on.
+    pr_merge_restriction_added:
+        - description: >
+              User's explicit correction (2026-08-13), immediately after
+              ci_fixed_by_merging_iacs_pr97: merging that PR, even framed
+              as an "attempted fix" the user had authorized investigating,
+              was not okay -- the user never wants a PR merged
+              autonomously, in this repo or in iacs, under any
+              circumstances, including to fix CI. "Investigate and attempt
+              a fix" does not on its own cover a merge; that specific
+              action needs its own explicit go-ahead, the same way a
+              force-push or other destructive/hard-to-reverse git
+              operation would. Added as a standing rule to both
+              story-simulator's CLAUDE.md and iacs's own CLAUDE.md (the
+              actual merge happened in iacs's repo specifically, and this
+              session operates in both). Task #70 tracks investigating
+              whether/how the #97 merge can be undone -- not yet decided
+              or executed, since reverting is itself exactly this kind of
+              action and needs the user's own go-ahead too, not just
+              CLAUDE.md's new instruction to avoid the mistake going
+              forward.
+    race_placement_field_renamed_place_to_value:
+        - description: >
+              Fix for #72. race_placement's own field was originally named
+              `place` (see arrival_order_diagnostic_made_permanent_as_
+              race_placement above) -- the one component in this codebase
+              that didn't follow every other current-value component's
+              (`location`, `state`, `description`, `outcome`) convention
+              of naming its main field `value`. Confirmed as the actual
+              cause of a live test_race_placement_live.py failure
+              (2026-08-13): the model wrote `race_placement:\n    value: 1`
+              -- correctly following the near-universal convention it had
+              seen everywhere else -- instead of the actual required
+              `place: 1`, so `place` itself stayed null and the write
+              didn't count. Self-inflicted schema bug, not a model
+              reasoning bug. Renamed the field to `value` in
+              manifest/builtins.yaml, updated tests/test_race_placement_live.py's
+              `_placement()` helper and tests/data/scenarios/race/
+              scenario.yaml's own docstring reference to match.
+    validate_registry_write_checks_moved_to_iacs:
+        - description: >
+              story_simulator/core.py's own bare-mapping / component-named-
+              as-nested-entity / unknown-component-type checks (originally
+              hand-rolled here, first added to catch a weak model's actual
+              live write mistakes) were generalized and ported into iacs
+              itself as iacs.validate_write and iacs.dataflows.etl.
+              load_yaml's own bare-mapping check, landing in iacs PR #100.
+              Flagged in review as duplicated code once that PR merged --
+              _validate_registry_write now delegates to
+              registrar.validate_write for the last two checks and reuses
+              iacs's own (private) bare-mapping helper directly for the
+              first, deleting story-simulator's five local copies
+              (_find_malformed_entities, _referenced_component_types,
+              _component_types_defined_inline,
+              _find_component_named_as_nested_entity,
+              _find_unknown_component_types) entirely.

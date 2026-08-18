@@ -79,7 +79,7 @@ class TestStartWorld:
         save_dir = tmp_path / "save"
         ctx = _make_ctx()
         start_world(str(save_dir), ctx)
-        update_registry("custom_entity:\n    - origin\n", ctx)
+        update_registry("custom_entity:\n    - origin\n", ctx=ctx)
 
         ctx2 = _make_ctx()
         start_world(str(save_dir), ctx2)
@@ -156,26 +156,150 @@ class TestRegistryTools:
         with pytest.raises(ValueError, match="start_world"):
             _get_registrar(ctx.request_context.session)
 
-    def test_view_registry_returns_csv_of_positions(self, tmp_path):
+    def test_view_registry_returns_markdown_table_of_positions(self, tmp_path):
         ctx = _make_ctx()
         start_world(str(tmp_path / "save"), ctx)
         result = view_registry("position", ctx)
         assert "player" in result
 
+    def test_view_registry_delegates_to_iacs_registrar_view_df(self, tmp_path):
+        """Not a reimplementation -- the same Registrar.view_df call
+        iacs's own view_component tool wraps too."""
+        ctx = _make_ctx()
+        start_world(str(tmp_path / "save"), ctx)
+        registrar = _registrars[ctx.request_context.session]
+        assert view_registry("position", ctx) == registrar.view_df("position").fillna("null").to_markdown()
+
     def test_update_registry_merges_new_entity(self, tmp_path):
         ctx = _make_ctx()
         start_world(str(tmp_path / "save"), ctx)
-        result = update_registry("new_thing:\n    - origin\n", ctx)
+        result = update_registry("new_thing:\n    - origin\n", ctx=ctx)
         assert "Merged" in result
         registrar = _registrars[ctx.request_context.session]
         assert registrar.get("origin").count().execute() == 2
+
+    def test_update_registry_rejects_bare_mapping_components(self, tmp_path):
+        """A component written without the required leading `- ` (a bare
+        mapping instead of a list) is silently ignored by iacs's own ETL
+        -- no error, no invalid_field row, no data merged. Confirmed live
+        as a real failure mode (a responder's write appeared to succeed
+        but left the registry untouched), so update_registry now raises
+        instead of reporting success for it."""
+        ctx = _make_ctx()
+        start_world(str(tmp_path / "save"), ctx)
+        with pytest.raises(ValueError, match="car_a"):
+            update_registry("car_a:\n    state: parked on street\n", ctx=ctx)
+        registrar = _registrars[ctx.request_context.session]
+        assert "state" not in registrar.registry.component_types
+
+    def test_update_registry_rejects_invented_component_type(self, tmp_path):
+        """The recurring live-test bug this mechanically backstops: a weak
+        model invents a plausible-sounding component name (parked_at)
+        instead of using the real, already-declared one (location)."""
+        ctx = _make_ctx()
+        start_world(str(tmp_path / "save"), ctx)
+        with pytest.raises(ValueError, match="parked_at"):
+            update_registry("car_a:\n    - parked_at: parking_spot_1\n", ctx=ctx)
+        registrar = _registrars[ctx.request_context.session]
+        assert "parked_at" not in registrar.registry.component_types
+
+    def test_update_registry_suggests_close_match_for_typo(self, tmp_path):
+        ctx = _make_ctx()
+        start_world(str(tmp_path / "save"), ctx)
+        with pytest.raises(ValueError, match="locaton.*location"):
+            update_registry("car_a:\n    - locaton: parked on street\n", ctx=ctx)
+
+    def test_update_registry_allows_declared_but_previously_unused_component_type(self, tmp_path):
+        """A real component type nothing has written to yet (declared in
+        manifest/builtins.yaml, e.g. `location`) must not be rejected as
+        unknown -- component_types alone only reflects data-bearing types,
+        which is exactly the gap that let this bug go unnoticed in the
+        first place (see iacs's own known_component_types)."""
+        ctx = _make_ctx()
+        start_world(str(tmp_path / "save"), ctx)
+        result = update_registry("car_a:\n    - location:\n        value: parked on street\n", ctx=ctx)
+        assert "Merged" in result
+
+    def test_update_registry_allows_unknown_type_defined_in_the_same_write(self, tmp_path):
+        """Overriding the check is allowed, but only by actually defining
+        the new component type inline -- the same shape
+        manifest/builtins.yaml's own definitions use."""
+        ctx = _make_ctx()
+        start_world(str(tmp_path / "save"), ctx)
+        result = update_registry(
+            "brand_new_component:\n"
+            "    - description: A freshly-declared component type.\n"
+            "    - component_type\n"
+            "    - field:\n"
+            "        value:\n"
+            "            description: Its one field.\n"
+            "            type: str\n"
+            "\n"
+            "car_a:\n"
+            "    - brand_new_component:\n"
+            "        value: hello\n",
+            ctx=ctx,
+        )
+        assert "Merged" in result
+
+    def test_update_registry_accepts_legitimate_nested_entities(self, tmp_path):
+        """A dict value isn't always the bare-mapping mistake -- a nested
+        entity (each sub-key its own child entity, e.g.
+        tests/data/scenarios/move/scenario.yaml's journaling_desk) is a
+        dict too, and must still be accepted."""
+        ctx = _make_ctx()
+        start_world(str(tmp_path / "save"), ctx)
+        result = update_registry(
+            "desk:\n"
+            "    data:\n"
+            "        - note: just documentation, never its own entity\n"
+            "    journal:\n"
+            "        - object:\n"
+            "            type: journal\n",
+            ctx=ctx,
+        )
+        assert "Merged" in result
+        registrar = _registrars[ctx.request_context.session]
+        assert registrar.get_entity_id("desk.journal") is not None
+
+    def test_update_registry_rejects_component_name_used_as_nested_entity_key(self, tmp_path):
+        """The live-test bug this backstops: a component name used as a
+        nested dict key (missing the leading `- ` that would make it a
+        list item) parses as "car_b has a nested child entity named
+        location", not "attach a location component to car_b" --
+        structurally identical to
+        test_update_registry_accepts_legitimate_nested_entities' genuine
+        nesting, distinguished only by `location` being a real,
+        already-declared component type."""
+        ctx = _make_ctx()
+        start_world(str(tmp_path / "save"), ctx)
+        with pytest.raises(ValueError, match="location"):
+            update_registry("car_b:\n    location:\n        - value: parked in parking_spot_1\n", ctx=ctx)
+        registrar = _registrars[ctx.request_context.session]
+        assert registrar.get_entity_id("car_b.location") is None
+
+    def test_update_registry_accepts_correct_list_form_for_known_component(self, tmp_path):
+        """Sanity check alongside the rejection above: the correct list
+        form for the very same component (`location` as a list item, not
+        a nested dict key) must not be caught by the new check."""
+        ctx = _make_ctx()
+        start_world(str(tmp_path / "save"), ctx)
+        result = update_registry(
+            "car_b:\n"
+            "    - object:\n"
+            "        type: car\n"
+            "    - location:\n"
+            "        value: parked in parking_spot_1\n",
+            ctx=ctx,
+        )
+        assert "Merged" in result
 
     def test_update_registry_writes_collapsed_and_full_history_yaml(self, tmp_path):
         ctx = _make_ctx()
         save_dir = tmp_path / "save"
         start_world(str(save_dir), ctx)
-        update_registry("door:\n    - description: first\n", ctx)
-        update_registry("door:\n    - description: second\n", ctx)
+        update_registry("door:\n    - description: first\n", ctx=ctx)
+        update_registry("door:\n    - description: second\n", ctx=ctx)
 
         world_text = (save_dir / "world" / "world.yaml").read_text()
         assert "second" in world_text
@@ -196,3 +320,11 @@ class TestRegistryTools:
         start_world(str(tmp_path / "save"), ctx)
         result = view_entity("nonexistent_xyz", ctx)
         assert "No data found" in result
+
+    def test_view_entity_delegates_to_iacs_registrar_view_entity(self, tmp_path):
+        """Not a reimplementation -- the same Registrar.view_entity call
+        iacs's own view_entity tool wraps too."""
+        ctx = _make_ctx()
+        start_world(str(tmp_path / "save"), ctx)
+        registrar = _registrars[ctx.request_context.session]
+        assert view_entity("player", ctx) == registrar.view_entity("player", format="markdown")

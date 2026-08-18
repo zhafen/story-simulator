@@ -1,0 +1,88 @@
+file_info:
+    - description: >
+        Permanent regression fixture for tests/test_race_placement_live.py
+        (task #57: the recurring bug where a weak model assumes a
+        different, not-yet-resolved car's trip has already finished).
+        Reuses the parking scenario's exact start_time/duration facts (so
+        end_times, and therefore the correct finishing order, match
+        exactly: car_b=1020, car_c=1080, car_a=1800) but frames it as a
+        three-car race with no restaurant/parking-spot consequence riding
+        on the answer at all -- there is nothing to reason about except
+        finishing order, recorded via each car's own race_placement.value.
+
+race_placement:
+    - description: A car's finishing position in this race (1 = first to
+        finish, 2 = second, etc.), recorded once its own trip event
+        resolves. Exactly one value counts as current per entity -- see
+        `time`, matching state's/location's pattern. Scoped to this
+        scenario rather than a manifest/builtins.yaml global, since
+        nothing outside this test needs it.
+    - component_type
+    - field:
+        value:
+            description: 1-indexed finishing position, e.g. 1 for first place.
+            type: int
+        time:
+            description: World time (seconds since world creation) this
+                placement was recorded at, backfilled on merge (see
+                story_simulator.core._next_time_stamp), not authored
+                directly, so it stays nullable for hand-authored rows.
+                Entities can accumulate multiple race_placement rows over
+                time; flagged time_dimension so Registry.view_current
+                resolves the row with the highest time as the current
+                placement.
+            type: float
+            nullable: true
+            time_dimension: true
+            units: seconds
+
+car_a:
+    - object:
+        type: car
+    - description:
+        value: The car for friend A, competing in the race.
+
+car_a_trip:
+    - event:
+        start_time: 0
+        duration: 1800
+    - event_state:
+        value: planned
+    - involved_entity:
+        - value: car_a
+    - description:
+        value: car_a's leg of the race.
+
+car_b:
+    - object:
+        type: car
+    - description:
+        value: The car for friend B, competing in the race.
+
+car_b_trip:
+    - event:
+        start_time: 300
+        duration: 720
+    - event_state:
+        value: planned
+    - involved_entity:
+        - value: car_b
+    - description:
+        value: car_b's leg of the race.
+
+car_c:
+    - object:
+        type: car
+    - description:
+        value: The car for friend C, competing in the race.
+
+car_c_trip:
+    - event:
+        start_time: 480
+        duration: 600
+    - event_state:
+        value: planned
+    - involved_entity:
+        - value: car_c
+    - description:
+        value: car_c's leg of the race.

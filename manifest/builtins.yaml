@@ -37,7 +37,7 @@ state:
         time:
             description: World time (seconds since world creation) this state
                 was recorded at, backfilled on merge (see
-                story_simulator.spatial.merge_yaml_string), not authored
+                story_simulator.core._next_time_stamp), not authored
                 directly, so it stays nullable for hand-authored rows.
                 Entities can accumulate multiple state rows over time;
                 flagged time_dimension so Registry.view_current resolves
@@ -47,29 +47,24 @@ state:
             time_dimension: true
             units: seconds
 
-next_due:
-    - description: The next in-world time this entity should be processed by
-        the event loop (see story_simulator.spatial.next_due_entity). No row
-        yet means due immediately -- a brand-new entity always goes before
-        anything already scheduled into the future. Exactly one value counts
-        as current per entity -- see `time`.
+location:
+    - description: The entity's current location, as a short freeform phrase
+        (e.g. "parked in parking_spot_1" or "parked on street") rather than
+        spatial coordinates -- see `position` for that. Exactly one value
+        counts as current per entity -- see `time`.
     - component_type
     - field:
         value:
-            description: The next due time, in seconds since world creation --
-                the same world-time axis `time` (below) stamps every other
-                write with, so "when is X next due" and "how recent is this
-                row" share one clock.
-            type: float
-            units: seconds
+            description: The current location, e.g. "parked on street".
+            type: str
         time:
             description: World time (seconds since world creation) this
-                next_due row was recorded at, backfilled on merge (see
-                story_simulator.spatial.merge_yaml_string), not authored
+                location was recorded at, backfilled on merge (see
+                story_simulator.core._next_time_stamp), not authored
                 directly, so it stays nullable for hand-authored rows.
-                Entities can accumulate multiple next_due rows over time;
+                Entities can accumulate multiple location rows over time;
                 flagged time_dimension so Registry.view_current resolves
-                the row with the highest time as the current one.
+                the row with the highest time as the current location.
             type: float
             nullable: true
             time_dimension: true
@@ -98,7 +93,7 @@ physics_components:
             time:
                 description: World time (seconds since world creation) this
                     position was recorded at, backfilled on merge (see
-                    story_simulator.spatial.merge_yaml_string), not authored
+                    story_simulator.core._next_time_stamp), not authored
                     directly, so it stays nullable for hand-authored rows.
                     Entities can accumulate multiple position rows over time;
                     flagged time_dimension so Registry.view_current resolves
@@ -154,6 +149,100 @@ turn_components:
             whichever character `perceive` was last called for. Replaced
             wholesale on each `perceive` call to match its current result set.
         - component_type
+
+event_components:
+    event:
+        - description: >
+            A scheduled or ongoing occurrence -- what the event-driven
+            simulation loop actually pops and resolves, distinct from the
+            entities it concerns (see involved_entity) and from its own
+            place in its lifecycle (see event_state, a separate component
+            so a lifecycle transition never has to restate start_time/
+            duration in the same row). Due once world time reaches
+            start_time + duration. Not time_dimension'd -- unlike
+            event_state, start_time/duration are set once, the same way
+            object.type is, not restated over an event's life.
+        - component_type
+        - field:
+            start_time:
+                description: World time (seconds since world creation)
+                    this event begins. Nullable -- an event not yet
+                    scheduled (event_state "not started") may not have
+                    one yet.
+                type: float
+                nullable: true
+                units: seconds
+            duration:
+                description: How long this event takes, in seconds, once
+                    it starts. Nullable for the same reason as start_time.
+                type: float
+                nullable: true
+                units: seconds
+    event_state:
+        - description: >
+            An event's own place in its lifecycle, split out from `event`
+            itself so a transition doesn't require restating start_time/
+            duration. Vocabulary matches iacs's own task.execution_state
+            (iacs/iacs/builtins/components.yaml), extended there with
+            "planned" and "interrupted" for this project's purposes.
+        - component_type
+        - field:
+            value:
+                description: This event's current lifecycle state.
+                type: str
+                range:
+                    - not started
+                    - planned
+                    - in progress
+                    - interrupted
+                    - complete
+            time:
+                description: World time (seconds since world creation)
+                    this event_state row was recorded at, backfilled on
+                    merge, not authored directly, so it stays nullable
+                    for hand-authored rows. An event accumulates a new
+                    row each time its lifecycle state changes; flagged
+                    time_dimension so Registry.view_current resolves the
+                    row with the highest time as the event's current
+                    lifecycle state.
+                type: float
+                nullable: true
+                time_dimension: true
+                units: seconds
+    involved_entity:
+        - description: >
+            Marks that the owning event involves the entity referenced by
+            value -- who or what it concerns, acts on, or needs in order
+            to be interpreted. An event can carry several
+            involved_entity rows, one per entity it involves.
+        - parent: directed_relation
+        - field:
+            value:
+                description: The entity this event involves.
+                type: entity_ref
+    outcome:
+        - description: >
+            What actually happened once an event resolved: a
+            natural-language description, plus how far that leaves the
+            event's own lifecycle. progress uses the same vocabulary as
+            event_state -- see there.
+        - component_type
+        - field:
+            progress:
+                description: How far this outcome leaves the event's own
+                    lifecycle. Defaults to "complete" -- most outcomes
+                    fully resolve the event they belong to.
+                type: str
+                range:
+                    - not started
+                    - planned
+                    - in progress
+                    - interrupted
+                    - complete
+                default: complete
+            value:
+                description: A natural-language description of what happened.
+                type: str
 
 agent_components:
     agent:

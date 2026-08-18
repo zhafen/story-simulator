@@ -3528,6 +3528,7 @@ dependencies = [
     { name = "pytest" },
     { name = "python-dotenv" },
     { name = "pyyaml" },
+    { name = "tabulate" },
 ]
 
 [package.metadata]
@@ -3539,6 +3540,7 @@ requires-dist = [
     { name = "pytest", specifier = ">=9.1.1" },
     { name = "python-dotenv", specifier = ">=1.2.2" },
     { name = "pyyaml", specifier = ">=6.0.3" },
+    { name = "tabulate", specifier = ">=0.10.0" },
 ]
 
 [[package]]

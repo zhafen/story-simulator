@@ -9,3 +9,4 @@ venv/
 .env
 render.svg
 /data/sandbox/
+/.live_test_traces/

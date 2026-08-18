@@ -33,16 +33,29 @@ is a separate, unsolved problem, deliberately out of scope here.
 flowchart LR
     Human(("Human player")) <--> Client["MCP-aware chat client<br/>(the narrator/game master)"]
     Client -- "start_world, advance_simulation,<br/>view_registry, view_entity,<br/>update_registry" --> Server["story-simulator-mcp"]
-    Client -- "describe_format,<br/>validate_yaml" --> Iacs["iacs-mcp"]
+    Client -- "describe_format,<br/>validate_yaml (optional: load_database)" --> Iacs["iacs-mcp"]
     Server -- "reads/writes" --> DB[("registry database<br/>(one schema per save_dir)")]
 ```
 
 For a human player, narration is just the connected agent's own replies —
-nothing in story-simulator narrates *for* it. `iacs-mcp` (attached alongside,
-unmodified) stays the format/validation reference — `describe_format`/
-`validate_yaml` — since it has no way to see story-simulator's live,
-accumulating registry state (its own `load_manifest` only re-reads static
-files).
+nothing in story-simulator narrates *for* it. `view_registry`/`view_entity`
+are story-simulator's own tools, but delegate internally to iacs's own
+`Registrar.view_df`/`view_entity` methods against the same registrar object
+`start_world` already opened — a single in-process call, not a second MCP
+round-trip. `iacs-mcp` (attached alongside, unmodified in this flow) stays
+the format/validation reference — `describe_format`/`validate_yaml` — since
+those don't need the live registry at all; its own `load_database` tool
+can optionally point its deeper introspection tools at this exact world
+too, but nothing on the ordinary read path depends on a host discovering
+and calling it. Two earlier iterations tried routing all reads through
+`iacs-mcp` instead (once via a nudge, once by removing story-simulator's
+own tools outright) — reverted after live evidence that a connected host
+reliably discovers and uses tools on the server it's already talking to,
+but never once discovered or called a tool on a separate one (see
+`docs/manifest/history.yaml`: `project_history.
+iacs_mcp_pointed_at_live_registry_for_component_discovery`,
+`project_history.story_simulator_view_tools_removed_in_favor_of_iacs`, and
+`project_history.story_simulator_view_tools_reinstated_as_iacs_delegates`).
 
 > **Character/NPC/terrain/physics/spatial-perception tools are currently
 > shelved** (`perceive`, `advance_npc_turn`, `generate_terrain`,
@@ -55,30 +68,38 @@ files).
 
 Turns aren't a fixed round-robin over every entity — they're scheduled,
 Sedgewick & Wayne style (*Algorithms*, 4th ed., §6.1 Event-Driven
-Simulation): every entity carries its own `next_due` time in the registry,
-and the loop only ever pops whichever entity is due soonest, discarding
-stale events rather than replaying them. `predict_next_event`/`push_event`
-is the same function at both call sites in the diagram below — scheduling
-a brand-new entity's first event and rescheduling after one resolves are
-the same operation, not two.
+Simulation): the schedule is `event` entities' own `start_time`/`duration`
+(`manifest/builtins.yaml`'s `event_components`), not an in-memory priority
+queue and not a rescheduled `next_due` component — an event's timing is
+set once, either pre-planned in a scenario or by a responder's own
+`plan_events` call, and never revised afterward. The loop only ever pops
+whichever `event` is due soonest (`start_time + duration`, computed fresh
+from the registry every call), discarding terminal (`complete`/
+`interrupted`) events rather than replaying them.
 
 `story_simulator/core.py` holds this event-loop kernel (`pop_event`,
-`is_event_valid`, `advance_clock`, `predict_next_event`, `push_event`) and,
+`is_event_valid`, `advance_clock`, `resolve_event`, `plan_events`) and,
 since it also absorbed the bulk of what used to be `mcp_server.py`'s own
 implementation (see that module's docstring for why), the loop that drives
-it too: `_run_event_loop` dispatches each popped entity straight to
-`process_event` (`resolve_event` asks the connected host what happens via
-`story_simulator.resolve.TurnReplay`, `responder="host"` by default or
-`"subagent"` if `STORY_SIM_RESPONDER=subagent` is set — see
-`story_simulator.config.event_responder` — then predicts/pushes the
-next event). `story_simulator/mcp_server.py` only exposes all of this as
-the `advance_simulation` MCP tool, a thin wrapper around
-`core.advance_simulation`. A `_process_due_entity` seam used to sit
-between `_run_event_loop` and `process_event`, kept specifically for a
-character-aware branch to return to; once that branch moved to
-`shelved/` there was nothing left to dispatch between, so the seam was
-removed too — a future character-aware branch would need its own
-dispatch step again, not assume this one still exists.
+it too: `_run_event_loop` dispatches each popped event straight to
+`process_event`, which runs `advance_clock` (the popped event's own due
+time becomes "now" for this turn), then pauses the connected host twice —
+once for `resolve_event` (what happened, recorded via the host's own
+`update_registry` calls) and once for `plan_events` (whether anything new
+needs scheduling as a result) — via `story_simulator.resolve.TurnReplay`,
+`responder="host"` by default or `"subagent"` if `STORY_SIM_RESPONDER=subagent`
+is set (see `story_simulator.config.event_responder`). Unlike the
+mechanism this replaced, there's no separate mechanical "apply" step:
+resolve/plan's own `update_registry` calls are the only writes, nothing
+here re-derives or re-applies what the model already recorded.
+`story_simulator/mcp_server.py` only exposes all of this as the
+`advance_simulation` MCP tool, a thin wrapper around `core.advance_simulation`.
+A `_process_due_entity` seam used to sit between `_run_event_loop` and
+`process_event`, kept specifically for a character-aware branch to return
+to; once that branch moved to `shelved/` there was nothing left to
+dispatch between, so the seam was removed too — a future character-aware
+branch would need its own dispatch step again, not assume this one still
+exists.
 
 `"subagent"` doesn't ask the connected host to decide inline; its prompt
 instead asks the host to answer via its own isolated subagent mechanism
@@ -103,32 +124,25 @@ generated version and how the two were reconciled.
 flowchart TD
     subgraph Turn["process_event"]
         direction TB
-        ADV[Advance clock] --> RBE[Resolve event] --> PRED2[Predict next event] --> PUSH2[Push event]
+        ADV[Advance clock] --> RES[Resolve event] --> PLAN[Plan events]
     end
 
     subgraph Event["Event-driven simulation (Sedgewick & Wayne)"]
         direction TB
-        I1[Predict events] --> I2[Push to queue]
-        I2 -- next entity --> I1
-        I2 --> L1[Pop event]
-        L1 --> V{Valid?}
+        L1[Pop event] --> V{Valid?}
         V -- stale --> L1
         V -- valid --> PROC[Process event]
-        PROC --> PRED[Predict next]
-        PRED --> PUSH[Push events]
-        PUSH --> L1
+        PROC --> L1
     end
 
     PROC -. zooms into .-> Turn
-    PRED -. same function as .-> I1
-    PUSH -. same function as .-> I2
 ```
 
 Pausing/resuming (`NeedsExternalInput`, `resume_token`, MRTR — Multi
 Round-Trip Requests, MCP spec 2026-07-28) isn't drawn here, same as
-before: it's not a step in the loop's own shape, it's how "Resolve
-event" reaches back out to the connected host without every intervening
-function needing to be a generator — see
+before: it's not a step in the loop's own shape, it's how "Resolve event"
+and "Plan events" each reach back out to the connected host without every
+intervening function needing to be a generator — see
 `story_simulator/resolve.py`'s own docstring, or the sequence-style trace
 in [`docs/architecture/advance_simulation.md`](architecture/advance_simulation.md).
 
@@ -148,14 +162,18 @@ shelved — see below) or
 (the same thing traced outward from one specific entry point instead of
 collapsed to the whole-project overview).
 
-Both are produced by `iacs generate-architecture-diagram`, a capability
-that lives on [`zhafen/iacs#claude/architecture-diagrams`](https://github.com/zhafen/iacs/tree/claude/architecture-diagrams),
-not yet on iacs's `main` — regenerating in place isn't possible until that
-branch merges and the submodule pointer bumps. `story_simulator.md` is
-kept as *exactly* that command's raw output (safe to overwrite wholesale
-on every regenerate); commentary about it lives here instead, precisely so
-regenerating never clobbers hand-written explanation the way mixing the
-two in one file would.
+Both are produced by `iacs generate-architecture-diagram` (now merged to
+iacs's `main`): `uv run iacs --manifest docs/manifest --manifest
+story_simulator generate-architecture-diagram --output
+docs/architecture/story_simulator.md` for the whole-project overview, and
+the same command with `--root mcp_server.advance_simulation --output
+docs/architecture/advance_simulation.md` for the traced version (`--root`
+needs the file-qualified name since `advance_simulation` exists in both
+`core` and `mcp_server`). `story_simulator.md` is kept as *exactly* that
+command's raw output (safe to overwrite wholesale on every regenerate);
+commentary about it lives here instead, precisely so regenerating never
+clobbers hand-written explanation the way mixing the two in one file
+would.
 `mcp_client.py` has no edges in that diagram because none of its own
 entities have a docstring yet (see `load_python`'s own docstring for why
 undocumented code is excluded rather than shown as noise) — it isn't

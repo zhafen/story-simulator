@@ -126,6 +126,27 @@ story_simulator_mission:
               type: developer_experience
               value: 0.4
         - work_state: done
+    scenario_agnostic_reasoning_prompts:
+        - description: >
+              Any prompt/instruction change meant to improve a responder's
+              reasoning (e.g. the recurring arrival-order confusion tracked
+              in the parking live test, or a component-choice confusion
+              like writing a car's location under `todo` instead of
+              `location`) must be a general rule for reasoning through the
+              event-resolution process itself -- never something tailored
+              to one specific scenario's particular entities or narrative
+              (e.g. hard-coding a reminder about a specific car in the
+              parking scenario). A scenario-specific hint would defeat the
+              purpose of story-simulator being a general-purpose
+              simulation, not a fix for one playtest. `resolve_event`'s own
+              "nothing with an earlier end_time is still unresolved"
+              language is the model to follow: a general rule any scenario
+              benefits from, not one keyed to a particular entity or story.
+        - requirement
+        - impact:
+              type: architecture_clarity
+              value: 0.5
+        - work_state: done
     tool_catalog:
         data:
             - description: The MCP tools story-simulator exposes, and what each must guarantee.
@@ -141,7 +162,14 @@ story_simulator_mission:
                   value: 0.9
             - work_state: done
         view_registry:
-            - description: CSV dump of every recorded instance of one component type.
+            - description: >
+                  Markdown dump of every recorded instance of one component
+                  type. Delegates to iacs's own Registrar.view_df rather than
+                  reimplementing the read logic -- see docs/manifest/
+                  history.yaml: project_history.
+                  story_simulator_view_tools_reinstated_as_iacs_delegates for
+                  why this is a thin wrapper rather than routed through a
+                  separate iacs-mcp call.
             - requirement
             - impact:
                   type: reliability
@@ -151,6 +179,10 @@ story_simulator_mission:
             - description: >
                   Every recorded component instance for one entity, resolved by
                   exact hash, exact alias, or unambiguous path fragment.
+                  Delegates to iacs's own Registrar.view_entity rather than
+                  reimplementing the traversal -- see docs/manifest/
+                  history.yaml: project_history.
+                  story_simulator_view_tools_reinstated_as_iacs_delegates.
             - requirement
             - impact:
                   type: reliability
@@ -162,6 +194,21 @@ story_simulator_mission:
             - impact:
                   type: reliability
                   value: 0.9
+            - work_state: done
+        consolidate_review:
+            - description: >
+                  Every component type recorded so far, in one call, for the
+                  host to review and consolidate anything wrong -- #76's
+                  post-write alternative to update_registry's own pre-write
+                  preview/confirm flow. Delegates to iacs's own Registrar.
+                  summarize_components rather than reimplementing it -- same
+                  reason view_registry/view_entity are thin wrappers (see
+                  docs/manifest/history.yaml: project_history.
+                  story_simulator_view_tools_reinstated_as_iacs_delegates).
+            - requirement
+            - impact:
+                  type: reliability
+                  value: 0.6
             - work_state: done
         perceive:
             - description: >
@@ -276,6 +323,49 @@ story_simulator_mission:
               - type: regression_risk
                 value: 0.3
         - work_state: new
+    world_time_concept:
+        - description: >
+              The simulation had no representation of in-fiction elapsed time
+              (day/night, how long a character has walked, the living world's
+              "a year forward" door mechanic) independent of the wall-clock
+              ordering value (_next_turn_stamp) that only existed to resolve
+              which of an entity's position rows is current.
+
+              Position/state/location's ordering field is `time` (in seconds
+              since world creation), sourced from whichever `event` was most
+              recently popped -- see core._current_world_time/_next_time_stamp
+              and single_ordering_vocabulary. The old next_due-based
+              mechanism this paragraph used to describe is gone entirely
+              (manifest/builtins.yaml's next_due component was dead schema,
+              removed); still no day/night cycle or calendar, and "how long
+              has X been walking" is answerable from `time` deltas but
+              nothing surfaces it yet.
+
+              Known gap, sharper than "resets to 0.0 on a subprocess
+              restart": _current_world_time is purely in-process,
+              session-scoped memory, not a registry entity, so it resets on
+              *every* idle-triggered MCP disconnect too (a routine, expected
+              event per CLAUDE.md's own recovery guidance), not just a
+              crash. If any update_registry call lands in the narrow window
+              between reconnect and the next successful event pop, it
+              backfills `time: 0.0` for time_dimension'd fields -- and since
+              Registry.view_current picks the row with the *highest* `time`
+              as current (not most-recent-write, except as an equal-time
+              tiebreak), such a write could be silently treated as stale on
+              read if an earlier row in that same session already recorded a
+              higher timestamp. Accepted for now in favor of not introducing
+              a separate persisted clock entity, but worth knowing precisely
+              rather than just "known gap".
+        - requirement
+        - impact:
+              type: gameplay_richness
+              value: 0.4
+        - cost:
+              - type: engineering_hours
+                value: 8
+              - type: regression_risk
+                value: 0.2
+        - work_state: in progress
     live_model_test_coverage:
         - description: >
               generate_terrain/resolve_physics/advance_npc_turn's actual LLM
@@ -389,8 +479,8 @@ story_simulator_mission:
         - work_state: new
     event_loop_structure:
         - description: >
-              The pop/is_event_valid/advance_clock/predict_next_event/
-              push_event functions just live loose at module scope in
+              The pop_event/is_event_valid/advance_clock/resolve_event/
+              plan_events functions just live loose at module scope in
               core.py. Evaluate whether the event loop deserves a more
               deliberate structure (a class, a dataclass-based state object,
               an explicit stage protocol) as more modules start hooking into
@@ -398,7 +488,9 @@ story_simulator_mission:
               loose `__iacs__ = {"todo": ...}` marker in core.py itself
               (which also carries `"solution of":
               story_simulator_mission.stateless_client` -- that part stays
-              in the code, only the todo note moved here).
+              in the code, only the todo note moved here). Function names
+              updated 2026-08-16 to match the event-entity rework
+              (predict_next_event/push_event no longer exist).
         - requirement
         - impact:
               type: architecture_clarity
@@ -715,3 +807,45 @@ architecture_manifest_solution:
           This manifest (story-simulator.yaml + history.yaml), modeling the
           project as requirement/solution entities scored for cost-vs-impact.
     - solution of: story_simulator_mission.queryable_architecture
+
+# ---------------------------------------------------------------------------
+# Concepts already implemented in manifest/builtins.yaml's event_components
+# without a backing requirement -- deliberately left with no `solution of`
+# link so run_dataflow('audit.traceability') surfaces them as exactly what
+# they are ("solutions in search of a problem"), rather than inventing a new
+# iacs vocabulary concept for "unvalidated solution". Each carries a `todo`
+# so run_dataflow('audit.todo') also picks it up. Resolve by either writing
+# a real requirement and linking `solution of` to it, or removing the
+# now-unjustified schema/code.
+# ---------------------------------------------------------------------------
+
+outcome_progress_interruption_semantics:
+    - description: >
+          outcome.progress's field description currently says "how far the
+          resolution leaves the event's own lifecycle", but its real shape
+          is closer to "the outcome given a particular event_state" --
+          e.g. what "interrupted" concretely produces is a different kind
+          of outcome than "complete", and nobody has decided how that
+          should work yet. Deliberately set aside rather than designed
+          under time pressure.
+    - todo:
+          value: >
+              Decide outcome.progress/event_state's real interruption
+              semantics (what "interrupted" concretely produces, and
+              whether outcome.progress should be reframed as "the outcome
+              given a particular event_state"), or drop "interrupted" from
+              the vocabulary if it turns out not to be needed.
+          priority: 0.3
+
+involved_entity_unused:
+    - description: >
+          involved_entity (manifest/builtins.yaml event_components) lets an
+          event link to the entities it concerns, but nothing reads that
+          link today -- resolve_event/plan_events tell the responder to
+          look it up, but no code scopes anything by it.
+    - todo:
+          value: >
+              Give involved_entity a real functional use (e.g. scoping what
+              resolve_event/plan_events look up), or remove it if it turns
+              out not to be needed.
+          priority: 0.2

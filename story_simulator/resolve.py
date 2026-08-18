@@ -19,15 +19,28 @@ Same request shape (`JudgmentRequest`) at every call site, dispatched by
   `resolve()` accepts, kept for whichever character-facing code eventually
   returns from `shelved/` (see docs/architecture.md) and needs it again,
   but nothing currently calls this with "human".
+- "keyed_subagent" -- answered directly, in-process, via
+  `story_simulator.keyed_subagent.call_keyed_subagent` and
+  `config.keyed_subagent_model()` (LiteLLM, DeepSeek by default -- see
+  #89), with real registry tool access so it can actually persist what it
+  decides. No MCP round-trip: never raises `NeedsExternalInput`, so a turn
+  using it never pauses for this call the way "human"/"subagent"/"host"
+  always do -- except once its own wall-clock time budget
+  (`config.keyed_subagent_time_budget_seconds()`) runs out for this
+  `advance_simulation` call, at which point it checks in with the host
+  the same way "host" would, so an unattended run can't chain past Claude
+  Code's own per-MCP-tool-call timeout.
 
-A fourth responder, "keyed_subagent" (a nested specialist call on
+A responder of this same name (a nested specialist call on
 story-simulator's own API key, no MCP round-trip, via
 `TurnReplay.resolve_preferring_keyed_subagent`) was removed along with its
 only caller (`get_character_input`) and its dependency on
 `story_simulator.agents` (now shelved too) -- see git history, and PR #42
 ("Rename responders and add isolated subagent delegation option") for the
-fuller four-way design this is a subset of, to bring it back alongside the
-character/npc module it served.
+fuller four-way design this is a subset of. The version above is a
+narrower revival: no `AgentSpec`/YAML config, no NPC/character framing,
+just a direct LiteLLM call with real registry tool access -- see
+`story_simulator.keyed_subagent`'s own docstring.
 
 "human"/"subagent"/"host" are reached by raising `NeedsExternalInput`, resumed
 through MRTR (Multi Round-Trip Requests, MCP spec 2026-07-28) rather than
@@ -35,7 +48,11 @@ MCP sampling. Sampling would have offered a third option -- the connected
 client's own model/provider, not ours -- but it's gone: deprecated
 protocol-wide by that same spec revision, not just unsupported by this
 project's actual client (Claude Code CLI 2.1.222 declared no `sampling`
-capability, confirmed live before the deprecation).
+capability, confirmed live before the deprecation). "keyed_subagent" is
+the odd one out here: it answers inline, in the same `await`, without
+ever raising (except its own deadline check-in, which does raise, framed
+as "host") -- there is no host to round-trip to for this responder in the
+ordinary case.
 
 Raising is what lets a judgment call reach either from any nesting depth
 without every intervening function having to be a generator (`yield from`
@@ -63,6 +80,7 @@ state -- see `core.advance_simulation`.
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass, field
 
 
@@ -175,11 +193,59 @@ class TurnReplay:
 
     answers: list[str] = field(default_factory=list)
     call_index: int = field(default=0, init=False)
+    # Absolute time.monotonic() value "keyed_subagent" must stop answering
+    # inline by, for *this* advance_simulation call -- set fresh by
+    # core._run_event_loop on every call (including a resumed one), not
+    # carried over from a prior call's own deadline. None for any other
+    # responder, which never reads it. See resolve()'s keyed_subagent
+    # branch for why this exists at all.
+    deadline: float | None = None
 
-    async def resolve(self, request: JudgmentRequest, *, responder: str) -> str:
+    async def resolve(self, request: JudgmentRequest, *, responder: str, session=None) -> str:
         i, self.call_index = self.call_index, self.call_index + 1
         if i < len(self.answers):
             return self.answers[i]
+        if responder == "keyed_subagent":
+            # Budget check first: keyed_subagent never pauses on its own,
+            # so with nothing bounding it, a single advance_simulation call
+            # can chain arbitrarily many DeepSeek round-trips together
+            # (confirmed live: 31 in one call) and blow past Claude Code's
+            # own ~60s per-MCP-tool-call timeout, which aborts the whole
+            # call and leaves the host with nothing to show for it. Past
+            # the budget, check in with the host instead of placing
+            # another call -- same NeedsExternalInput/MRTR pause host
+            # answers already resume through, just host-initiated instead
+            # of judgment-initiated. This call_index's own answer is left
+            # unrecorded (nothing appended to self.answers), so resuming
+            # re-asks this exact judgment call fresh, with a new budget.
+            if self.deadline is not None and time.monotonic() >= self.deadline:
+                checkin_prompt = (
+                    "The \"keyed_subagent\" responder has reached its time budget "
+                    "for this advance_simulation call without needing your input on "
+                    "anything -- it's been answering judgment calls on its own. "
+                    f"{self.call_index - 1} judgment call(s) already answered this way "
+                    "so far this call (already reflected in the registry). Call "
+                    "advance_simulation again with the same resume_token to keep the "
+                    "simulation running from exactly where it left off, or stop here "
+                    "if this is a reasonable checkpoint."
+                )
+                raise NeedsExternalInput(prompt=checkin_prompt, responder="host")
+            # No NeedsExternalInput here -- nothing external to wait on.
+            # Framed the same way "host" is ("decide it yourself, don't
+            # wait for input") since that instruction is about how the
+            # *model* answering should behave, not about who's asking; a
+            # directly-called subagent needs exactly the same instruction
+            # an inline host would. Appended to self.answers immediately
+            # (matching what a resumed host/subagent answer would look
+            # like at this same index) so that if a *later* judgment call
+            # in this same turn pauses and gets resumed, this call replays
+            # from the cached answer instead of hitting the model again --
+            # see _wrap_loop_result's `_encode_token(alias, replay.answers)`.
+            from story_simulator.keyed_subagent import call_keyed_subagent
+
+            answer = await call_keyed_subagent(_frame_for_responder(request, "host"), session)
+            self.answers.append(answer)
+            return answer
         if responder in ("human", "subagent", "host"):
             raise NeedsExternalInput(prompt=_frame_for_responder(request, responder), responder=responder)
         raise ValueError(f"unknown responder {responder!r}")

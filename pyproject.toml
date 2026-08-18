@@ -9,7 +9,7 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "emc2p",
+    "emc2p[agents]",
     "matplotlib>=3.11.0",
     "mcp>=1.28.1",
     "psycopg[binary]>=3.2",
@@ -18,8 +18,10 @@ dependencies = [
     "pyyaml>=6.0.3",
     "tabulate>=0.10.0",
 ]
-# litellm (used only by shelved/story_simulator/agents.py -- see
-# shelved/README.md) removed pending that code's return.
+# emc2p's "agents" extra pulls in litellm -- the "keyed_subagent" event
+# responder's model call runs through emc2p.agents.keyed_subagent (see
+# story_simulator/keyed_subagent.py), so story-simulator itself no longer
+# needs litellm as a direct dependency.
 
 [project.scripts]
 story-simulator-mcp = "story_simulator.mcp_server:main"

@@ -40,6 +40,7 @@ from story_simulator.config import (
     MANIFEST_DIR,
     WORLD_FILE_ID,
     event_responder,
+    keyed_subagent_time_budget_seconds,
     registry_schema_name,
     registry_url,
     resolve_database_dsn,
@@ -517,7 +518,7 @@ def _preview_registry_write(registrar: Registrar, yaml_string: str) -> str:
 # ---------------------------------------------------------------------------
 
 
-async def resolve_event(alias: str, replay: TurnReplay, end_time: float) -> str:
+async def resolve_event(alias: str, replay: TurnReplay, end_time: float, session) -> str:
     """Resolve box: ask a responder to interpret `alias` now that its
     end_time has been reached, and hand back whatever it says, for
     narration.
@@ -607,10 +608,10 @@ async def resolve_event(alias: str, replay: TurnReplay, end_time: float) -> str:
             f"update_registry."
         )
     )
-    return await replay.resolve(request, responder=event_responder())
+    return await replay.resolve(request, responder=event_responder(), session=session)
 
 
-async def plan_events(alias: str, replay: TurnReplay) -> str:
+async def plan_events(alias: str, replay: TurnReplay, session) -> str:
     """Plan box: ask a responder whether anything new needs to be
     scheduled as a result of `alias` resolving, and let it create new
     `event` entities via update_registry if so.
@@ -628,7 +629,7 @@ async def plan_events(alias: str, replay: TurnReplay) -> str:
             f"from this, just say so -- no new events needed."
         )
     )
-    return await replay.resolve(request, responder=event_responder())
+    return await replay.resolve(request, responder=event_responder(), session=session)
 
 
 async def process_event(registrar: Registrar, alias: str, replay: TurnReplay, session) -> tuple[str, str]:
@@ -644,8 +645,8 @@ async def process_event(registrar: Registrar, alias: str, replay: TurnReplay, se
     """
     end_time = advance_clock(registrar, alias)
     _current_world_time[session] = end_time
-    resolve_narration = await resolve_event(alias, replay, end_time)
-    plan_narration = await plan_events(alias, replay)
+    resolve_narration = await resolve_event(alias, replay, end_time, session)
+    plan_narration = await plan_events(alias, replay, session)
     return resolve_narration, plan_narration
 
 
@@ -697,6 +698,17 @@ async def _run_event_loop(
     if resume_alias is not None:
         assert replay is not None
 
+    # Computed once per call (fresh or resumed), not per event/TurnReplay:
+    # the constraint this bounds -- Claude Code's own per-MCP-tool-call
+    # timeout -- applies to the whole advance_simulation invocation, not
+    # to any one event within it. A resumed replay's own deadline (set by
+    # some earlier, now-expired call) is deliberately overwritten here,
+    # not preserved -- each call gets its own fresh clock. See
+    # TurnReplay.deadline / resolve()'s keyed_subagent branch.
+    deadline = time.monotonic() + keyed_subagent_time_budget_seconds()
+    if replay is not None:
+        replay.deadline = deadline
+
     alias = resume_alias
     while True:
         if alias is None:
@@ -706,7 +718,7 @@ async def _run_event_loop(
             if not is_event_valid(registrar, alias):
                 alias = None
                 continue
-            replay = TurnReplay(answers=[])
+            replay = TurnReplay(answers=[], deadline=deadline)
         try:
             await process_event(registrar, alias, replay, session)
         except NeedsExternalInput as e:

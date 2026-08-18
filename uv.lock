@@ -326,11 +326,12 @@ requires-dist = [
     { name = "pandas", specifier = ">=2.0.0" },
     { name = "pandera", extras = ["ibis"], specifier = ">=0.25.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=7.0.0" },
+    { name = "pytest", marker = "extra == 'testing'", specifier = ">=7.0.0" },
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "sf-hamilton", specifier = ">=1.88.0" },
     { name = "tabulate", specifier = ">=0.10.0" },
 ]
-provides-extras = ["dev"]
+provides-extras = ["dev", "testing"]
 
 [[package]]
 name = "fonttools"

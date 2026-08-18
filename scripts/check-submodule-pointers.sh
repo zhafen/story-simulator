@@ -5,6 +5,15 @@
 # exists locally and was never pushed to the submodule's own remote (so
 # it would break for anyone else who clones this repo).
 #
+# Reachability is checked against ANY of the submodule's own remote
+# branches, not just its default branch -- deliberately, so a superproject
+# PR can stack on a submodule PR that hasn't merged yet (the exact
+# story-simulator/emc2p workflow this was tightened for): the pointer just
+# has to be something anyone else who clones this repo can actually fetch,
+# which a pushed feature branch already satisfies. Pointing at a branch
+# other than the default is flagged (not failed) as a reminder to bump it
+# again once that branch merges.
+#
 # `git submodule summary` shows the same information, but its `<`/`>`
 # prefixes are easy to misread in the direction that matters most - this
 # gives a pass/fail instead.
@@ -45,9 +54,12 @@ while read -r old_mode new_mode old_sha new_sha status path; do
   fi
 
   # CI (and some local clones) fetch submodules at --depth=1, which is too
-  # shallow to answer ancestry questions - get enough history first.
+  # shallow to answer ancestry questions - get enough history first. Also
+  # updates every refs/remotes/origin/* branch ref (not just whichever one
+  # was checked out), needed for the any-branch reachability scan below.
   git -C "$path" fetch --quiet --unshallow origin 2>/dev/null \
     || git -C "$path" fetch --quiet origin 2>/dev/null || true
+  git -C "$path" fetch --quiet origin '+refs/heads/*:refs/remotes/origin/*' 2>/dev/null || true
 
   for sha in "$old_sha" "$new_sha"; do
     git -C "$path" cat-file -e "$sha" 2>/dev/null \
@@ -62,10 +74,22 @@ while read -r old_mode new_mode old_sha new_sha status path; do
 
   default_branch=$(git -C "$path" symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null || echo "origin/main")
 
-  if ! git -C "$path" merge-base --is-ancestor "$new_sha" "$default_branch" 2>/dev/null; then
-    echo "  FAIL: $new_sha isn't reachable from $path's $default_branch - has it been pushed/merged upstream?"
+  reachable_branch=""
+  while IFS= read -r ref; do
+    if git -C "$path" merge-base --is-ancestor "$new_sha" "$ref" 2>/dev/null; then
+      reachable_branch="$ref"
+      [ "$ref" = "$default_branch" ] && break
+    fi
+  done < <(git -C "$path" for-each-ref --format='%(refname:short)' refs/remotes/origin/)
+
+  if [ -z "$reachable_branch" ]; then
+    echo "  FAIL: $new_sha isn't reachable from any of $path's remote branches (origin/*) - has it been pushed upstream at all?"
     fail=1
     continue
+  fi
+
+  if [ "$reachable_branch" != "$default_branch" ]; then
+    echo "  NOTE: reachable only via $path's '$reachable_branch', not yet merged into $default_branch -- fine for a stacked/WIP PR, remember to bump this again once '$reachable_branch' merges."
   fi
 
   if git -C "$path" cat-file -e "$old_sha" 2>/dev/null; then

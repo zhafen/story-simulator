@@ -42,8 +42,8 @@ from test_human_validated import (
     _load_registrar,
     _location,
     _parked_at,
-    _unexpected_components,
 )
+from emc2p.testing.registry_checks import unexpected_components
 
 REPO_ROOT = Path(__file__).parent.parent
 SCENARIO_DIR = REPO_ROOT / "tests" / "data" / "scenarios" / "location_write_isolated"
@@ -76,7 +76,7 @@ def _snapshot_usage(label: str) -> dict | None:
 # `location`, the one thing a correct run is supposed to add to car_a --
 # see tests/data/scenarios/location_write_isolated/scenario.yaml. Anything
 # else showing up on car_a is a #83 misfire candidate (see
-# _unexpected_components).
+# unexpected_components).
 _EXPECTED_CAR_A_COMPONENTS = {"object", "description", "location"}
 
 # Today's only approach: the model composes and writes correctly-formatted
@@ -133,7 +133,7 @@ def run_one(approach: str, tmp_dir: Path, model: str = LOW_QUALITY_MODEL) -> tup
     fact, not just the pass/fail count; usage (see
     HeadlessSession.usage_summary) kept so #75's cost comparison isn't
     limited to whichever approach happens to get run last; misfires (see
-    _unexpected_components) names which component(s) car_a actually got
+    unexpected_components) names which component(s) car_a actually got
     written to beyond what a correct run produces -- #83, collected every
     rep (not just failures) since a false positive here is itself useful
     signal. `model` defaults to this harness's usual weak-model target,
@@ -149,7 +149,7 @@ def run_one(approach: str, tmp_dir: Path, model: str = LOW_QUALITY_MODEL) -> tup
         try:
             r = _load_registrar(save_dir, narration)
             success = _parked_at(_location(r, "car_a"), "parking_spot_1")
-            misfires = _unexpected_components(r, "car_a", _EXPECTED_CAR_A_COMPONENTS)
+            misfires = unexpected_components(r, "car_a", _EXPECTED_CAR_A_COMPONENTS)
         except AssertionError as exc:
             # _load_registrar's own assertion: the model never actually
             # called start_world (confirmed happening live -- a weak model

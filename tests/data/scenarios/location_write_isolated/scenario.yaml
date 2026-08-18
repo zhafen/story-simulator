@@ -11,6 +11,40 @@ file_info:
         parking separation), isolating just the write-formatting step
         itself.
 
+write_accuracy_trial:
+    - description: >
+        One measured batch of live-test reps for a single approach in
+        #73's comparative write-accuracy harness
+        (tests/location_write_harness.py) -- actual numbers, not prose,
+        so a batch's results can be queried like any other EC data
+        instead of only living in a printed harness summary. Not
+        time_dimension'd: each trial gets its own dedicated entity rather
+        than accumulating multiple rows on a shared one, since a rerun of
+        the same approach is a distinct, separately-reportable batch, not
+        a correction of the previous one. Scoped to this scenario rather
+        than a manifest/builtins.yaml global, since nothing outside this
+        harness needs it.
+    - component_type
+    - field:
+        approach:
+            description: Which approach was tested (e.g. baseline, confirm,
+                consolidate -- see location_write_harness.py's _APPROACHES).
+            type: str
+        model:
+            description: claude -p --model value used for this batch (e.g.
+                claude-haiku-4-5-20251001).
+            type: str
+        reps:
+            description: Number of reps in this batch.
+            type: int
+        successes:
+            description: Number of reps that passed.
+            type: int
+        total_cost_usd:
+            description: Total measured cost (HeadlessSession.usage_summary's
+                total_cost_usd, summed) across the batch.
+            type: float
+
 parking_spot_1:
     - object:
         type: parking_spot

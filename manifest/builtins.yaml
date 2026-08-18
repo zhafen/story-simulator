@@ -70,30 +70,6 @@ location:
             time_dimension: true
             units: seconds
 
-race_placement:
-    - description: A car's finishing position in a race (1 = first to finish,
-        2 = second, etc.), recorded once its own trip event resolves. Exactly
-        one value counts as current per entity -- see `time`, matching
-        state's/location's pattern.
-    - component_type
-    - field:
-        value:
-            description: 1-indexed finishing position, e.g. 1 for first place.
-            type: int
-        time:
-            description: World time (seconds since world creation) this
-                placement was recorded at, backfilled on merge (see
-                story_simulator.core._next_time_stamp), not authored
-                directly, so it stays nullable for hand-authored rows.
-                Entities can accumulate multiple race_placement rows over
-                time; flagged time_dimension so Registry.view_current
-                resolves the row with the highest time as the current
-                placement.
-            type: float
-            nullable: true
-            time_dimension: true
-            units: seconds
-
 write_accuracy_trial:
     - description: >
         One measured batch of live-test reps for a single approach in

@@ -19,8 +19,9 @@ start_time/duration facts as tests/data/scenarios/parking/scenario.yaml
 (so the correct finishing order is identical: car_b end_time 1020, car_c
 1080, car_a 1800) but drops the restaurant/parking-spot framing entirely
 in favor of a three-car race -- nothing to reason about except finishing
-order, recorded via each car's own `race_placement.value` (see
-manifest/builtins.yaml).
+order, recorded via each car's own `race_placement.value` (defined
+inline in that same scenario.yaml, not manifest/builtins.yaml -- nothing
+outside this test needs it).
 """
 
 from pathlib import Path

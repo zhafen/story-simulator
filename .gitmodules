@@ -1,4 +1,4 @@
 [submodule "emc2p"]
 	path = emc2p
 	url = https://github.com/zhafen/emc2p
-	branch = claude/ecs-refactor-iacs-emc2p-2inffd
+	branch = main

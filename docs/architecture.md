@@ -4,7 +4,7 @@ story-simulator is **just an MCP server**. There is no agent loop inside
 this project — the loop is whatever MCP-aware client connects (a human's
 chat agent, an automated harness, ...). story-simulator's job is to expose
 good tools for playing a text simulation whose state lives in a structured
-entity/component registry ([`iacs`](../iacs)), not in the connected agent's
+entity/component registry ([`emc2p`](../emc2p)), not in the connected agent's
 own context.
 
 What each tool must guarantee and what code satisfies it are modeled as

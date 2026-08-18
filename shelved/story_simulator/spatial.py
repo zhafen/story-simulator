@@ -17,7 +17,7 @@ import math
 
 import pandas as pd
 import yaml
-from iacs.registrar import Registrar
+from emc2p.registrar import Registrar
 
 from story_simulator import game_config
 from story_simulator.core import due_by_entity, merge_yaml_string, safe_view, safe_view_current

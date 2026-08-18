@@ -6,7 +6,7 @@ scratch, not a heavyweight process document.
 
 ## Dev setup
 
-1. Clone with submodules (the registry engine, [`iacs`](iacs), is a git
+1. Clone with submodules (the registry engine, [`emc2p`](emc2p), is a git
    submodule):
    ```
    git clone --recurse-submodules <repo-url>
@@ -23,7 +23,7 @@ scratch, not a heavyweight process document.
    git config core.hooksPath .githooks
    ```
    The pre-commit hook runs `scripts/check-submodule-pointers.sh`, which
-   catches an `iacs` pointer bump that's actually a rewind, or one that
+   catches an `emc2p` pointer bump that's actually a rewind, or one that
    points at a commit only present locally -- see that script's own
    comments for the PR it was written in response to.
 4. Have a Postgres instance reachable -- see the README's Quick start for
@@ -50,9 +50,9 @@ code under `shelved/`, which isn't collected by default (see
 - CI (`.github/workflows/ci.yml`) runs the test suite against a real
   Postgres service container, plus the submodule-pointer check on every
   PR -- both need to pass before merging.
-- If a PR touches `iacs`, double-check the submodule pointer is actually
+- If a PR touches `emc2p`, double-check the submodule pointer is actually
   moving forward (an ancestor of the old commit is a rewind, not an
-  update) and that the target commit is pushed to `iacs`'s own remote --
+  update) and that the target commit is pushed to `emc2p`'s own remote --
   the pre-commit hook and CI both check this, but it's easy to trip if
   you're working across both repos at once.
 - See [`docs/architecture.md`](docs/architecture.md) for how the pieces

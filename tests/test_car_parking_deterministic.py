@@ -18,7 +18,7 @@ import asyncio
 from pathlib import Path
 from unittest.mock import MagicMock
 
-from iacs.registrar import Registrar
+from emc2p.registrar import Registrar
 from story_simulator.config import registry_url
 from story_simulator.core import safe_view_current
 from story_simulator.mcp_server import advance_simulation, start_world, update_registry

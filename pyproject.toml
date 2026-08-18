@@ -9,7 +9,7 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "iacs",
+    "emc2p",
     "matplotlib>=3.11.0",
     "mcp>=1.28.1",
     "psycopg[binary]>=3.2",
@@ -25,7 +25,7 @@ dependencies = [
 story-simulator-mcp = "story_simulator.mcp_server:main"
 
 [tool.uv.sources]
-iacs = { path = "iacs", editable = true }
+emc2p = { path = "emc2p", editable = true }
 
 [tool.setuptools.packages.find]
 where = ["."]

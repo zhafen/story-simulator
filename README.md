@@ -6,7 +6,7 @@ An MCP for event-driven simulations powered by LLMs.
 [6.1 Event-Driven Simulation](https://algs4.cs.princeton.edu/61event/) (Algorithms, 4th Edition).*
 
 story-simulator is an MCP server for a text simulation whose world state lives in a structured
-entity/component registry ([`iacs`](iacs)), not in whatever AI narrates it. There's no built-in
+entity/component registry ([`emc2p`](emc2p)), not in whatever AI narrates it. There's no built-in
 agent loop — you play by connecting an MCP-aware chat client (Claude Code, Claude Desktop, or
 similar) to the server below and talking to it; that client's own replies *are* the narration.
 
@@ -21,7 +21,7 @@ similar) to the server below and talking to it; that client's own replies *are* 
 
 ## Quick start
 
-1. Have a database available for the world registry — `iacs`'s registry connects via `ibis`, so
+1. Have a database available for the world registry — `emc2p`'s registry connects via `ibis`, so
    any backend it supports works, as long as separate processes can hold their own concurrent
    connection to it (unlike a single-file embedded database), which is what lets the registry
    stay readable while a session is still live. Defaults to Postgres —
@@ -32,9 +32,11 @@ similar) to the server below and talking to it; that client's own replies *are* 
    ```
    Each `save_dir` gets its own schema within that database, created automatically on first
    `start_world`.
-2. Configure your MCP-aware client to launch two servers: `uv run story-simulator-mcp` (world
-   state + event-loop tools) and `uv run iacs-mcp` (entity-format guidance — `describe_format`/
-   `validate_yaml` — see [`docs/architecture.md`](docs/architecture.md) for why both are needed).
+2. Configure your MCP-aware client to launch `uv run story-simulator-mcp` (world state +
+   event-loop tools). Optionally, a separately-installed [`iacs`](https://github.com/zhafen/iacs)
+   MCP server (`iacs-mcp`) can be connected alongside it for entity-format guidance —
+   `describe_format`/`validate_yaml` — see [`docs/architecture.md`](docs/architecture.md); it's no
+   longer vendored here since story-simulator only depends on `emc2p`, the generic registry engine.
 3. Talk to it:
    ```
    you:   I want to play story-simulator. Please start up a world.

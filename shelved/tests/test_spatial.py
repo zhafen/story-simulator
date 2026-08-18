@@ -1,6 +1,6 @@
 import math
 
-from iacs.registrar import Registrar
+from emc2p.registrar import Registrar
 
 from story_simulator import game_config
 from story_simulator.config import MANIFEST_DIR, WORLD_FILE_ID

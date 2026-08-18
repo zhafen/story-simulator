@@ -183,8 +183,9 @@ event_components:
             An event's own place in its lifecycle, split out from `event`
             itself so a transition doesn't require restating start_time/
             duration. Vocabulary matches iacs's own task.execution_state
-            (iacs/iacs/builtins/components.yaml), extended there with
-            "planned" and "interrupted" for this project's purposes.
+            (github.com/zhafen/iacs, iacs/builtins/components.yaml), extended
+            there with "planned" and "interrupted" for this project's
+            purposes.
         - component_type
         - field:
             value:

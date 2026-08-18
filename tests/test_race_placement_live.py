@@ -29,7 +29,7 @@ from pathlib import Path
 import pytest
 
 from test_human_validated import HeadlessSession, _event_states, _load_registrar, _write_time
-from iacs.registrar import Registrar
+from emc2p.registrar import Registrar
 from story_simulator.core import safe_view_current
 
 REPO_ROOT = Path(__file__).parent.parent

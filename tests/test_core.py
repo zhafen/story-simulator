@@ -3,7 +3,7 @@ that has to work with no optional module (character, npc, physics,
 terrain, spatial) active at all.
 """
 
-from iacs.registrar import Registrar
+from emc2p.registrar import Registrar
 
 from story_simulator.config import MANIFEST_DIR, WORLD_FILE_ID
 from story_simulator.core import pop_event

@@ -42,7 +42,7 @@ from pathlib import Path
 import ibis
 import pytest
 
-from iacs.registrar import Registrar
+from emc2p.registrar import Registrar
 from story_simulator.config import registry_schema_name, registry_url, resolve_database_dsn
 from story_simulator.core import safe_view_current
 

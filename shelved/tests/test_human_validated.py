@@ -36,7 +36,7 @@ import ibis
 import pandas as pd
 import pytest
 
-from iacs.registrar import Registrar
+from emc2p.registrar import Registrar
 from story_simulator.config import registry_schema_name, registry_url, resolve_database_dsn
 from story_simulator.spatial import distance
 

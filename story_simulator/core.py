@@ -32,8 +32,8 @@ import pandas as pd
 import psycopg
 import psycopg.sql
 import yaml
-from iacs.registrar import Registrar
-from iacs.validate_write import CONSOLIDATION_GUIDANCE
+from emc2p.registrar import Registrar
+from emc2p.validate_write import CONSOLIDATION_GUIDANCE
 
 from story_simulator.config import (
     DEFAULT_WORLD_DIR,
@@ -423,7 +423,7 @@ def _validate_registry_write(registrar: Registrar, yaml_string: str) -> set[str]
     type) are `registrar.validate_write`'s own job -- see its docstring
     for what each rejects.
     """
-    from iacs.dataflows.etl.load_yaml import _find_malformed_entities
+    from emc2p.dataflows.etl.load_yaml import _find_malformed_entities
 
     parsed = yaml.safe_load(yaml_string)
     if isinstance(parsed, dict):

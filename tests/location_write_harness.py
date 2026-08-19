@@ -141,7 +141,12 @@ def run_one(approach: str, tmp_dir: Path, model: str = LOW_QUALITY_MODEL) -> tup
     spend on the identical task) -- see --model."""
     save_dir = tmp_dir / "save"
     instruction = _APPROACHES[approach]
-    with HeadlessSession(save_dir, model=model) as session:
+    # This harness compares how the *connected* model performs a write
+    # under each approach -- explicit override, since HeadlessSession now
+    # defaults to responder="keyed_subagent" (see its own docstring),
+    # which doesn't even expose the preview/confirm_token flow "confirm"
+    # exercises.
+    with HeadlessSession(save_dir, model=model, responder="host") as session:
         narration = session.send_turn(
             f"Use start_world with save_dir={save_dir} and scenario_dir={SCENARIO_DIR} "
             f"to open a story-simulator world. Then {instruction}"

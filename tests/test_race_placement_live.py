@@ -83,7 +83,10 @@ def test_race_placement_recorded_in_order(tmp_path):
     """
     save_dir = tmp_path / "test_save"
 
-    with HeadlessSession(save_dir) as session:
+    # This test's whole point is the *connected* model's own arrival-order
+    # reasoning -- explicit override, since HeadlessSession now defaults
+    # to responder="keyed_subagent" (see its own docstring).
+    with HeadlessSession(save_dir, responder="host") as session:
         print(f"HeadlessSession trace: {session.trace_path}")
         narration = session.send_turn(
             f"Use start_world with save_dir={save_dir} and scenario_dir={RACE_SCENARIO_DIR} "

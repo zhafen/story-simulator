@@ -1,7 +1,8 @@
 """Shared infrastructure for live end-to-end tests that drive story-simulator-mcp
 through a real MCP client -- `HeadlessSession` and registry-reading helpers,
-imported by tests/test_race_placement_live.py and
-tests/test_parking_split_live.py. Carries no live test of its own: the
+imported by tests/test_race_placement_live.py,
+tests/test_parking_split_live.py, tests/test_write_accuracy.py, and
+tests/test_keyed_subagent_live.py. Carries no live test of its own: the
 original combined driving+parking scenario this file used to test
 (test_car_parking_core_sim) was removed once #57 established that
 combined event resolves unreliably in a way the split-events structure
@@ -25,12 +26,18 @@ caller in this test suite can keep constructing it as `HeadlessSession
 Written for the current event-entity simulation loop (no character/NPC
 module -- see docs/architecture.md and CLAUDE.md's shelving note): world
 state is `event` entities, each ready to resolve once world time reaches
-its own end_time (start_time + duration), and every such event resolves via two separate
-responder calls (resolve, then plan) at responder="host"
-(`story_simulator.config.event_responder`'s default). The connected agent
-is expected to decide each step itself, looking up whatever it needs via
-view_registry/view_entity and recording its own decisions via
-update_registry, exactly as the server's own tool instructions describe.
+its own end_time (start_time + duration), and every such event resolves
+via two separate responder calls (resolve, then plan) -- see
+`HeadlessSession`'s own docstring for which responder answers them by
+default here versus what a real deployment defaults to. At
+responder="host"/"subagent", the connected agent is expected to decide
+each step itself, looking up whatever it needs via view_registry/
+view_entity and recording its own decisions via update_registry, exactly
+as the server's own tool instructions describe; at responder=
+"keyed_subagent", those same tools are what it's given too, just called
+in-process rather than by the connected agent over MCP (see
+`story_simulator.keyed_subagent`), so the connected agent's own job
+narrows to driving `advance_simulation` to "done".
 
 The character-module-era tests that used to live in this file (NPC/move
 scenarios, an earlier version of this same class) are preserved at
@@ -38,6 +45,7 @@ shelved/tests/test_human_validated.py, dormant until that module is
 un-shelved.
 """
 
+import os
 from pathlib import Path
 
 from emc2p.registrar import Registrar
@@ -68,6 +76,17 @@ LOW_QUALITY_MODEL = "claude-haiku-4-5-20251001"
 # every other built-in tool outright (see its own docstring for why).
 _ALLOWED_TOOLS = ["mcp__story-simulator__*", "mcp__iacs__*"]
 
+# Flips HeadlessSession's own default `responder` (see its docstring) for
+# every live test that doesn't pin one explicitly -- e.g.
+# `STORY_SIM_LIVE_TEST_RESPONDER=host uv run pytest -m live` runs the whole
+# suite's default-relying tests against "host" for one run, no test file
+# edits needed. Independent of STORY_SIM_RESPONDER itself (read by
+# config.event_responder() for a real deployment, unrelated to what the
+# *test harness* defaults to) and of any test's own explicit
+# `responder=...` override, which always wins regardless of this var.
+LIVE_TEST_RESPONDER_ENV_VAR = "STORY_SIM_LIVE_TEST_RESPONDER"
+DEFAULT_LIVE_TEST_RESPONDER = "keyed_subagent"
+
 
 class HeadlessSession(_Emc2pHeadlessSession):
     """story-simulator's own `HeadlessSession`: fixes emc2p's generic
@@ -80,6 +99,26 @@ class HeadlessSession(_Emc2pHeadlessSession):
     useless against this save's actual state -- exactly the gap that once
     let a model invent a nonexistent component name instead of finding
     the real `location` schema.
+
+    `responder` defaults to DEFAULT_LIVE_TEST_RESPONDER ("keyed_subagent"),
+    not `config.event_responder()`'s own "host" default -- a test-harness
+    default only, set via STORY_SIM_RESPONDER in the spawned subprocess's
+    own env, independent of whatever a real deployment's own
+    STORY_SIM_RESPONDER is configured to (issue #58 item 3, switching
+    that deployment default, is separate and unstarted). Read from
+    LIVE_TEST_RESPONDER_ENV_VAR (STORY_SIM_LIVE_TEST_RESPONDER) at
+    construction time when not passed explicitly, so the whole suite's
+    default can be flipped for one run
+    (`STORY_SIM_LIVE_TEST_RESPONDER=host uv run pytest -m live`) without
+    editing any test file. Callers whose own point is exercising the
+    *connected* model's reasoning/MCP-write behavior specifically --
+    every current caller in this test suite except
+    tests/test_keyed_subagent_live.py -- pass `responder="host"`
+    explicitly instead, which always wins over the env var regardless:
+    with keyed_subagent as responder, resolve/plan judgment calls never
+    reach the connected model at all (answered in-process instead), which
+    would silently stop testing what those tests each document themselves
+    as testing, even though their final-state assertions could still pass.
     """
 
     def __init__(
@@ -87,10 +126,13 @@ class HeadlessSession(_Emc2pHeadlessSession):
         save_dir: Path,
         *,
         model: str = LOW_QUALITY_MODEL,
+        responder: str | None = None,
         turn_timeout: float = 240,
         session_timeout: float = 120,
     ):
         self.save_dir = save_dir
+        if responder is None:
+            responder = os.environ.get(LIVE_TEST_RESPONDER_ENV_VAR, DEFAULT_LIVE_TEST_RESPONDER)
         super().__init__(
             mcp_config=REPO_ROOT / ".mcp.json",
             allowed_tools=_ALLOWED_TOOLS,
@@ -106,6 +148,7 @@ class HeadlessSession(_Emc2pHeadlessSession):
             extra_env={
                 "STORY_SIM_HEADLESS_TEST": "1",
                 "IACS_DATABASE_URL": registry_url(save_dir),
+                "STORY_SIM_RESPONDER": responder,
             },
             trace_dir=LIVE_TRACE_DIR,
             turn_timeout=turn_timeout,

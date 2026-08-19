@@ -61,7 +61,11 @@ def test_parking_split_across_two_events_per_car(tmp_path):
     """
     save_dir = tmp_path / "test_save"
 
-    with HeadlessSession(save_dir) as session:
+    # This test's whole point is the *connected* model's own
+    # driving/parking split reasoning -- explicit override, since
+    # HeadlessSession now defaults to responder="keyed_subagent" (see its
+    # own docstring).
+    with HeadlessSession(save_dir, responder="host") as session:
         print(f"HeadlessSession trace: {session.trace_path}")
         narration = session.send_turn(
             f"Use start_world with save_dir={save_dir} and scenario_dir={PARKING_SPLIT_SCENARIO_DIR} "

@@ -41,11 +41,11 @@ def _make_ctx():
 
 
 def _location(save_dir, alias: str) -> str | None:
-    """Read `alias`'s current location.value directly from the registry --
-    the same read path (view_current on a time_dimension'd component) a
-    live test failure needs cross-checking against.
+    """Read `alias`'s current location.value directly from the registry.
 
-    Deliberately self-contained (hand-filters by alias here rather than
+    Same read path (view_current on a time_dimension'd component) a
+    live test failure needs cross-checking against. Deliberately
+    self-contained (hand-filters by alias here rather than
     using the registry's own `aliases` view param -- see task #36) so
     this test doesn't depend on an iacs change still waiting on its own
     PR merge.

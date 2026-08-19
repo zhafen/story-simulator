@@ -249,9 +249,10 @@ def test_multi_event_interleaves_by_end_time(tmp_path):
 
 def test_multi_event_handoff_to_a_new_event_slots_in_by_end_time(tmp_path):
     """A mid-chain handoff (chain_a_ball_event's plan step schedules
-    chain_a_domino_event, whose end_time comes sooner than
-    chain_b_ball_event's) must slot into the loop's ordering correctly,
-    not just append to the end."""
+    chain_a_domino_event, whose end_time comes sooner than chain_b_ball_event's).
+
+    Must slot into the loop's ordering correctly, not just append to the end.
+    """
     ctx = _world(tmp_path)
     _schedule_event(ctx, "chain_a_ball_event", 0, 0)
     _schedule_event(ctx, "chain_b_ball_event", 5, 0)

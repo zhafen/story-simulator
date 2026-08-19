@@ -50,12 +50,7 @@ from story_simulator.config import (
 from story_simulator.resolve import JudgmentRequest, NeedsExternalInput, TurnReplay
 
 # save_dir's two export subdirectories, each holding one EC yaml file per
-# original source (currently always one, since every registrar.update() call
-# shares WORLD_FILE_ID as its source key -- see that constant's comment) --
-# directories, not fixed filenames, so a save can be split across as many
-# files as its author wants, matching iacs's own entity-file organization
-# freedom, and the loader (see start_world) just recurses into whichever one
-# it picks rather than assuming a single file.
+# original source -- directories, not fixed filenames, so a save can be split.
 WORLD_DIRNAME = WORLD_FILE_ID
 WORLD_HISTORY_DIRNAME = "world_history"
 
@@ -63,10 +58,7 @@ _registrars: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
 _save_dirs: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
 
 # The single well-known entity `process_event` writes each popped event's
-# end_time onto, as a `world_clock` component (manifest/builtins.yaml) --
-# see `_next_time_stamp`. A fixed alias, not one derived from the popped
-# event itself: world time is one axis shared by the whole world, not a
-# per-event fact.
+# end_time onto, as a `world_clock` component -- see `_next_time_stamp`.
 WORLD_CLOCK_ALIAS = "simulation_clock"
 
 

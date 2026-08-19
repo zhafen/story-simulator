@@ -1,22 +1,6 @@
 #!/usr/bin/env bash
 # Catches the submodule-pointer mistake from PR #36: a "bump" that's
-# actually a rewind (the new commit is an ancestor of the old one, so the
-# update silently drops history), or a pointer to a commit that only
-# exists locally and was never pushed to the submodule's own remote (so
-# it would break for anyone else who clones this repo).
-#
-# Reachability is checked against ANY of the submodule's own remote
-# branches, not just its default branch -- deliberately, so a superproject
-# PR can stack on a submodule PR that hasn't merged yet (the exact
-# story-simulator/emc2p workflow this was tightened for): the pointer just
-# has to be something anyone else who clones this repo can actually fetch,
-# which a pushed feature branch already satisfies. Pointing at a branch
-# other than the default is flagged (not failed) as a reminder to bump it
-# again once that branch merges.
-#
-# `git submodule summary` shows the same information, but its `<`/`>`
-# prefixes are easy to misread in the direction that matters most - this
-# gives a pass/fail instead.
+# actually a rewind, or a pointer to a commit never pushed upstream.
 #
 # Usage:
 #   check-submodule-pointers.sh --staged           # compare index vs HEAD
@@ -53,10 +37,8 @@ while read -r old_mode new_mode old_sha new_sha status path; do
     continue
   fi
 
-  # CI (and some local clones) fetch submodules at --depth=1, which is too
-  # shallow to answer ancestry questions - get enough history first. Also
-  # updates every refs/remotes/origin/* branch ref (not just whichever one
-  # was checked out), needed for the any-branch reachability scan below.
+  # CI (and some local clones) fetch submodules at --depth=1, which is
+  # too shallow to answer ancestry questions - get enough history first.
   git -C "$path" fetch --quiet --unshallow origin 2>/dev/null \
     || git -C "$path" fetch --quiet origin 2>/dev/null || true
   git -C "$path" fetch --quiet origin '+refs/heads/*:refs/remotes/origin/*' 2>/dev/null || true

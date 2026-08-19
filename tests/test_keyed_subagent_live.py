@@ -1,8 +1,8 @@
-"""Live end-to-end confirmation that "keyed_subagent" (see
-story_simulator.keyed_subagent/emc2p.agents.keyed_subagent) actually
-resolves a scenario and persists what it decides.
+"""Live end-to-end confirmation that "keyed_subagent" actually resolves
+a scenario and persists what it decides.
 
-The missing "Test plan" item PR #59/issue #58 both called for and left
+See story_simulator.keyed_subagent/emc2p.agents.keyed_subagent. The
+missing "Test plan" item PR #59/issue #58 both called for and left
 unstarted: "Run a live test confirming update_registry calls are
 actually persisted by keyed_subagent (save_dir/world/ gets
 created/updated)".

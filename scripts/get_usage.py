@@ -125,10 +125,11 @@ def _parse_usage_screen(text: str) -> dict:
 
 
 class _OnboardingPatch:
-    """Temporarily marks onboarding/theme as already-set in ~/.claude.json so
-    an interactive launch skips straight past the theme-picker + login-method
-    wizard (which would otherwise start a real browser OAuth flow), then
-    restores the file exactly as it was found -- even if the caller raises.
+    """Temporarily marks onboarding/theme as already-set in ~/.claude.json
+    so an interactive launch skips the theme-picker + login-method wizard.
+
+    That wizard would otherwise start a real browser OAuth flow. Restores
+    the file exactly as it was found -- even if the caller raises.
     """
 
     def __init__(self, config_path: Path):

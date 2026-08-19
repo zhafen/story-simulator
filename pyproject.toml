@@ -18,10 +18,8 @@ dependencies = [
     "pyyaml>=6.0.3",
     "tabulate>=0.10.0",
 ]
-# emc2p's "agents" extra pulls in litellm -- the "keyed_subagent" event
-# responder's model call runs through emc2p.agents.keyed_subagent (see
-# story_simulator/keyed_subagent.py), so story-simulator itself no longer
-# needs litellm as a direct dependency.
+# emc2p's "agents" extra pulls in litellm -- story-simulator itself no
+# longer needs litellm as a direct dependency.
 
 [project.scripts]
 story-simulator-mcp = "story_simulator.mcp_server:main"

@@ -23,11 +23,8 @@ file_info:
           this directory alone under-reports coverage.
     - file_info
 
-# ---------------------------------------------------------------------------
-# Impact/cost vocabulary for scoring candidate work (see requirement entities
-# below). Conversion rates are relative weights, not a claim of precise
-# measurement — they only need to rank candidates sensibly against each other.
-# ---------------------------------------------------------------------------
+# Impact/cost vocabulary for scoring candidate work (see requirement
+# entities below). Conversion rates are relative weights, not precise measurement.
 
 impact_budgets:
     - description: >
@@ -69,13 +66,8 @@ cost_budgets:
                   wrong (weighted heavier than plain time cost).
               normalized_value_per_unit: 2
 
-# ---------------------------------------------------------------------------
-# story_simulator_mission is the tree root; every requirement in the project
-# is a descendant of it. `requirement` is a bare tag (no priority value —
-# that field is semi-deprecated in iacs; use `impact` components instead).
-# work_state distinguishes done requirements from ones still open; open
-# requirements also carry `cost` so resolved_impact_cost can rank them.
-# ---------------------------------------------------------------------------
+# story_simulator_mission is the tree root; every requirement in the
+# project is a descendant of it. `requirement` is a bare tag.
 
 story_simulator_mission:
     data:
@@ -789,14 +781,8 @@ story_simulator_mission:
                         value: 0.1
                 - work_state: new
 
-# ---------------------------------------------------------------------------
 # What satisfies each done (or partially done) requirement. Most solutions
-# now live as `__iacs__ = {"solution of": ...}` metadata right in the Python
-# docstring of the code that solves them (core.py, mcp_server.py, spatial.py,
-# config.py) rather than described here at a distance — load
-# load_manifest(["docs/manifest", "story_simulator"]) to see the full,
-# solved requirement tree. Only what has no Python home stays here.
-# ---------------------------------------------------------------------------
+# now live as `__iacs__ = {"solution of": ...}` metadata in Python docstrings.
 
 shared_world_file_id:
     - solution of: story_simulator_mission.single_shared_source_key
@@ -807,16 +793,8 @@ architecture_manifest_solution:
           project as requirement/solution entities scored for cost-vs-impact.
     - solution of: story_simulator_mission.queryable_architecture
 
-# ---------------------------------------------------------------------------
 # Concepts already implemented in manifest/builtins.yaml's event_components
-# without a backing requirement -- deliberately left with no `solution of`
-# link so run_dataflow('audit.traceability') surfaces them as exactly what
-# they are ("solutions in search of a problem"), rather than inventing a new
-# iacs vocabulary concept for "unvalidated solution". Each carries a `todo`
-# so run_dataflow('audit.todo') also picks it up. Resolve by either writing
-# a real requirement and linking `solution of` to it, or removing the
-# now-unjustified schema/code.
-# ---------------------------------------------------------------------------
+# without a backing requirement -- each carries a `todo` to resolve this.
 
 outcome_progress_interruption_semantics:
     - description: >

@@ -97,10 +97,13 @@ class JudgmentRequest:
     system_prompt: str = ""
 
     def render(self) -> str:
-        """Flatten to plain text -- no separate system/user split for any of
-        "human"/"subagent"/"host", just a prompt returned to the connected
-        agent as an ordinary tool result. `_frame_for_responder` wraps this
-        with per-responder instructions before it ever leaves this process."""
+        """Flatten to plain text -- no separate system/user split for any
+        of "human"/"subagent"/"host".
+
+        Just a prompt returned to the connected agent as an ordinary
+        tool result. `_frame_for_responder` wraps this with per-responder
+        instructions before it ever leaves this process.
+        """
         return f"{self.system_prompt}\n\n{self.prompt}" if self.system_prompt else self.prompt
 
 
@@ -124,11 +127,13 @@ class NeedsExternalInput(Exception):
 
 def _frame_for_responder(request: JudgmentRequest, responder: str) -> str:
     """Wrap `request` with instructions for whichever of "human"/"subagent"/
-    "host" is about to read it, so they travel with the prompt text itself
-    (survives an MRTR pause/resume, an MCP disconnect, a different host
-    entirely reconnecting) rather than living only in `mcp_server`'s static
-    tool descriptions, which a given client may or may not still have in
-    view by the time it matters.
+    "host" is about to read it.
+
+    So they travel with the prompt text itself (survives an MRTR
+    pause/resume, an MCP disconnect, a different host entirely
+    reconnecting) rather than living only in `mcp_server`'s static tool
+    descriptions, which a given client may or may not still have in view
+    by the time it matters.
     """
     body = request.render()
     if responder == "human":
@@ -139,19 +144,7 @@ def _frame_for_responder(request: JudgmentRequest, responder: str) -> str:
         )
     if responder == "subagent":
         # TODO: this is trust-based -- nothing here verifies the host
-        # actually spawned an isolated subagent rather than just answering
-        # inline itself. A real check would need the resumed answer to
-        # prove a subagent ran it: e.g. mint a single-use nonce per call,
-        # embed it in this rendered prompt with an instruction that the
-        # subagent's own response must begin with it verbatim, then have
-        # the caller that receives the resumed answer
-        # (core.advance_simulation) verify the nonce is present and
-        # strip it before treating the rest as the real answer. On a
-        # missing/wrong nonce, don't advance the turn -- raise
-        # NeedsExternalInput again with a corrective prompt (same
-        # resume_token/nonce) so the host gets re-prompted to actually
-        # delegate this time, instead of silently accepting an inline
-        # answer wearing a "subagent" label.
+        # actually spawned an isolated subagent rather than just answering inline.
         return (
             "Answer this via your own subagent mechanism (e.g. Claude "
             "Code's Agent/Task tool), not from your own accumulated "
@@ -162,13 +155,7 @@ def _frame_for_responder(request: JudgmentRequest, responder: str) -> str:
         )
     if responder == "host":
         # Framed as "decide it yourself" rather than naming a role (e.g.
-        # "orchestrator") this call expects but can't actually confirm --
-        # see this module's own docstring's "host" entry. Leads with the
-        # actual instruction rather than the "no human/no subagent is
-        # behind this" double-negative that used to open this (confusing
-        # to read); still says plainly not to wait or delegate, since a
-        # model aware of this project's other responder modes could
-        # otherwise try one unprompted.
+        # "orchestrator") this call expects but can't actually confirm.
         return (
             "Decide the answer yourself, standing in for whichever role "
             "this call needs (a player's own absent character, an NPC, a "
@@ -194,11 +181,7 @@ class TurnReplay:
     answers: list[str] = field(default_factory=list)
     call_index: int = field(default=0, init=False)
     # Absolute time.monotonic() value "keyed_subagent" must stop answering
-    # inline by, for *this* advance_simulation call -- set fresh by
-    # core._run_event_loop on every call (including a resumed one), not
-    # carried over from a prior call's own deadline. None for any other
-    # responder, which never reads it. See resolve()'s keyed_subagent
-    # branch for why this exists at all.
+    # inline by, for *this* advance_simulation call.
     deadline: float | None = None
 
     async def resolve(self, request: JudgmentRequest, *, responder: str, session=None) -> str:
@@ -207,17 +190,7 @@ class TurnReplay:
             return self.answers[i]
         if responder == "keyed_subagent":
             # Budget check first: keyed_subagent never pauses on its own,
-            # so with nothing bounding it, a single advance_simulation call
-            # can chain arbitrarily many DeepSeek round-trips together
-            # (confirmed live: 31 in one call) and blow past Claude Code's
-            # own ~60s per-MCP-tool-call timeout, which aborts the whole
-            # call and leaves the host with nothing to show for it. Past
-            # the budget, check in with the host instead of placing
-            # another call -- same NeedsExternalInput/MRTR pause host
-            # answers already resume through, just host-initiated instead
-            # of judgment-initiated. This call_index's own answer is left
-            # unrecorded (nothing appended to self.answers), so resuming
-            # re-asks this exact judgment call fresh, with a new budget.
+            # so with nothing bounding it, a call can chain unboundedly many round-trips.
             if self.deadline is not None and time.monotonic() >= self.deadline:
                 checkin_prompt = (
                     "The \"keyed_subagent\" responder has reached its time budget "
@@ -230,17 +203,8 @@ class TurnReplay:
                     "if this is a reasonable checkpoint."
                 )
                 raise NeedsExternalInput(prompt=checkin_prompt, responder="host")
-            # No NeedsExternalInput here -- nothing external to wait on.
-            # Framed the same way "host" is ("decide it yourself, don't
-            # wait for input") since that instruction is about how the
-            # *model* answering should behave, not about who's asking; a
-            # directly-called subagent needs exactly the same instruction
-            # an inline host would. Appended to self.answers immediately
-            # (matching what a resumed host/subagent answer would look
-            # like at this same index) so that if a *later* judgment call
-            # in this same turn pauses and gets resumed, this call replays
-            # from the cached answer instead of hitting the model again --
-            # see _wrap_loop_result's `_encode_token(alias, replay.answers)`.
+            # No NeedsExternalInput here -- nothing external to wait on. Framed
+            # the same way "host" is, since that's about how the model should behave.
             from story_simulator.keyed_subagent import call_keyed_subagent
 
             answer = await call_keyed_subagent(_frame_for_responder(request, "host"), session)

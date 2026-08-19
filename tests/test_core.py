@@ -1,6 +1,5 @@
 """Tests for story_simulator.core -- the event-driven simulation kernel
-that has to work with no optional module (character, npc, physics,
-terrain, spatial) active at all.
+that works with no optional module (character, npc, physics, terrain, spatial) active.
 """
 
 from emc2p.registrar import Registrar
@@ -21,9 +20,8 @@ def test_pop_event_returns_none_with_no_event_component():
 
 
 def test_pop_event_finds_a_scheduled_event_with_no_event_state_row_yet():
-    """event_state is optional for pop_event's own purposes -- an event
-    with start_time/duration set is a candidate whether or not anything
-    has recorded its lifecycle state yet."""
+    """event_state is optional for pop_event's own purposes -- an event with
+    start_time/duration set is a candidate regardless of its lifecycle state."""
     registrar = _registrar_from_yaml(
         "gizmo_event:\n"
         "    - event:\n"
@@ -51,10 +49,12 @@ def test_pop_event_returns_soonest_end_time():
 
 def test_pop_event_excludes_events_missing_start_time_or_duration():
     """An event not yet fully scheduled (either field still null) isn't a
-    candidate -- unlike the next_due mechanism this replaces, where an
-    entity with no row at all simply wasn't a candidate, here the row
-    exists (event_state may say "not started") but the timing is
-    incomplete."""
+    candidate.
+
+    Unlike the next_due mechanism this replaces, where an entity with no
+    row at all simply wasn't a candidate -- here the row exists
+    (event_state may say "not started") but the timing is incomplete.
+    """
     registrar = _registrar_from_yaml(
         "scheduled_event:\n"
         "    - event:\n"

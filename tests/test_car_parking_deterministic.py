@@ -43,10 +43,12 @@ def _make_ctx():
 def _location(save_dir, alias: str) -> str | None:
     """Read `alias`'s current location.value directly from the registry --
     the same read path (view_current on a time_dimension'd component) a
-    live test failure needs cross-checking against. Deliberately
-    self-contained (hand-filters by alias here rather than using the
-    registry's own `aliases` view param -- see task #36) so this test
-    doesn't depend on an iacs change still waiting on its own PR merge.
+    live test failure needs cross-checking against.
+
+    Deliberately self-contained (hand-filters by alias here rather than
+    using the registry's own `aliases` view param -- see task #36) so
+    this test doesn't depend on an iacs change still waiting on its own
+    PR merge.
     """
     registrar = Registrar.load(registry_url(save_dir))
     df = safe_view_current(registrar, "location.value")
@@ -93,9 +95,11 @@ def _plan_prompt(alias: str) -> str:
 
 def _mark_resolved(ctx, event_alias: str, car_alias: str, location: str) -> None:
     """The "perfect" answer to a resolve prompt: record the event's own
-    outcome/event_state, and the car's own location -- exactly what a
-    correct responder is asked to do, matching the puzzle's known-correct
-    solution (see this scenario's own description.value)."""
+    outcome/event_state, and the car's own location.
+
+    Exactly what a correct responder is asked to do, matching the
+    puzzle's known-correct solution (see this scenario's own description.value).
+    """
     update_registry(
         f"{event_alias}:\n"
         f"    - outcome:\n"
@@ -112,10 +116,12 @@ def _mark_resolved(ctx, event_alias: str, car_alias: str, location: str) -> None
 
 def test_end_time_order_matches_true_arrival_order(tmp_path):
     """car_b_trip (end_time 1020) must be served before car_c_trip
-    (end_time 1080) before car_a_trip (end_time 1800) -- computed straight
-    from the scenario's own start_time+duration, not trusted from prose.
-    This is exactly the ordering the user was skeptical of when reading
-    the live trace; pinned down here independent of any model."""
+    (end_time 1080) before car_a_trip (end_time 1800).
+
+    Computed straight from the scenario's own start_time+duration, not
+    trusted from prose -- exactly the ordering the user was skeptical
+    of when reading the live trace, pinned down here independent of any model.
+    """
     ctx = _make_ctx()
     save_dir = tmp_path / "save"
     start_world(str(save_dir), ctx, scenario_dir=str(PARKING_SCENARIO_DIR))
@@ -127,8 +133,7 @@ def test_end_time_order_matches_true_arrival_order(tmp_path):
 
 def test_full_walkthrough_exact_prompts_and_registry_state(tmp_path):
     """Drives all three events to completion with predetermined correct
-    answers, asserting the exact prompt text and exact resulting registry
-    state at every step -- not just substrings."""
+    answers, asserting the exact prompt text and registry state at every step."""
     ctx = _make_ctx()
     save_dir = tmp_path / "save"
     start_world(str(save_dir), ctx, scenario_dir=str(PARKING_SCENARIO_DIR))

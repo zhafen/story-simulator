@@ -1,13 +1,15 @@
-"""Shared infrastructure for live end-to-end tests that drive story-simulator-mcp
-through a real MCP client -- `HeadlessSession` and registry-reading helpers,
-imported by tests/test_race_placement_live.py,
-tests/test_parking_split_live.py, tests/test_write_accuracy.py, and
-tests/test_keyed_subagent_live.py. Carries no live test of its own: the
-original combined driving+parking scenario this file used to test
-(test_car_parking_core_sim) was removed once #57 established that
-combined event resolves unreliably in a way the split-events structure
-(tests/test_parking_split_live.py) doesn't -- see docs/manifest/
-history.yaml: project_history.combined_parking_test_removed.
+"""Shared infrastructure for live end-to-end tests that drive
+story-simulator-mcp through a real MCP client.
+
+`HeadlessSession` and registry-reading helpers, imported by
+tests/test_race_placement_live.py, tests/test_parking_split_live.py,
+tests/test_write_accuracy.py, and tests/test_keyed_subagent_live.py.
+Carries no live test of its own: the original combined driving+parking
+scenario this file used to test (test_car_parking_core_sim) was
+removed once #57 established that combined event resolves unreliably
+in a way the split-events structure (tests/test_parking_split_live.py)
+doesn't -- see docs/manifest/history.yaml:
+project_history.combined_parking_test_removed.
 
 There is no in-process narrator to call directly (see
 docs/manifest/history.yaml: project_history.turn_pipeline_removed), so
@@ -58,47 +60,34 @@ REPO_ROOT = Path(__file__).parent.parent
 
 # Every raw stream-json line from a HeadlessSession's `claude -p` subprocess
 # lands here, one file per session -- not just the final narrated result.
-# Diagnosing the live-test flakiness previously required hand-rolling a
-# throwaway script outside the test suite to capture this (thinking blocks,
-# tool_use/tool_result payloads, intermediate assistant messages) since
-# HeadlessSession.send_turn only ever returned the final "result" event's
-# text. Gitignored -- these are per-run debug artifacts, not source.
 LIVE_TRACE_DIR = REPO_ROOT / ".live_test_traces"
 
-# Cheapest available model. Kept deliberately weak rather than swapped for a
-# stronger one: story-simulator's tools need to hold up under a bad model's
-# mistakes, not just a good one's, so that's the model these tests exercise.
+# Cheapest available model. Kept deliberately weak rather than swapped for
+# a stronger one -- these tools need to hold up under a bad model's mistakes.
 LOW_QUALITY_MODEL = "claude-haiku-4-5-20251001"
 
-# The two MCP tool namespaces this repo's own .mcp.json exposes -- not
-# just Bash/Task denied via --disallowedTools, which still leaves
-# Glob/Read/Grep/etc. available; emc2p.testing.HeadlessSession strips
-# every other built-in tool outright (see its own docstring for why).
+# The two MCP tool namespaces this repo's own .mcp.json exposes --
+# emc2p.testing.HeadlessSession strips every other built-in tool outright.
 _ALLOWED_TOOLS = ["mcp__story-simulator__*", "mcp__iacs__*"]
 
 # Flips HeadlessSession's own default `responder` (see its docstring) for
-# every live test that doesn't pin one explicitly -- e.g.
-# `STORY_SIM_LIVE_TEST_RESPONDER=host uv run pytest -m live` runs the whole
-# suite's default-relying tests against "host" for one run, no test file
-# edits needed. Independent of STORY_SIM_RESPONDER itself (read by
-# config.event_responder() for a real deployment, unrelated to what the
-# *test harness* defaults to) and of any test's own explicit
-# `responder=...` override, which always wins regardless of this var.
+# every live test that doesn't pin one explicitly.
 LIVE_TEST_RESPONDER_ENV_VAR = "STORY_SIM_LIVE_TEST_RESPONDER"
 DEFAULT_LIVE_TEST_RESPONDER = "keyed_subagent"
 
 
 class HeadlessSession(_Emc2pHeadlessSession):
     """story-simulator's own `HeadlessSession`: fixes emc2p's generic
-    constructor to this repo's own `.mcp.json`/allowed-tools/cwd, and
-    computes the one piece of per-session state only this repo can know
-    ahead of time -- `save_dir`'s own Postgres schema, which the sibling
-    iacs-mcp server (also allowed above) needs pointed at directly via
-    IACS_DATABASE_URL, or it falls back to its own unrelated example
-    manifest, making its tools (list_component_types, view_component, ...)
-    useless against this save's actual state -- exactly the gap that once
-    let a model invent a nonexistent component name instead of finding
-    the real `location` schema.
+    constructor to this repo's own `.mcp.json`/allowed-tools/cwd.
+
+    Also computes the one piece of per-session state only this repo can
+    know ahead of time -- `save_dir`'s own Postgres schema, which the
+    sibling iacs-mcp server (also allowed above) needs pointed at
+    directly via IACS_DATABASE_URL, or it falls back to its own
+    unrelated example manifest, making its tools (list_component_types,
+    view_component, ...) useless against this save's actual state --
+    exactly the gap that once let a model invent a nonexistent
+    component name instead of finding the real `location` schema.
 
     `responder` defaults to DEFAULT_LIVE_TEST_RESPONDER ("keyed_subagent"),
     not `config.event_responder()`'s own "host" default -- a test-harness
@@ -138,13 +127,8 @@ class HeadlessSession(_Emc2pHeadlessSession):
             allowed_tools=_ALLOWED_TOOLS,
             cwd=REPO_ROOT,
             model=model,
-            # STORY_SIM_HEADLESS_TEST tells this repo's own Stop hooks (see
-            # .claude/hooks/stop-docstring-check.sh) that this subprocess
-            # is an automated responder, not an interactive session with a
-            # user who could act on a nudge -- otherwise a hook's feedback
-            # derails the turn into answering the nudge instead of the
-            # test's own instruction, and the test sees that as an
-            # unrelated failure.
+            # STORY_SIM_HEADLESS_TEST tells this repo's own Stop hooks that this
+            # subprocess is automated, not an interactive session a nudge can derail.
             extra_env={
                 "STORY_SIM_HEADLESS_TEST": "1",
                 "IACS_DATABASE_URL": registry_url(save_dir),
@@ -180,11 +164,13 @@ def _load_registrar(save_dir: Path, narration: str) -> Registrar:
 
 def _location(registrar: Registrar, alias: str) -> str | None:
     """The current `location.value` recorded for an aliased entity, or
-    None if it has none yet. `location` is a declared, time_dimension'd
-    component type (see manifest/builtins.yaml), so this resolves the
-    current row per entity rather than assuming a single write. Filters via
-    `aliases` (emc2p's own alias-resolution, not a local re-filter) since
-    `alias` here is always expected to name exactly one entity.
+    None if it has none yet.
+
+    `location` is a declared, time_dimension'd component type (see
+    manifest/builtins.yaml), so this resolves the current row per
+    entity rather than assuming a single write. Filters via `aliases`
+    (emc2p's own alias-resolution, not a local re-filter) since `alias`
+    here is always expected to name exactly one entity.
     """
     df = safe_view_current(registrar, "location.value", aliases=alias)
     if df is None or df.empty:
@@ -195,11 +181,13 @@ def _location(registrar: Registrar, alias: str) -> str | None:
 def _parked_at(location: str | None, spot: str) -> bool:
     """Loosely checks a recorded `location` value names `spot` (e.g.
     "parking_spot_1" or "street"), not any one exact phrasing.
+
     `location`'s own schema (manifest/builtins.yaml) calls it a "short
-    freeform phrase", and confirmed live that a model's correct answer can
-    reasonably come out phrased several ways ("parked in parking_spot_1"
-    vs. just "parking_spot_1") -- the model shouldn't have to guess the
-    one exact wording a test hardcodes."""
+    freeform phrase", and confirmed live that a model's correct answer
+    can reasonably come out phrased several ways ("parked in
+    parking_spot_1" vs. just "parking_spot_1") -- the model shouldn't
+    have to guess the one exact wording a test hardcodes.
+    """
     return location is not None and spot in location
 
 

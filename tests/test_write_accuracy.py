@@ -1,7 +1,9 @@
-"""Live regressions checking the *write* stage in isolation -- given the
-already-decided outcome directly (no arrival-order or driving/parking
-reasoning required), does the model still call update_registry correctly:
-right component type, right field, right value, on the right entity?
+"""Live regressions checking the *write* stage in isolation.
+
+Given the already-decided outcome directly (no arrival-order or
+driving/parking reasoning required), does the model still call
+update_registry correctly: right component type, right field, right
+value, on the right entity?
 
 Complements tests/test_race_placement_live.py and
 tests/test_parking_split_live.py, which require the model to both derive
@@ -35,17 +37,12 @@ PARKING_SCENARIO_DIR = REPO_ROOT / "tests" / "data" / "scenarios" / "parking"
 RACE_SCENARIO_DIR = REPO_ROOT / "tests" / "data" / "scenarios" / "race"
 
 # The scenario seed's own starting components (object, description) plus
-# the one field a correct write is supposed to add to each car -- anything
-# else showing up is a misattribution candidate (see
-# emc2p.testing.registry_checks.unexpected_components).
+# the one field a correct write is supposed to add to each car.
 _EXPECTED_LOCATION_COMPONENTS = {"object", "description", "location"}
 _EXPECTED_RACE_PLACEMENT_COMPONENTS = {"object", "description", "race_placement"}
 
 # Same first-come-first-served facts as test_parking_split_live.py's
-# scenario, but handed to the model directly instead of left for it to
-# derive from start_time/duration -- isolates whether it can still record
-# three separate entities' locations correctly via update_registry once
-# arrival-order reasoning is no longer part of the task.
+# scenario, but handed to the model directly instead of left for it to derive.
 _PARKING_WRITE_GIVEN_INSTRUCTION = (
     "Call advance_simulation and keep answering its prompts (resolve, then plan, for "
     "whatever event it names) until its status is \"done\". Each car's parking spot is "
@@ -57,13 +54,7 @@ _PARKING_WRITE_GIVEN_INSTRUCTION = (
 )
 
 # Same finishing order as test_race_placement_live.py's scenario, handed
-# to the model directly instead of left for it to derive. Stated as plain
-# integers (matching race_placement.value's own int schema, see
-# tests/data/scenarios/race/scenario.yaml), not ordinal words ("1st") --
-# confirmed live that ordinal phrasing here nudges the model into writing
-# the ordinal string itself ("1st") instead of the int the schema wants,
-# which would test the instruction's own wording, not the write step this
-# test is meant to isolate.
+# to the model directly. Stated as plain integers, not ordinal words ("1st").
 _RACE_WRITE_GIVEN_INSTRUCTION = (
     "Call advance_simulation and keep answering its prompts (resolve, then plan, for "
     "whatever event it names) until its status is \"done\". Each car's finishing place is "
@@ -77,10 +68,11 @@ _RACE_WRITE_GIVEN_INSTRUCTION = (
 
 def _placement(registrar, alias: str) -> int | str | None:
     """The current `race_placement.value` recorded for an aliased car, or
-    None if it has none yet. Returns the raw recorded value uncoerced if
-    it isn't int-like (e.g. a misfire that wrote "1st" instead of 1) so a
-    failing assertion shows what was actually written instead of crashing
-    on a bare `int()` conversion.
+    None if it has none yet.
+
+    Returns the raw recorded value uncoerced if it isn't int-like (e.g.
+    a misfire that wrote "1st" instead of 1) so a failing assertion
+    shows what was actually written instead of crashing on a bare `int()` conversion.
     """
     df = safe_view_current(registrar, "race_placement.value", aliases=alias)
     if df is None or df.empty:
@@ -95,13 +87,11 @@ def _placement(registrar, alias: str) -> int | str | None:
 @pytest.mark.live
 def test_car_parking_write_accuracy_given_assignment(tmp_path):
     """Given each car's final parking spot directly, does update_registry
-    end up with exactly that -- no misattributed component, no dropped
-    write -- across all three cars and all three trip events?"""
+    end up with exactly that -- no misattributed component, no dropped write?"""
     save_dir = tmp_path / "test_save"
 
     # This test's whole point is whether the *connected* model uses the
-    # MCP tools correctly -- explicit override, since HeadlessSession now
-    # defaults to responder="keyed_subagent" (see its own docstring).
+    # MCP tools correctly -- explicit override of the keyed_subagent default.
     with HeadlessSession(save_dir, responder="host") as session:
         print(f"HeadlessSession trace: {session.trace_path}")
         narration = session.send_turn(
@@ -131,14 +121,12 @@ def test_car_parking_write_accuracy_given_assignment(tmp_path):
 
 @pytest.mark.live
 def test_race_placement_write_accuracy_given_assignment(tmp_path):
-    """Given each car's finishing place directly, does update_registry end
-    up with exactly that -- no misattributed component, no dropped write --
-    across all three cars and all three trip events?"""
+    """Given each car's finishing place directly, does update_registry
+    end up with exactly that -- no misattributed component, no dropped write?"""
     save_dir = tmp_path / "test_save"
 
     # This test's whole point is whether the *connected* model uses the
-    # MCP tools correctly -- explicit override, since HeadlessSession now
-    # defaults to responder="keyed_subagent" (see its own docstring).
+    # MCP tools correctly -- explicit override of the keyed_subagent default.
     with HeadlessSession(save_dir, responder="host") as session:
         print(f"HeadlessSession trace: {session.trace_path}")
         narration = session.send_turn(

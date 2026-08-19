@@ -20,9 +20,7 @@ def _make_ctx():
     return ctx
 
 
-# ---------------------------------------------------------------------------
 # MCP tool registration smoke tests
-# ---------------------------------------------------------------------------
 
 
 class TestMcpToolRegistration:
@@ -39,14 +37,11 @@ class TestMcpToolRegistration:
         }
         assert expected <= self._tool_names()
         # perceive/generate_terrain/resolve_physics/advance_npc_turn moved
-        # out to shelved/ along with the rest of the optional-module code
-        # (see docs/architecture.md) -- not part of the live tool surface.
+        # out to shelved/ along with the rest of the optional-module code.
         assert not {"perceive", "generate_terrain", "resolve_physics", "advance_npc_turn"} & self._tool_names()
 
 
-# ---------------------------------------------------------------------------
 # start_world
-# ---------------------------------------------------------------------------
 
 
 class TestStartWorld:
@@ -88,11 +83,13 @@ class TestStartWorld:
 
     def test_first_open_loads_only_world_history_dir_when_present(self, tmp_path):
         """world_history/, world/, and the seed are all redundant with each
-        other -- loading more than one at once risks silently discarding data
-        (YAML's last-key-wins on duplicate top-level keys) rather than
-        merging it. world_history/ is the fullest, so it wins alone. Each
-        directory can hold more than one yaml file (a save's author is free
-        to split it up), so the loader must recurse into whichever it picks.
+        other -- loading more than one at once risks silently discarding data.
+
+        (YAML's last-key-wins on duplicate top-level keys replaces
+        rather than merges.) world_history/ is the fullest, so it wins
+        alone. Each directory can hold more than one yaml file (a
+        save's author is free to split it up), so the loader must
+        recurse into whichever it picks.
         """
         save_dir = tmp_path / "save"
         save_dir.mkdir()
@@ -128,10 +125,8 @@ class TestStartWorld:
         assert registrar.get_entity_id("seed_only") is None
 
     def test_first_open_falls_back_to_recursive_glob_when_neither_dir_exists(self, tmp_path):
-        """A pristine, never-yet-exported scenario_dir may be organized across
-        several files at arbitrary depth -- with no world/ or world_history/
-        subdirectory yet, everything under save_dir should still load.
-        """
+        """A pristine, never-yet-exported scenario_dir may be organized
+        across several files at arbitrary depth -- everything under save_dir should still load."""
         save_dir = tmp_path / "save"
         save_dir.mkdir()
         (save_dir / "scenario.yaml").write_text("seed_a:\n    - origin\n")
@@ -145,9 +140,7 @@ class TestStartWorld:
         assert registrar.get_entity_id("seed_b") is not None
 
 
-# ---------------------------------------------------------------------------
 # view_registry / view_entity / update_registry
-# ---------------------------------------------------------------------------
 
 
 class TestRegistryTools:
@@ -180,11 +173,13 @@ class TestRegistryTools:
 
     def test_update_registry_rejects_bare_mapping_components(self, tmp_path):
         """A component written without the required leading `- ` (a bare
-        mapping instead of a list) is silently ignored by iacs's own ETL
-        -- no error, no invalid_field row, no data merged. Confirmed live
+        mapping instead of a list) is silently ignored by iacs's own ETL.
+
+        No error, no invalid_field row, no data merged. Confirmed live
         as a real failure mode (a responder's write appeared to succeed
-        but left the registry untouched), so update_registry now raises
-        instead of reporting success for it."""
+        but left the registry untouched), so update_registry now
+        raises instead of reporting success for it.
+        """
         ctx = _make_ctx()
         start_world(str(tmp_path / "save"), ctx)
         with pytest.raises(ValueError, match="car_a"):
@@ -194,8 +189,7 @@ class TestRegistryTools:
 
     def test_update_registry_rejects_invented_component_type(self, tmp_path):
         """The recurring live-test bug this mechanically backstops: a weak
-        model invents a plausible-sounding component name (parked_at)
-        instead of using the real, already-declared one (location)."""
+        model invents a plausible name (parked_at) instead of the real, declared one (location)."""
         ctx = _make_ctx()
         start_world(str(tmp_path / "save"), ctx)
         with pytest.raises(ValueError, match="parked_at"):
@@ -211,19 +205,20 @@ class TestRegistryTools:
 
     def test_update_registry_allows_declared_but_previously_unused_component_type(self, tmp_path):
         """A real component type nothing has written to yet (declared in
-        manifest/builtins.yaml, e.g. `location`) must not be rejected as
-        unknown -- component_types alone only reflects data-bearing types,
-        which is exactly the gap that let this bug go unnoticed in the
-        first place (see iacs's own known_component_types)."""
+        manifest/builtins.yaml, e.g. `location`) must not be rejected as unknown.
+
+        component_types alone only reflects data-bearing types, which
+        is exactly the gap that let this bug go unnoticed in the first
+        place (see iacs's own known_component_types).
+        """
         ctx = _make_ctx()
         start_world(str(tmp_path / "save"), ctx)
         result = update_registry("car_a:\n    - location:\n        value: parked on street\n", ctx=ctx)
         assert "Merged" in result
 
     def test_update_registry_allows_unknown_type_defined_in_the_same_write(self, tmp_path):
-        """Overriding the check is allowed, but only by actually defining
-        the new component type inline -- the same shape
-        manifest/builtins.yaml's own definitions use."""
+        """Overriding the check is allowed, but only by actually defining the
+        new component type inline -- the same shape builtins.yaml's own definitions use."""
         ctx = _make_ctx()
         start_world(str(tmp_path / "save"), ctx)
         result = update_registry(
@@ -243,10 +238,12 @@ class TestRegistryTools:
         assert "Merged" in result
 
     def test_update_registry_accepts_legitimate_nested_entities(self, tmp_path):
-        """A dict value isn't always the bare-mapping mistake -- a nested
-        entity (each sub-key its own child entity, e.g.
-        tests/data/scenarios/move/scenario.yaml's journaling_desk) is a
-        dict too, and must still be accepted."""
+        """A dict value isn't always the bare-mapping mistake.
+
+        A nested entity (each sub-key its own child entity, e.g.
+        tests/data/scenarios/move/scenario.yaml's journaling_desk) is
+        a dict too, and must still be accepted.
+        """
         ctx = _make_ctx()
         start_world(str(tmp_path / "save"), ctx)
         result = update_registry(
@@ -264,13 +261,15 @@ class TestRegistryTools:
 
     def test_update_registry_rejects_component_name_used_as_nested_entity_key(self, tmp_path):
         """The live-test bug this backstops: a component name used as a
-        nested dict key (missing the leading `- ` that would make it a
-        list item) parses as "car_b has a nested child entity named
-        location", not "attach a location component to car_b" --
-        structurally identical to
-        test_update_registry_accepts_legitimate_nested_entities' genuine
-        nesting, distinguished only by `location` being a real,
-        already-declared component type."""
+        nested dict key (missing the leading `- ` that would make it a list item).
+
+        Parses as "car_b has a nested child entity named location",
+        not "attach a location component to car_b" -- structurally
+        identical to
+        test_update_registry_accepts_legitimate_nested_entities'
+        genuine nesting, distinguished only by `location` being a
+        real, already-declared component type.
+        """
         ctx = _make_ctx()
         start_world(str(tmp_path / "save"), ctx)
         with pytest.raises(ValueError, match="location"):
@@ -280,8 +279,7 @@ class TestRegistryTools:
 
     def test_update_registry_accepts_correct_list_form_for_known_component(self, tmp_path):
         """Sanity check alongside the rejection above: the correct list
-        form for the very same component (`location` as a list item, not
-        a nested dict key) must not be caught by the new check."""
+        form for the same component (`location` as a list item) must not be caught by the new check."""
         ctx = _make_ctx()
         start_world(str(tmp_path / "save"), ctx)
         result = update_registry(

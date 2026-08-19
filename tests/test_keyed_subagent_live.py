@@ -1,9 +1,11 @@
 """Live end-to-end confirmation that "keyed_subagent" (see
 story_simulator.keyed_subagent/emc2p.agents.keyed_subagent) actually
-resolves a scenario and persists what it decides -- the missing "Test
-plan" item PR #59/issue #58 both called for and left unstarted: "Run a
-live test confirming update_registry calls are actually persisted by
-keyed_subagent (save_dir/world/ gets created/updated)".
+resolves a scenario and persists what it decides.
+
+The missing "Test plan" item PR #59/issue #58 both called for and left
+unstarted: "Run a live test confirming update_registry calls are
+actually persisted by keyed_subagent (save_dir/world/ gets
+created/updated)".
 
 Reuses tests/data/scenarios/race (the same fixture
 tests/test_race_placement_live.py exercises against the *connected*
@@ -30,9 +32,7 @@ REPO_ROOT = Path(__file__).parent.parent
 RACE_SCENARIO_DIR = REPO_ROOT / "tests" / "data" / "scenarios" / "race"
 
 # keyed_subagent does the actual resolve/plan reasoning and writes
-# in-process -- the connected model's only job is driving advance_simulation
-# to completion, handling its own time-budget check-in (if the 30s default
-# budget is ever hit) by just continuing rather than answering it.
+# in-process -- the connected model's only job is driving it to completion.
 _DRIVE_TO_DONE_INSTRUCTION = (
     "Call advance_simulation repeatedly until its status is \"done\". If it ever comes back "
     "with status \"input_required\", just call it again with the same resume_token and a "
@@ -53,31 +53,22 @@ def _placement(registrar: Registrar, alias: str) -> int | None:
 @pytest.mark.live
 def test_keyed_subagent_resolves_race_and_persists_to_save_dir(tmp_path):
     """keyed_subagent, not the connected model, must actually do the
-    reasoning and recording here -- confirmed two ways: (1) the same
-    correctness checks test_race_placement_live.py runs against the
-    connected model (car_b first, car_c second, car_a third, all three
-    trip events complete, each placement time-stamped with its own trip
-    event's end_time), and (2) save_dir/world/ actually exists and isn't
-    empty afterward -- CLAUDE.md's own re-export-on-every-update_registry
+    reasoning and recording here.
+
+    Confirmed two ways: (1) the same correctness checks
+    test_race_placement_live.py runs against the connected model
+    (car_b first, car_c second, car_a third, all three trip events
+    complete, each placement time-stamped with its own trip event's
+    end_time), and (2) save_dir/world/ actually exists and isn't empty
+    afterward -- CLAUDE.md's own re-export-on-every-update_registry
     invariant, which the original bug this responder was built to fix
     (issue #58) violated outright: 50 calls, zero real writes, zero
     save_dir/world/ ever created.
     """
     save_dir = tmp_path / "test_save"
 
-    # Both timeouts raised well past HeadlessSession's own 120s/240s
-    # defaults (send_turn's actual deadline is min(turn_timeout,
-    # session_timeout), and this test's one open-ended instruction is a
-    # single send_turn call, so both need raising together): unlike the
-    # host-driven live tests (two MCP pauses per event, no nested model
-    # latency), each event here can cost keyed_subagent several of its own
-    # DeepSeek tool-calling rounds *inside* a single advance_simulation
-    # call, and once its 30s time budget
-    # (config.keyed_subagent_time_budget_seconds) is hit mid-event, that
-    # costs a whole extra host round-trip (check in, then resume) on top --
-    # confirmed live: three race events, several such check-ins each,
-    # comfortably exceeded 120s total even though every one resolved
-    # correctly.
+    # Both timeouts raised well past HeadlessSession's own 120s/240s defaults --
+    # keyed_subagent's own nested DeepSeek rounds cost real time inside each call.
     with HeadlessSession(save_dir, turn_timeout=420, session_timeout=420) as session:  # responder="keyed_subagent", the new default
         print(f"HeadlessSession trace: {session.trace_path}")
         narration = session.send_turn(

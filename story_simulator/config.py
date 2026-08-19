@@ -10,34 +10,24 @@ import urllib.parse
 from pathlib import Path
 
 # The one source key every direct registrar.update() call must merge
-# under -- iacs hashes an entity's ID from (source key, entity path), so a
-# different key at any call site would fork a duplicate entity instead of
-# updating the original.
+# under -- a different key at any call site would fork a duplicate entity.
 WORLD_FILE_ID = "world"
 
 # The story-simulator's own component/field schema (position, character,
-# ...). Every base_etl call needs this in `input_dirs`, or its component
-# types pass through unvalidated/untyped.
+# ...). Every base_etl call needs this in `input_dirs`, or types go unvalidated.
 MANIFEST_DIR = Path(__file__).parent.parent / "manifest"
 
-# The tracked, ever-growing "living world" save data — a `scenario_dir` a
-# caller can pass to `start_world` instead of the plain default. Its
-# scenario.yaml has a door that teleports the player forward in time and
-# further from the origin each time they walk through it, and its
-# directory accumulates history turn over turn, unlike a fresh save_dir
-# seeded from DEFAULT_WORLD_DIR.
+# The tracked, ever-growing "living world" save data -- a `scenario_dir`
+# a caller can pass to `start_world` instead of the plain default.
 LIVING_WORLD_DIR = Path(__file__).parent.parent / "data" / "living_world"
 
 # A plain, hand-authored starting scenario (the player, a door, an empty
 # expanse), with none of the living world's teleport/history mechanic.
-# What `start_world` seeds a save_dir from when no `scenario_dir` is given.
 DEFAULT_WORLD_DIR = Path(__file__).parent.parent / "data" / "default"
 
 
 # Registry backend: any ibis.connect-resolvable URL works; Postgres is the
-# default and verified one, matching GitHub Actions' `postgres:` service
-# container. Local dev needs a matching database server, or
-# STORY_SIM_DATABASE_DSN pointed elsewhere.
+# default and verified one, matching GitHub Actions' `postgres:` service container.
 DEFAULT_DATABASE_DSN = "postgresql://postgres:postgres@localhost:5432/postgres"
 
 
@@ -96,39 +86,32 @@ def resolve_anthropic_api_key() -> str | None:
     return os.environ.get("STORY_SIM_ANTHROPIC_API_KEY") or None
 
 # ALL_MODULES/enabled_modules() (the character/npc/physics/terrain/spatial
-# optional-module toggle) removed along with the code it gated -- see
-# docs/architecture.md and git history for what it looked like.
+# optional-module toggle) removed along with the code it gated.
 
 _EVENT_RESPONDERS = ("host", "subagent", "keyed_subagent")
 
 # LiteLLM model string `keyed_subagent_model()` falls back to -- any
-# provider LiteLLM supports, not just DeepSeek, but DeepSeek is the
-# current pick per #89's cost/capability investigation (see
-# docs/manifest/history.yaml).
+# provider LiteLLM supports; DeepSeek is the current pick (see docs/manifest/history.yaml).
 DEFAULT_KEYED_SUBAGENT_MODEL = "deepseek/deepseek-chat"
 
 # Wall-clock seconds `keyed_subagent_time_budget_seconds()` falls back to.
-# Deliberately well under Claude Code's own ~60s per-MCP-tool-call
-# timeout -- confirmed live: with no budget at all, a single
-# advance_simulation call chained 31 DeepSeek round-trips together (since
-# "keyed_subagent" never pauses/returns control the way "host"/"subagent"
-# do) and blew past it, timing out and leaving the host stuck. 30s leaves
-# margin for MCP transit overhead and whatever call is still in flight
-# when the budget is checked.
+# Deliberately well under Claude Code's own ~60s per-MCP-tool-call timeout.
 DEFAULT_KEYED_SUBAGENT_TIME_BUDGET_SECONDS = 30.0
 
 
 def event_responder() -> str:
     """Which responder `core.resolve_event` should ask each time a base
-    event's end_time is reached: "host" (default -- the connected agent
-    decides inline, from its own accumulated context), "subagent" (ask it
-    to delegate to its own isolated subagent mechanism instead, e.g. Claude
-    Code's Agent/Task tool), or "keyed_subagent" (answered directly,
-    in-process, via `keyed_subagent_model()` and story-simulator's own API
-    key, with its own registry tool access dispatched in-process rather
-    than over MCP -- though it still checks in with the host over MCP once
-    its own time budget runs out) -- see `story_simulator.resolve`'s
-    module docstring for what each buys and "subagent"'s one known gap.
+    event's end_time is reached.
+
+    "host" (default -- the connected agent decides inline, from its own
+    accumulated context), "subagent" (ask it to delegate to its own
+    isolated subagent mechanism instead, e.g. Claude Code's Agent/Task
+    tool), or "keyed_subagent" (answered directly, in-process, via
+    `keyed_subagent_model()` and story-simulator's own API key, with its
+    own registry tool access dispatched in-process rather than over MCP
+    -- though it still checks in with the host over MCP once its own
+    time budget runs out) -- see `story_simulator.resolve`'s module
+    docstring for what each buys and "subagent"'s one known gap.
 
     Read from STORY_SIM_RESPONDER rather than a `start_world`
     argument -- a deployment-wide choice about how its connected agent
@@ -147,6 +130,7 @@ def event_responder() -> str:
 def keyed_subagent_model() -> str:
     """Which LiteLLM model string the "keyed_subagent" responder calls
     directly (see `story_simulator.resolve`/`story_simulator.keyed_subagent`).
+
     Read from STORY_SIM_SUBAGENT_MODEL so swapping models (DeepSeek, a
     Groq-hosted Llama, ...) is a config change, not a code change; the
     corresponding API key is resolved by LiteLLM itself from whichever
@@ -157,11 +141,12 @@ def keyed_subagent_model() -> str:
 
 
 def keyed_subagent_time_budget_seconds() -> float:
-    """How many wall-clock seconds the "keyed_subagent" responder may keep
-    answering judgment calls inline within one `advance_simulation` call
-    before checking in with the host instead of continuing unattended --
-    see `story_simulator.resolve.TurnReplay.resolve`. Read from
-    STORY_SIM_SUBAGENT_TIME_BUDGET_SECONDS.
+    """How many wall-clock seconds the "keyed_subagent" responder may
+    keep answering judgment calls inline before checking in with the host.
+
+    Checked within one `advance_simulation` call, instead of continuing
+    unattended -- see `story_simulator.resolve.TurnReplay.resolve`. Read
+    from STORY_SIM_SUBAGENT_TIME_BUDGET_SECONDS.
     """
     return float(
         os.environ.get(

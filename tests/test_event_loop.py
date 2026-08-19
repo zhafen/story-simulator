@@ -1,7 +1,8 @@
 """Tests for the event-driven simulation: advance_simulation resolving
-`event` entities one at a time, via two separate responder calls per
-event -- resolve, then plan -- each by responder="host" (default) or
-"subagent" (STORY_SIM_RESPONDER).
+`event` entities one at a time.
+
+Via two separate responder calls per event -- resolve, then plan --
+each by responder="host" (default) or "subagent" (STORY_SIM_RESPONDER).
 
 These are the kind of scenario this loop can resolve without any detailed
 physics: a chain of events that needs walking through step by step, where
@@ -56,8 +57,7 @@ def _schedule_event(ctx, alias: str, start_time: float, duration: float) -> None
 
 def _mark_resolved(ctx, alias: str, progress: str = "complete") -> None:
     """Simulate what a real host records on a resolve prompt: the event's
-    own outcome and its own lifecycle transition -- both via
-    update_registry, list-form, reusing the existing alias."""
+    own outcome and its own lifecycle transition, both via update_registry."""
     update_registry(
         f"{alias}:\n"
         f"    - outcome:\n"
@@ -77,8 +77,7 @@ def test_nothing_scheduled_returns_done_immediately(tmp_path):
 
 def test_responder_defaults_to_host(tmp_path):
     """No STORY_SIM_RESPONDER override -- "host" is config.event_responder()'s
-    default, so that's what an event's resolve step asks once its end_time
-    is reached."""
+    default, asked once an event's end_time is reached."""
     ctx = _world(tmp_path)
     _schedule_event(ctx, "gizmo_event", 0, 0)
     result = asyncio.run(advance_simulation(ctx))
@@ -88,10 +87,12 @@ def test_responder_defaults_to_host(tmp_path):
 
 
 def test_responder_can_be_configured_to_subagent(tmp_path, monkeypatch):
-    """STORY_SIM_RESPONDER=subagent makes an event's resolve step (once its
-    end_time is reached) ask via responder="subagent" instead, with a prompt that tells the
-    connected host to delegate rather than answer inline -- see
-    story_simulator.resolve._frame_for_responder."""
+    """STORY_SIM_RESPONDER=subagent makes an event's resolve step ask via
+    responder="subagent" instead.
+
+    With a prompt that tells the connected host to delegate rather than
+    answer inline -- see story_simulator.resolve._frame_for_responder.
+    """
     monkeypatch.setenv("STORY_SIM_RESPONDER", "subagent")
     ctx = _world(tmp_path)
     _schedule_event(ctx, "gizmo_event", 0, 0)
@@ -112,8 +113,7 @@ def test_invalid_responder_env_var_raises(tmp_path, monkeypatch):
 
 def test_one_event_pauses_for_both_resolve_and_plan_before_finishing(tmp_path):
     """A single event goes through two separate pauses -- resolve, then
-    plan -- before the loop reports done, even when nothing new ends up
-    getting scheduled."""
+    plan -- before the loop reports done, even with nothing new scheduled."""
     ctx = _world(tmp_path)
     _schedule_event(ctx, "gizmo_event", 0, 0)
 
@@ -136,9 +136,11 @@ def test_one_event_pauses_for_both_resolve_and_plan_before_finishing(tmp_path):
 
 def test_plan_step_creates_a_new_event_that_gets_picked_up_next(tmp_path):
     """The plan step's own update_registry call (simulating what a real
-    responder does) is what schedules a follow-up -- there's no
-    next_due_in line to parse anymore. A brand-new event created there is
-    exactly as poppable as one pre-planned from the start."""
+    responder does) is what schedules a follow-up.
+
+    There's no next_due_in line to parse anymore -- a brand-new event
+    created there is exactly as poppable as one pre-planned from the start.
+    """
     ctx = _world(tmp_path)
     _schedule_event(ctx, "ball_event", 0, 0)
 
@@ -170,13 +172,15 @@ def test_plan_step_creates_a_new_event_that_gets_picked_up_next(tmp_path):
 
 def test_world_time_persists_across_a_reconnect(tmp_path):
     """The bug this guards against: world time used to be purely
-    in-process, session-scoped memory (core._current_world_time), so it
-    reset to 0.0 on every reconnect -- even an idle-triggered MCP
+    in-process, session-scoped memory (core._current_world_time).
+
+    So it reset to 0.0 on every reconnect -- even an idle-triggered MCP
     disconnect, which CLAUDE.md documents as routine, not just a crash --
     even though the world itself (Postgres) had already moved forward. A
     fresh session opening the same save_dir must see world time where the
     old session left it, not back at 0.0 (see docs/manifest/history.yaml:
-    project_history.world_clock_persisted)."""
+    project_history.world_clock_persisted).
+    """
     from story_simulator.core import _get_registrar, _next_time_stamp
 
     save_dir = tmp_path / "save"
@@ -199,25 +203,24 @@ def test_world_time_persists_across_a_reconnect(tmp_path):
 
 def _drive_loop_recording_order(ctx, result, on_plan) -> list[tuple[str, str]]:
     """Drive advance_simulation to completion, recording (step, alias)
-    for every pause -- "resolve" answered by marking the event resolved,
-    "plan" answered by calling on_plan(alias) for test-specific behavior
-    (e.g. scheduling a follow-up) and always finishing with "nothing new"."""
+    for every pause.
+
+    "resolve" answered by marking the event resolved, "plan" answered
+    by calling on_plan(alias) for test-specific behavior (e.g.
+    scheduling a follow-up) and always finishing with "nothing new".
+    """
     order: list[tuple[str, str]] = []
     while result["status"] == "input_required":
-        # The prompt is framed with responder="host" instructions ahead of
-        # the actual body (see resolve._frame_for_responder) -- pull the
-        # alias out from immediately before its own marker phrase rather
-        # than assuming it's the first word.
+        # The prompt is framed with responder="host" instructions ahead of the
+        # actual body -- pull the alias from before its own marker phrase.
         if "'s end_time" in result["prompt"]:
             who = result["prompt"].split("'s end_time")[0].rsplit("\n\n", 1)[-1]
             order.append(("resolve", who))
             _mark_resolved(ctx, who)
             answer = f"{who} resolves."
         else:
-            # "...\n\nGiven how {alias} just resolved..." -- alias is the
-            # last whitespace-separated token before the marker phrase,
-            # not the whole paragraph (unlike the resolve prompt's own
-            # "{alias}'s end_time..." phrasing, which starts the paragraph).
+            # "...\n\nGiven how {alias} just resolved..." -- alias is the last
+            # whitespace-separated token before the marker phrase.
             who = result["prompt"].split(" just resolved")[0].split()[-1]
             order.append(("plan", who))
             answer = on_plan(who)

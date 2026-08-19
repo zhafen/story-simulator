@@ -1,9 +1,10 @@
 """The "keyed_subagent" event responder: a nested specialist call on
-story-simulator's own API key, with its own registry tool access
-dispatched in-process rather than over MCP (see
-`story_simulator.resolve`'s module docstring for the full responder
-picture -- including the one case, its own time-budget check-in, where
-it does still round-trip to the host over MCP -- and
+story-simulator's own API key.
+
+Its own registry tool access is dispatched in-process rather than over
+MCP (see `story_simulator.resolve`'s module docstring for the full
+responder picture -- including the one case, its own time-budget
+check-in, where it does still round-trip to the host over MCP -- and
 `story_simulator.config.event_responder`/`keyed_subagent_model` for how
 it's selected/configured).
 
@@ -43,13 +44,7 @@ from story_simulator.config import keyed_subagent_model
 REPO_ROOT = Path(__file__).parent.parent
 
 # Append-only usage log, not per-session like HeadlessSession's own
-# usage.json: call_keyed_subagent has no session concept of its own (it's
-# called once per judgment request, however many times a turn needs one),
-# and multiple concurrent MCP server subprocesses (one per HeadlessSession)
-# may all be writing here -- single-line append writes are atomic enough
-# for that on a local filesystem. A caller wanting "usage since my run
-# started" filters records by their own `timestamp` rather than relying on
-# file position or a session boundary. Gitignored, like `.live_test_traces/`.
+# usage.json -- multiple concurrent MCP subprocesses may write here. Gitignored.
 USAGE_LOG_PATH = REPO_ROOT / ".keyed_subagent_usage.jsonl"
 
 
@@ -67,9 +62,10 @@ def _dispatch_tool_call(name: str, arguments: dict, session: Any) -> str:
 
 async def call_keyed_subagent(prompt: str, session: Any) -> str:
     """Answer one already-framed judgment prompt via `keyed_subagent_model()`,
-    with real registry access (view_registry/view_entity/update_registry/
-    consolidate_review) so it can actually persist what it decides, not
-    just narrate it.
+    with real registry access so it can actually persist what it decides.
+
+    Access to view_registry/view_entity/update_registry/consolidate_review,
+    not just narrating it.
 
     `session` is the same MCP session id `core._get_registrar`/
     `_get_save_dir` already key off of -- passed through from

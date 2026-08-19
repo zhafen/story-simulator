@@ -214,8 +214,7 @@ def consolidate_review(ctx: Context, limit: int = 20) -> str:
 @server.tool()
 async def advance_simulation(ctx: Context, resume_token: str | None = None, answer: str | None = None) -> dict:
     """Fast-forward through any events whose end_time has been reached,
-    and pause whenever a turn needs input only outside story-simulator's
-    own process can supply.
+    and pause when a turn needs input story-simulator's own process can't supply.
 
     The event-driven simulation (see `core.py`) -- world state is `event`
     entities, each ready to resolve once world time reaches its own

@@ -1,6 +1,5 @@
 """Live regression for task #65, investigating #57: does first-come-first-served
-parking still come out right once "driving" and "parking" are no longer
-bundled into one event's resolution?
+parking still work once "driving"/"parking" aren't bundled into one event.
 
 tests/test_human_validated.py::test_car_parking_core_sim and
 tests/test_race_placement_live.py's evidence (see #61/docs/manifest/
@@ -49,22 +48,21 @@ _RUN_TO_DONE_SPLIT_INSTRUCTION = (
 
 @pytest.mark.live
 def test_parking_split_across_two_events_per_car(tmp_path):
-    """Same first-come-first-served facts as test_car_parking_core_sim (car_b
-    arrives first, car_c second, car_a last) but each car's drive and its
-    parking decision are separate, pre-planned events -- car_a_drive/
-    car_a_park, etc. -- rather than one combined car_a_trip. Checks final
-    location for each car, that all six events reached event_state
-    complete, and order evidence via each car's location write being
-    time-stamped with its own *parking* event's end_time (not its driving
-    event's), confirming the spot was assigned once that car's own parking
-    event resolved.
+    """Same first-come-first-served facts as test_car_parking_core_sim
+    (car_b arrives first, car_c second, car_a last).
+
+    But each car's drive and its parking decision are separate,
+    pre-planned events -- car_a_drive/car_a_park, etc. -- rather than
+    one combined car_a_trip. Checks final location for each car, that
+    all six events reached event_state complete, and order evidence
+    via each car's location write being time-stamped with its own
+    *parking* event's end_time (not its driving event's), confirming
+    the spot was assigned once that car's own parking event resolved.
     """
     save_dir = tmp_path / "test_save"
 
-    # This test's whole point is the *connected* model's own
-    # driving/parking split reasoning -- explicit override, since
-    # HeadlessSession now defaults to responder="keyed_subagent" (see its
-    # own docstring).
+    # This test's whole point is the *connected* model's own driving/parking
+    # split reasoning -- explicit override of the keyed_subagent default.
     with HeadlessSession(save_dir, responder="host") as session:
         print(f"HeadlessSession trace: {session.trace_path}")
         narration = session.send_turn(

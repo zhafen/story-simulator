@@ -11,8 +11,9 @@ not a regression gate. Run directly:
 Isolates just the write-formatting step itself (see tests/data/scenarios/
 location_write_isolated/scenario.yaml: one car, one already-resolvable
 parking event, one spot) -- separate from arrival-order reasoning
-(tests/test_race_placement_live.py) or driving/parking separation
-(tests/test_parking_split_live.py), which are already covered elsewhere.
+(tests/test_human_validated/test_race_placement_live.py) or
+driving/parking separation (test_parking_split_live.py in that same
+package), which are already covered elsewhere.
 
 Three approaches are compared: "baseline" (today's direct single-shot
 update_registry write), "confirm" (#74's opt-in preview=True /
@@ -38,7 +39,7 @@ from pathlib import Path
 
 from collections import Counter
 
-from test_human_validated import (
+from test_human_validated.helpers import (
     LOW_QUALITY_MODEL,
     HeadlessSession,
     _load_registrar,

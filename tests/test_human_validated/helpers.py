@@ -1,13 +1,12 @@
 """Shared infrastructure for live end-to-end tests that drive
 story-simulator-mcp through a real MCP client.
 
-`HeadlessSession` and registry-reading helpers, imported by
-tests/test_race_placement_live.py, tests/test_parking_split_live.py,
-tests/test_write_accuracy.py, and tests/test_keyed_subagent_live.py.
+`HeadlessSession` and registry-reading helpers, imported by every
+sibling test module in this tests/test_human_validated/ package.
 Carries no live test of its own: the original combined driving+parking
 scenario this file used to test (test_car_parking_core_sim) was
 removed once #57 established that combined event resolves unreliably
-in a way the split-events structure (tests/test_parking_split_live.py)
+in a way the split-events structure (test_parking_split_live.py)
 doesn't -- see docs/manifest/history.yaml:
 project_history.combined_parking_test_removed.
 

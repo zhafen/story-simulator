@@ -28,7 +28,7 @@ from pathlib import Path
 
 import pytest
 
-from test_human_validated import HeadlessSession, _event_states, _load_registrar, _location, _parked_at
+from test_human_validated.helpers import HeadlessSession, _event_states, _load_registrar, _location, _parked_at
 from emc2p.testing.registry_checks import unexpected_components
 from story_simulator.core import safe_view_current
 

@@ -29,7 +29,7 @@ from pathlib import Path
 
 import pytest
 
-from test_human_validated import HeadlessSession, _event_states, _load_registrar
+from test_human_validated.helpers import HeadlessSession, _event_states, _load_registrar
 from emc2p.registrar import Registrar
 from emc2p.testing.registry_checks import write_time
 from story_simulator.core import safe_view_current

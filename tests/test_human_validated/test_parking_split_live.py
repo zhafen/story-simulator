@@ -23,7 +23,7 @@ from pathlib import Path
 
 import pytest
 
-from test_human_validated import (
+from test_human_validated.helpers import (
     HeadlessSession,
     _event_states,
     _load_registrar,

@@ -1,4 +1,5 @@
-"""Deterministic sibling to tests/test_human_validated.py::test_car_parking_core_sim.
+"""Deterministic sibling to the live human-validated tests
+(tests/test_human_validated/).
 
 Drives the same real scenario (tests/data/scenarios/parking) through the
 same advance_simulation/update_registry mechanism, but in-process with

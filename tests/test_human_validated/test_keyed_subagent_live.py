@@ -28,7 +28,7 @@ from emc2p.registrar import Registrar
 from emc2p.testing.registry_checks import write_time
 from story_simulator.core import safe_view_current
 
-REPO_ROOT = Path(__file__).parent.parent
+REPO_ROOT = Path(__file__).parent.parent.parent
 RACE_SCENARIO_DIR = REPO_ROOT / "tests" / "data" / "scenarios" / "race"
 
 # keyed_subagent does the actual resolve/plan reasoning and writes

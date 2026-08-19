@@ -32,7 +32,7 @@ from test_human_validated.helpers import HeadlessSession, _event_states, _load_r
 from emc2p.testing.registry_checks import unexpected_components
 from story_simulator.core import safe_view_current
 
-REPO_ROOT = Path(__file__).parent.parent
+REPO_ROOT = Path(__file__).parent.parent.parent
 PARKING_SCENARIO_DIR = REPO_ROOT / "tests" / "data" / "scenarios" / "parking"
 RACE_SCENARIO_DIR = REPO_ROOT / "tests" / "data" / "scenarios" / "race"
 

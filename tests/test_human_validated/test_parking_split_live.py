@@ -32,7 +32,7 @@ from test_human_validated.helpers import (
 )
 from emc2p.testing.registry_checks import write_time
 
-REPO_ROOT = Path(__file__).parent.parent
+REPO_ROOT = Path(__file__).parent.parent.parent
 PARKING_SPLIT_SCENARIO_DIR = REPO_ROOT / "tests" / "data" / "scenarios" / "parking_split"
 
 _RUN_TO_DONE_SPLIT_INSTRUCTION = (

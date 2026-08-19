@@ -55,7 +55,7 @@ from emc2p.testing.registry_checks import schema_exists
 from story_simulator.config import registry_schema_name, registry_url, resolve_database_dsn
 from story_simulator.core import safe_view_current
 
-REPO_ROOT = Path(__file__).parent.parent
+REPO_ROOT = Path(__file__).parent.parent.parent
 
 # Every raw stream-json line from a HeadlessSession's `claude -p` subprocess
 # lands here, one file per session -- not just the final narrated result.

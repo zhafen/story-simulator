@@ -24,7 +24,7 @@ from story_simulator.config import registry_url
 from story_simulator.core import safe_view_current
 from story_simulator.mcp_server import advance_simulation, start_world, update_registry
 
-REPO_ROOT = Path(__file__).parent.parent
+REPO_ROOT = Path(__file__).parent.parent.parent
 PARKING_SCENARIO_DIR = REPO_ROOT / "tests" / "data" / "scenarios" / "parking"
 
 _HOST_FRAMING = (

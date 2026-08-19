@@ -1,8 +1,8 @@
 file_info:
     - description: >
-        Regression fixture shared by tests/test_car_parking_deterministic.py
-        and tests/test_human_validated/test_write_accuracy.py. Three cars
-        drive to a restaurant with only two parking spots.
+        Regression fixture shared by tests/test_human_validated/
+        test_car_parking_deterministic.py and test_write_accuracy.py.
+        Three cars drive to a restaurant with only two parking spots.
 
 restaurant:
     - object:

@@ -487,3 +487,36 @@ project_history:
               out that same answer unaided. Single rep per test, same as
               this suite's other live regressions -- not
               location_write_harness.py's many-rep comparative mode.
+    world_clock_persisted:
+        - description: >
+              _current_world_time used to be a plain in-process
+              weakref.WeakKeyDictionary keyed by MCP session, set in
+              process_event from the popped event's own end_time and read
+              by _next_time_stamp for every write made while resolving
+              that event's turn. Sharper than "resets on a subprocess
+              crash": it reset on *every* idle-triggered MCP disconnect
+              too (a routine, expected event per CLAUDE.md's own recovery
+              guidance) — see docs/manifest/story-simulator.yaml:
+              world_time_concept for the write-lands-in-the-reconnect-
+              window staleness risk this created.
+
+              Replaced with a `world_clock` component (manifest/
+              builtins.yaml) on a fixed entity alias
+              (core.WORLD_CLOCK_ALIAS), written by process_event the same
+              way every other piece of world state is, and read by
+              _next_time_stamp(registrar) instead of
+              _next_time_stamp(session). Deliberately not flagged
+              time_dimension like position.time/state.time/... — a
+              world_clock row's own value IS the world time, so there's no
+              independent "when was this recorded" axis to backfill it
+              against; _next_time_stamp takes the highest value across
+              every accumulated row instead, relying on world time only
+              ever moving forward rather than on write order.
+
+              Also dropped `session` as a parameter of
+              _update_registry_and_sync (it only ever used it to call
+              _next_time_stamp) and of process_event's own direct write —
+              session is still threaded through process_event/
+              resolve_event/plan_events/TurnReplay.resolve for the
+              keyed_subagent responder's own registry tool access, which
+              this change didn't touch.

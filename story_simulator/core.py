@@ -59,18 +59,13 @@ WORLD_HISTORY_DIRNAME = "world_history"
 
 _registrars: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
 _save_dirs: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
-# World time (seconds since world creation), per session -- set in
-# process_event from the popped event's own start_time + duration (see
-# advance_clock: "the popped event's own end_time becomes 'now' for this
-# turn") and read by _next_time_stamp for every write anything does while
-# resolving that event's turn, so "how recent is this row" and "when this
-# event's end_time was reached" share one clock instead of the wall clock.
-# Session-scoped process memory, not persisted -- a subprocess restart
-# mid-turn resets it to 0.0 until the next event pop re-derives it, a
-# known gap (see docs/manifest/story-simulator.yaml: world_time_concept)
-# accepted for now in favor of not introducing a separate persisted clock
-# entity.
-_current_world_time: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
+
+# The single well-known entity `process_event` writes each popped event's
+# end_time onto, as a `world_clock` component (manifest/builtins.yaml) --
+# see `_next_time_stamp`. A fixed alias, not one derived from the popped
+# event itself: world time is one axis shared by the whole world, not a
+# per-event fact.
+WORLD_CLOCK_ALIAS = "simulation_clock"
 
 
 def safe_view(
@@ -168,8 +163,10 @@ def advance_clock(registrar: Registrar, alias: str) -> float:
     its end_time, the moment it actually resolves, not when it started --
     becomes "now" for this turn.
 
-    No separate persisted global clock -- the popped event's own timing
-    is the only notion of "current time" needed today.
+    Only computes the value -- `process_event` is what actually persists
+    it as world time's new current value (see `WORLD_CLOCK_ALIAS`/
+    `_next_time_stamp`); the popped event's own timing is still the only
+    source that value ever comes from.
     """
     entity_id = registrar.get_entity_id(alias)
     if entity_id is None:
@@ -200,28 +197,36 @@ def _get_save_dir(session) -> Path:
     return _save_dirs[session]
 
 
-def _next_time_stamp(session) -> float:
-    """The world-time stamp for `position.time` and friends: this session's
+def _next_time_stamp(registrar: Registrar) -> float:
+    """The world-time stamp for `position.time` and friends: the world's
     current in-fiction "now" (seconds since world creation).
 
-    Reads `_current_world_time`, set in `process_event` from the popped
-    event's own start_time + duration (see `advance_clock`) -- every write
-    made while resolving one event's turn shares that same "now", the
-    same world-time axis `event.start_time`/`event_state.time`/`outcome`
-    writes all use, rather than a wall-clock substitute. Falls back to 0.0
-    if nothing has been popped yet for this session (e.g. a stray
-    `update_registry` call before `advance_simulation` is ever run).
+    Reads `world_clock.value` (manifest/builtins.yaml), written in
+    `process_event` from the popped event's own start_time + duration (see
+    `advance_clock`) onto `WORLD_CLOCK_ALIAS` -- every write made while
+    resolving one event's turn shares that same "now", the same
+    world-time axis `event.start_time`/`event_state.time`/`outcome` writes
+    all use, rather than a wall-clock substitute. A registry entity, not
+    process memory scoped to one MCP session -- it survives a session
+    reconnect the same way every other piece of world state already does
+    (a prior, session-scoped-dict version of this did not: see
+    docs/manifest/history.yaml: project_history.world_clock_persisted).
 
-    Two writes at the same world time -- several update_registry calls
-    resolving one turn, or any number of stray calls before the first event
-    is ever popped -- used to need a tie-break nudge handed out here,
-    since `Registry.view_current`'s own tie handling was arbitrary. iacs's
-    own `_seq` write-order column (zhafen/iacs#94) is merged now, so
-    "most recent write wins" at a tied world time is iacs's own guarantee
-    to keep -- not something this function needs to fake by nudging the
-    stamp itself.
+    `world_clock` isn't itself flagged `time_dimension` (unlike
+    `position.time`/`state.time`/...): a row's own `value` IS the world
+    time, so there's no independent "when was this recorded" axis to
+    backfill it against -- `Registry.view_current`'s time-dimension
+    resolution has nothing to resolve against here. Takes the highest
+    recorded value across every accumulated row instead, relying on world
+    time only ever moving forward (each event pop's own end_time is at
+    least as late as every previously resolved one) rather than on write
+    order. Falls back to 0.0 if nothing has been popped yet (e.g. a stray
+    `update_registry` call before `advance_simulation` is ever run).
     """
-    return _current_world_time.get(session, 0.0)
+    df = safe_view(registrar, "world_clock.value")
+    if df is None or df.empty:
+        return 0.0
+    return float(df["world_clock.value"].max())
 
 
 def _yaml_files(directory: Path) -> list[Path]:
@@ -440,13 +445,13 @@ def _validate_registry_write(registrar: Registrar, yaml_string: str) -> set[str]
     return registrar.validate_write(yaml_string)
 
 
-def _update_registry_and_sync(registrar: Registrar, save_dir: Path, yaml_string: str, session) -> None:
+def _update_registry_and_sync(registrar: Registrar, save_dir: Path, yaml_string: str) -> None:
     """Merge `yaml_string` into the registry, then sync `save_dir`'s YAML to match."""
     _validate_registry_write(registrar, yaml_string)
     registrar.update(
         input_dirs=[str(MANIFEST_DIR)],
         yaml_strings={WORLD_FILE_ID: yaml_string},
-        time=_next_time_stamp(session),
+        time=_next_time_stamp(registrar),
     )
     _export_world_yaml(registrar, save_dir)
 
@@ -635,16 +640,24 @@ async def plan_events(alias: str, replay: TurnReplay, session) -> str:
 async def process_event(registrar: Registrar, alias: str, replay: TurnReplay, session) -> tuple[str, str]:
     """Process event box: Advance clock -> Resolve event -> Plan events.
 
-    No update-data step: `resolve_event` and `plan_events` both write
-    everything they decide directly via update_registry (including
-    `alias`'s own event_state transition), so there's nothing left for
-    this function to persist mechanically afterward -- unlike the
-    next_due_in mechanism this replaces, which needed a code-driven
-    predict/push reschedule step because a plain float answer had nothing
-    else able to act on it.
+    Advance clock is the one exception to "resolve_event/plan_events
+    persist everything themselves": `end_time` itself is written here,
+    directly, as this world's new `world_clock` value (see
+    `WORLD_CLOCK_ALIAS`/`_next_time_stamp`) -- there's no responder
+    involved in computing it, so there's no judgment call for a responder
+    to persist it through. Otherwise no update-data step: `resolve_event`
+    and `plan_events` both write everything else they decide directly via
+    update_registry (including `alias`'s own event_state transition), so
+    there's nothing left for this function to persist mechanically
+    afterward -- unlike the next_due_in mechanism this replaces, which
+    needed a code-driven predict/push reschedule step because a plain
+    float answer had nothing else able to act on it.
     """
     end_time = advance_clock(registrar, alias)
-    _current_world_time[session] = end_time
+    registrar.update(
+        input_dirs=[str(MANIFEST_DIR)],
+        yaml_strings={WORLD_FILE_ID: f"{WORLD_CLOCK_ALIAS}:\n    - world_clock:\n        value: {end_time}\n"},
+    )
     resolve_narration = await resolve_event(alias, replay, end_time, session)
     plan_narration = await plan_events(alias, replay, session)
     return resolve_narration, plan_narration
@@ -982,7 +995,7 @@ def update_registry(
 
     if confirm_token is not None:
         pending_yaml = _decode_pending_write(confirm_token)
-        _update_registry_and_sync(registrar, save_dir, pending_yaml, session)
+        _update_registry_and_sync(registrar, save_dir, pending_yaml)
         return "Merged into the registry and synced to save_dir/world.yaml."
 
     if yaml_string is None:
@@ -992,7 +1005,7 @@ def update_registry(
         )
 
     if not preview:
-        _update_registry_and_sync(registrar, save_dir, yaml_string, session)
+        _update_registry_and_sync(registrar, save_dir, yaml_string)
         return "Merged into the registry and synced to save_dir/world.yaml."
 
     return _preview_registry_write(registrar, yaml_string)

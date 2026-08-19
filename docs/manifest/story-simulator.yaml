@@ -333,38 +333,37 @@ story_simulator_mission:
 
               Position/state/location's ordering field is `time` (in seconds
               since world creation), sourced from whichever `event` was most
-              recently popped -- see core._current_world_time/_next_time_stamp
-              and single_ordering_vocabulary. The old next_due-based
-              mechanism this paragraph used to describe is gone entirely
+              recently popped -- see core._next_time_stamp and
+              single_ordering_vocabulary. The old next_due-based mechanism
+              this paragraph used to describe is gone entirely
               (manifest/builtins.yaml's next_due component was dead schema,
               removed); still no day/night cycle or calendar, and "how long
               has X been walking" is answerable from `time` deltas but
               nothing surfaces it yet.
 
-              Known gap, sharper than "resets to 0.0 on a subprocess
-              restart": _current_world_time is purely in-process,
-              session-scoped memory, not a registry entity, so it resets on
-              *every* idle-triggered MCP disconnect too (a routine, expected
-              event per CLAUDE.md's own recovery guidance), not just a
-              crash. If any update_registry call lands in the narrow window
-              between reconnect and the next successful event pop, it
-              backfills `time: 0.0` for time_dimension'd fields -- and since
-              Registry.view_current picks the row with the *highest* `time`
-              as current (not most-recent-write, except as an equal-time
-              tiebreak), such a write could be silently treated as stale on
-              read if an earlier row in that same session already recorded a
-              higher timestamp. Accepted for now in favor of not introducing
-              a separate persisted clock entity, but worth knowing precisely
-              rather than just "known gap".
+              Resolved on 2026-08-19 (docs/manifest/history.yaml:
+              project_history.world_clock_persisted): world time used to be
+              purely in-process, session-scoped memory (_current_world_time),
+              not a registry entity, so it reset on *every* idle-triggered
+              MCP disconnect (a routine, expected event per CLAUDE.md's own
+              recovery guidance), not just a crash -- risking a
+              silently-stale read if an update_registry call landed in the
+              narrow reconnect window before the next event pop. Now a
+              `world_clock` component (manifest/builtins.yaml) on a fixed
+              entity, read via `core._next_time_stamp(registrar)`, so it
+              survives a reconnect the same way every other piece of world
+              state already does. What remains open here is the day/night
+              cycle/calendar/elapsed-time-surfacing scope only, not this
+              persistence gap.
         - requirement
         - impact:
               type: gameplay_richness
-              value: 0.4
+              value: 0.2
         - cost:
               - type: engineering_hours
-                value: 8
+                value: 4
               - type: regression_risk
-                value: 0.2
+                value: 0.1
         - work_state: in progress
     live_model_test_coverage:
         - description: >

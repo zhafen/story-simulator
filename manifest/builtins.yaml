@@ -244,6 +244,30 @@ event_components:
             value:
                 description: A natural-language description of what happened.
                 type: str
+    world_clock:
+        - description: >
+            The simulation's persisted "now" -- world time (seconds since
+            world creation), the same axis every time_dimension'd field
+            (event_state.time, position.time, state.time, location.time)
+            is measured on. Written once per event pop, on a single
+            well-known entity (see story_simulator.core.process_event/
+            advance_clock), not scoped to any one MCP session -- so it
+            survives an MCP disconnect/reconnect the same way every other
+            piece of world state already does.
+
+            Not itself time_dimension'd: a row's own value IS the world
+            time, so there's no independent "when was this recorded" axis
+            to backfill it against -- reading it takes the highest
+            recorded value across every row instead (see
+            story_simulator.core._next_time_stamp), relying on world time
+            only ever moving forward rather than on write order.
+        - component_type
+        - field:
+            value:
+                description: World time (seconds since world creation) as
+                    of the most recently popped event's own end_time.
+                type: float
+                units: seconds
 
 agent_components:
     agent:

@@ -168,6 +168,35 @@ def test_plan_step_creates_a_new_event_that_gets_picked_up_next(tmp_path):
     assert result == {"status": "done", "narration": "Nothing scheduled."}
 
 
+def test_world_time_persists_across_a_reconnect(tmp_path):
+    """The bug this guards against: world time used to be purely
+    in-process, session-scoped memory (core._current_world_time), so it
+    reset to 0.0 on every reconnect -- even an idle-triggered MCP
+    disconnect, which CLAUDE.md documents as routine, not just a crash --
+    even though the world itself (Postgres) had already moved forward. A
+    fresh session opening the same save_dir must see world time where the
+    old session left it, not back at 0.0 (see docs/manifest/history.yaml:
+    project_history.world_clock_persisted)."""
+    from story_simulator.core import _get_registrar, _next_time_stamp
+
+    save_dir = tmp_path / "save"
+    ctx = _world(tmp_path)
+    _schedule_event(ctx, "gizmo_event", 10, 5)  # end_time = 15
+
+    result = asyncio.run(advance_simulation(ctx))
+    _mark_resolved(ctx, "gizmo_event")
+    result = asyncio.run(
+        advance_simulation(ctx, resume_token=result["resume_token"], answer="Gizmo did its thing.")
+    )
+    asyncio.run(advance_simulation(ctx, resume_token=result["resume_token"], answer="Nothing new needed."))
+
+    assert _next_time_stamp(_get_registrar(ctx.request_context.session)) == 15.0
+
+    ctx2 = _make_ctx()
+    start_world(str(save_dir), ctx2)
+    assert _next_time_stamp(_get_registrar(ctx2.request_context.session)) == 15.0
+
+
 def _drive_loop_recording_order(ctx, result, on_plan) -> list[tuple[str, str]]:
     """Drive advance_simulation to completion, recording (step, alias)
     for every pause -- "resolve" answered by marking the event resolved,

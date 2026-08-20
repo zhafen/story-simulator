@@ -1,3 +1,4 @@
+import emc2p.mcp_server as emc2p_mcp_server
 import pytest
 
 from conftest import _make_ctx
@@ -31,6 +32,23 @@ class TestMcpToolRegistration:
         # perceive/generate_terrain/resolve_physics/advance_npc_turn moved
         # out to shelved/ along with the rest of the optional-module code.
         assert not {"perceive", "generate_terrain", "resolve_physics", "advance_npc_turn"} & self._tool_names()
+
+    def test_open_registry_is_not_mounted(self):
+        """start_world already covers opening/tracking the world registrar
+        -- mounting emc2p's own open_registry too would let a client
+        silently swap it out for an unrelated one mid-session."""
+        assert "open_registry" not in self._tool_names()
+
+    def test_view_registry_and_view_entity_are_emc2p_s_own_tools(self):
+        """Mounted directly from emc2p.mcp_server, not reimplemented here."""
+        assert view_registry is emc2p_mcp_server.view_registry
+        assert view_entity is emc2p_mcp_server.view_entity
+
+    def test_update_registry_keeps_this_server_s_own_richer_version(self):
+        """emc2p's own update_registry lacks the preview/confirm_token flow
+        and save_dir export sync -- the mounting loop must not let it win
+        the name collision."""
+        assert update_registry is not emc2p_mcp_server.update_registry
 
 
 # start_world
@@ -140,6 +158,16 @@ class TestRegistryTools:
         ctx = _make_ctx()
         with pytest.raises(ValueError, match="start_world"):
             _get_registrar(ctx.request_context.session)
+
+    def test_view_registry_before_start_world_names_start_world_not_open_registry(self):
+        """view_registry is emc2p's own function, but wired to this
+        server's own _get_registrar (see mcp_server.py's module docstring)
+        -- the error it raises must point at start_world, the tool this
+        server actually has, not emc2p's own open_registry (not mounted here)."""
+        ctx = _make_ctx()
+        with pytest.raises(ValueError, match="start_world") as exc_info:
+            view_registry("position", ctx)
+        assert "open_registry" not in str(exc_info.value)
 
     def test_view_registry_returns_markdown_table_of_positions(self, tmp_path):
         ctx = _make_ctx()

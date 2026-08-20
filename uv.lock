@@ -585,6 +585,9 @@ dependencies = [
 agents = [
     { name = "litellm" },
 ]
+mcp = [
+    { name = "mcp" },
+]
 
 [package.metadata]
 requires-dist = [
@@ -2432,7 +2435,7 @@ name = "story-simulator"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
-    { name = "emc2p", extra = ["agents"] },
+    { name = "emc2p", extra = ["agents", "mcp"] },
     { name = "matplotlib" },
     { name = "mcp" },
     { name = "psycopg", extra = ["binary"] },
@@ -2444,7 +2447,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "emc2p", extras = ["agents"], editable = "emc2p" },
+    { name = "emc2p", extras = ["agents", "mcp"], editable = "emc2p" },
     { name = "matplotlib", specifier = ">=3.11.0" },
     { name = "mcp", specifier = ">=1.28.1" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.2" },

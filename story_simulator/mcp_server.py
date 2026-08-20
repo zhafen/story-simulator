@@ -24,19 +24,29 @@ STORY_SIM_RESPONDER -- see `story_simulator.config.event_responder`) -- see
 dedicated tool. `view_registry`/`view_entity`/`update_registry` remain
 directly callable too, for anything outside that loop.
 
-`view_registry`/`view_entity` are thin delegates to iacs's own Registrar
-methods (`view_df`/`view_entity`), not independent reimplementations --
-a prior version of each did reimplement the read/traversal logic itself,
-which turned out to just duplicate what iacs's own `view_component`/
-`view_entity` MCP tools already wrap. An even earlier iteration removed
-these two tools entirely in favor of requiring iacs's own tools instead;
-reverted after live evidence that a connected host reliably discovers and
-uses tools on THIS server but has never once discovered or called a tool
-on a separate one, however strongly nudged (see docs/manifest/history.yaml:
-project_history.story_simulator_view_tools_reinstated_as_iacs_delegates).
-Delegating (calling the same underlying Registrar object this server
-already holds) avoids the original duplication without repeating that
-discoverability problem.
+`view_registry`/`view_entity` are `emc2p.mcp_server`'s own tool functions,
+mounted directly onto this server (see the mounting loop near the bottom
+of this file) rather than reimplemented or manually delegated to here --
+an earlier version of this file did exactly that, which just risked
+drifting from emc2p's own copy of the same logic. Delegating to a
+genuinely separate MCP server instead (an even earlier iteration,
+requiring iacs's own tools) was reverted after live evidence that a
+connected host reliably discovers and uses tools on THIS server but has
+never once discovered or called a tool on a separate one, however
+strongly nudged (see docs/manifest/history.yaml: project_history.
+story_simulator_view_tools_reinstated_as_iacs_delegates) -- mounting
+emc2p's own tool objects onto this server keeps that discoverability
+while still avoiding local duplication. Wired to read this server's own
+world registrar (`core._registrars`, populated by `start_world`), not a
+separate emc2p-only one nothing here ever populates -- see
+`_get_registrar_for_emc2p_tools` below. `open_registry` (emc2p's own
+tool for opening a registrar by database_url) is deliberately not
+mounted: this server already has `start_world` for that, and mounting
+`open_registry` too would let a client silently swap out the world's
+own registrar for an unrelated one mid-session. `update_registry`
+collides with this server's own richer version (preview/confirm_token,
+save_dir export sync) -- the mounting loop leaves an existing same-named
+tool alone, so this server's own wins without any special-casing.
 
 This file is deliberately thin: every `@server.tool()` function below just
 unpacks `ctx.request_context.session` into a plain session id and calls
@@ -64,6 +74,7 @@ functions, `server.run(transport="stdio")`.
 
 from __future__ import annotations
 
+import emc2p.mcp_server as _emc2p_mcp_server
 from mcp.server.fastmcp import Context, FastMCP
 
 from story_simulator import core
@@ -137,29 +148,6 @@ def start_world(save_dir: str, ctx: Context, scenario_dir: str | None = None) ->
     """
     __iacs__ = {"solution of": "story_simulator_mission.tool_catalog.start_world"}
     return core.start_world(ctx.request_context.session, save_dir, scenario_dir)
-
-
-@server.tool()
-def view_registry(component_type: str, ctx: Context) -> str:
-    """View all recorded data for one component type (e.g. "position", "object", "character").
-
-    Covers both the starting scenario and everything recorded since, since
-    it reads straight from the registry.
-    """
-    __iacs__ = {"solution of": "story_simulator_mission.tool_catalog.view_registry"}
-    return core.view_registry(ctx.request_context.session, component_type)
-
-
-@server.tool()
-def view_entity(entity_id: str, ctx: Context) -> str:
-    """Return every recorded component instance for a specific entity.
-
-    Args:
-        entity_id: Entity hash, alias, or unambiguous path fragment (e.g.
-            "player", "desk", or "journaling_desk.desk").
-    """
-    __iacs__ = {"solution of": "story_simulator_mission.tool_catalog.view_entity"}
-    return core.view_entity(ctx.request_context.session, entity_id)
 
 
 @server.tool()
@@ -251,6 +239,48 @@ async def advance_simulation(ctx: Context, resume_token: str | None = None, answ
     """
     __iacs__ = {"solution of": "story_simulator_mission.tool_catalog.advance_simulation"}
     return await core.advance_simulation(ctx.request_context.session, resume_token, answer)
+
+
+def _get_registrar_for_emc2p_tools(session):
+    """Replaces `emc2p.mcp_server._get_registrar` (see the mounting loop
+    below) so the tools mounted from there read this server's own world
+    registrar, not a separate emc2p-only one nothing on this server ever
+    populates. Same lookup `core._get_registrar` does, with emc2p's own
+    generic error message swapped for this server's own ("start_world",
+    not "open_registry" -- the tool that message would name isn't
+    mounted here at all).
+    """
+    if session not in core._registrars:
+        raise ValueError("No world open for this session yet — call start_world first.")
+    return core._registrars[session]
+
+
+_emc2p_mcp_server._get_registrar = _get_registrar_for_emc2p_tools
+
+# Mount every emc2p.mcp_server tool this server doesn't already define
+# itself (see this module's own docstring for why view_registry/
+# view_entity/open_registry/update_registry each land the way they do
+# below) -- reusing emc2p's own tool objects (name/description/schema
+# and, via _get_registrar_for_emc2p_tools above, this server's own
+# registrar) rather than hand-writing a wrapper per tool.
+for _emc2p_tool in _emc2p_mcp_server.server._tool_manager.list_tools():
+    if _emc2p_tool.name == "open_registry":
+        continue
+    server.add_tool(
+        _emc2p_tool.fn,
+        name=_emc2p_tool.name,
+        title=_emc2p_tool.title,
+        description=_emc2p_tool.description,
+        annotations=_emc2p_tool.annotations,
+        icons=_emc2p_tool.icons,
+        meta=_emc2p_tool.meta,
+    )
+
+# Re-exported at module level too, so callers can keep doing
+# `from story_simulator.mcp_server import view_registry, view_entity`
+# the same way they could when these were this module's own functions.
+view_registry = _emc2p_mcp_server.view_registry
+view_entity = _emc2p_mcp_server.view_entity
 
 
 def main() -> None:

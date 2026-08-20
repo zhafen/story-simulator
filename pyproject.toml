@@ -9,7 +9,7 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "emc2p[agents]",
+    "emc2p[agents,mcp]",
     "matplotlib>=3.11.0",
     "mcp>=1.28.1",
     "psycopg[binary]>=3.2",
@@ -19,7 +19,10 @@ dependencies = [
     "tabulate>=0.10.0",
 ]
 # emc2p's "agents" extra pulls in litellm -- story-simulator itself no
-# longer needs litellm as a direct dependency.
+# longer needs litellm as a direct dependency. Its "mcp" extra is
+# already covered by this project's own bare `mcp` dependency above,
+# but declared explicitly too since mcp_server.py now imports
+# emc2p.mcp_server directly, not just incidentally sharing the package.
 
 [project.scripts]
 story-simulator-mcp = "story_simulator.mcp_server:main"

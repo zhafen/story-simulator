@@ -17,11 +17,12 @@ the same way) rather than staying duplicated here. This module supplies
 only the story-simulator-specific part: which four tools to expose
 (`view_registry`/`view_entity`/`update_registry`/`consolidate_review`,
 `emc2p.agents.tool_calling_loop.REGISTRAR_TOOL_SPECS`'s own shape) and how to
-actually dispatch them -- wired directly to `story_simulator.core`'s own
-functions (the exact same ones `mcp_server.py`'s tools delegate to),
-called in-process (no MCP round-trip, no second subprocess) since
-`call_keyed_subagent` already runs inside story-simulator-mcp's own
-process, on the same already-open registrar `session` identifies.
+actually dispatch them -- wired directly to `story_simulator.core.registrar_sessions`'s
+own plain-session methods (the exact same instance `mcp_server.py`'s
+mounted tools delegate to), called in-process (no MCP round-trip, no
+second subprocess) since `call_keyed_subagent` already runs inside
+story-simulator-mcp's own process, on the same already-open registrar
+`session` identifies.
 
 `mcp_server.py`'s own tools -- start_world/advance_simulation, and
 update_registry's preview/confirm_token flow -- are deliberately not
@@ -49,14 +50,15 @@ USAGE_LOG_PATH = REPO_ROOT / ".keyed_subagent_usage.jsonl"
 
 
 def _dispatch_tool_call(name: str, arguments: dict, session: Any) -> str:
+    sessions = core.registrar_sessions
     if name == "view_registry":
-        return core.view_registry(session, arguments["component_type"])
+        return sessions.view_registry(session, arguments["component_type"])
     if name == "view_entity":
-        return core.view_entity(session, arguments["entity_id"])
+        return sessions.view_entity(session, arguments["entity_id"])
     if name == "update_registry":
-        return core.update_registry(session, arguments["yaml_string"])
+        return sessions.update_registry(session, arguments["yaml_string"])
     if name == "consolidate_review":
-        return core.consolidate_review(session, arguments.get("limit", 20))
+        return sessions.consolidate_review(session, arguments.get("limit", 20))
     return f"Error: unknown tool {name!r}"
 
 
@@ -67,8 +69,8 @@ async def call_keyed_subagent(prompt: str, session: Any) -> str:
     Access to view_registry/view_entity/update_registry/consolidate_review,
     not just narrating it.
 
-    `session` is the same MCP session id `core._get_registrar`/
-    `_get_save_dir` already key off of -- passed through from
+    `session` is the same MCP session id `core.registrar_sessions` already
+    keys its `_registrars`/`_export_dirs` off of -- passed through from
     `TurnReplay.resolve` (see that module) so the tool calls below land on
     this exact world's already-open registrar, not a fresh one.
     """

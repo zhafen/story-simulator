@@ -9,10 +9,6 @@ import os
 import urllib.parse
 from pathlib import Path
 
-# The one source key every direct registrar.update() call must merge
-# under -- a different key at any call site would fork a duplicate entity.
-WORLD_FILE_ID = "world"
-
 # The story-simulator's own component/field schema (position, character,
 # ...). Every base_etl call needs this in `input_dirs`, or types go unvalidated.
 MANIFEST_DIR = Path(__file__).parent.parent / "manifest"

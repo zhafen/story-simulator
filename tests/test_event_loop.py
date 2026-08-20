@@ -20,8 +20,8 @@ import asyncio
 
 import pytest
 
-from conftest import _make_ctx
-from story_simulator.mcp_server import advance_simulation, start_world, update_registry
+from conftest import _make_ctx, update_registry
+from story_simulator.mcp_server import advance_simulation, start_world
 
 
 def _world(tmp_path, name="save"):
@@ -174,7 +174,8 @@ def test_world_time_persists_across_a_reconnect(tmp_path):
     old session left it, not back at 0.0 (see docs/manifest/history.yaml:
     project_history.world_clock_persisted).
     """
-    from story_simulator.core import _get_registrar, _next_time_stamp
+    from story_simulator import core
+    from story_simulator.core import _next_time_stamp
 
     save_dir = tmp_path / "save"
     ctx = _world(tmp_path)
@@ -187,11 +188,11 @@ def test_world_time_persists_across_a_reconnect(tmp_path):
     )
     asyncio.run(advance_simulation(ctx, resume_token=result["resume_token"], answer="Nothing new needed."))
 
-    assert _next_time_stamp(_get_registrar(ctx.request_context.session)) == 15.0
+    assert _next_time_stamp(core.registrar_sessions.get_registrar(ctx.request_context.session)) == 15.0
 
     ctx2 = _make_ctx()
     start_world(str(save_dir), ctx2)
-    assert _next_time_stamp(_get_registrar(ctx2.request_context.session)) == 15.0
+    assert _next_time_stamp(core.registrar_sessions.get_registrar(ctx2.request_context.session)) == 15.0
 
 
 def _drive_loop_recording_order(ctx, result, on_plan) -> list[tuple[str, str]]:

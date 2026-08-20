@@ -1,16 +1,19 @@
-import emc2p.mcp_server as emc2p_mcp_server
 import pytest
 
-from conftest import _make_ctx
+from conftest import _make_ctx, update_registry
+from story_simulator import core
 from story_simulator.config import LIVING_WORLD_DIR
-from story_simulator.core import _get_registrar, _registrars, _save_dirs
-from story_simulator.mcp_server import (
-    server,
-    start_world,
-    update_registry,
-    view_entity,
-    view_registry,
-)
+from story_simulator.mcp_server import server, start_world
+
+_registrar_sessions = core.registrar_sessions
+
+
+def view_registry(component_type: str, ctx) -> str:
+    return _registrar_sessions.view_registry(ctx.request_context.session, component_type)
+
+
+def view_entity(entity_id: str, ctx) -> str:
+    return _registrar_sessions.view_entity(ctx.request_context.session, entity_id)
 
 
 # MCP tool registration smoke tests
@@ -39,16 +42,15 @@ class TestMcpToolRegistration:
         silently swap it out for an unrelated one mid-session."""
         assert "open_registry" not in self._tool_names()
 
-    def test_view_registry_and_view_entity_are_emc2p_s_own_tools(self):
-        """Mounted directly from emc2p.mcp_server, not reimplemented here."""
-        assert view_registry is emc2p_mcp_server.view_registry
-        assert view_entity is emc2p_mcp_server.view_entity
-
-    def test_update_registry_keeps_this_server_s_own_richer_version(self):
-        """emc2p's own update_registry lacks the preview/confirm_token flow
-        and save_dir export sync -- the mounting loop must not let it win
-        the name collision."""
-        assert update_registry is not emc2p_mcp_server.update_registry
+    def test_view_registry_view_entity_update_registry_are_mounted_from_registrar_sessions(self):
+        """Mounted directly from `core.registrar_sessions` (an emc2p
+        RegistrarSessions instance), not reimplemented here -- see
+        mcp_server.py's own docstring. Descriptions carry over from that
+        instance's own methods, so a match confirms the same mount."""
+        tools = {t.name: t for t in server._tool_manager.list_tools()}
+        assert tools["view_registry"].description == _registrar_sessions.view_registry.__doc__
+        assert tools["view_entity"].description == _registrar_sessions.view_entity.__doc__
+        assert tools["update_registry"].description == _registrar_sessions.update_registry.__doc__
 
 
 # start_world
@@ -63,13 +65,13 @@ class TestStartWorld:
     def test_seeds_from_default_world_by_default(self, tmp_path):
         ctx = _make_ctx()
         start_world(str(tmp_path / "save"), ctx)
-        registrar = _registrars[ctx.request_context.session]
+        registrar = _registrar_sessions.get_registrar(ctx.request_context.session)
         assert "origin" in registrar.registry.component_types
 
     def test_seeds_from_given_scenario_dir(self, tmp_path):
         ctx = _make_ctx()
         start_world(str(tmp_path / "save"), ctx, scenario_dir=str(LIVING_WORLD_DIR))
-        registrar = _registrars[ctx.request_context.session]
+        registrar = _registrar_sessions.get_registrar(ctx.request_context.session)
         positions = registrar.view_df("position")
         assert "journaling_desk.journal" in positions["entity_id.alias"].values
 
@@ -77,8 +79,9 @@ class TestStartWorld:
         ctx = _make_ctx()
         save_dir = tmp_path / "save"
         start_world(str(save_dir), ctx)
-        assert ctx.request_context.session in _registrars
-        assert _save_dirs[ctx.request_context.session] == save_dir
+        session = ctx.request_context.session
+        assert _registrar_sessions.get_registrar(session) is not None
+        assert _registrar_sessions._export_dirs[session] == save_dir
 
     def test_does_not_reseed_an_already_populated_save_dir(self, tmp_path):
         save_dir = tmp_path / "save"
@@ -88,7 +91,7 @@ class TestStartWorld:
 
         ctx2 = _make_ctx()
         start_world(str(save_dir), ctx2)
-        registrar = _registrars[ctx2.request_context.session]
+        registrar = _registrar_sessions.get_registrar(ctx2.request_context.session)
         assert registrar.get("origin").count().execute() == 2  # world's + custom_entity's
 
     def test_first_open_loads_only_world_history_dir_when_present(self, tmp_path):
@@ -115,7 +118,7 @@ class TestStartWorld:
 
         ctx = _make_ctx()
         start_world(str(save_dir), ctx)
-        registrar = _registrars[ctx.request_context.session]
+        registrar = _registrar_sessions.get_registrar(ctx.request_context.session)
         assert registrar.get_entity_id("history_a") is not None
         assert registrar.get_entity_id("history_b") is not None
         assert registrar.get_entity_id("world_only") is None
@@ -130,7 +133,7 @@ class TestStartWorld:
 
         ctx = _make_ctx()
         start_world(str(save_dir), ctx)
-        registrar = _registrars[ctx.request_context.session]
+        registrar = _registrar_sessions.get_registrar(ctx.request_context.session)
         assert registrar.get_entity_id("world_only") is not None
         assert registrar.get_entity_id("seed_only") is None
 
@@ -145,7 +148,7 @@ class TestStartWorld:
 
         ctx = _make_ctx()
         start_world(str(save_dir), ctx)
-        registrar = _registrars[ctx.request_context.session]
+        registrar = _registrar_sessions.get_registrar(ctx.request_context.session)
         assert registrar.get_entity_id("seed_a") is not None
         assert registrar.get_entity_id("seed_b") is not None
 
@@ -157,13 +160,14 @@ class TestRegistryTools:
     def test_get_registrar_errors_before_start_world(self):
         ctx = _make_ctx()
         with pytest.raises(ValueError, match="start_world"):
-            _get_registrar(ctx.request_context.session)
+            _registrar_sessions.get_registrar(ctx.request_context.session)
 
     def test_view_registry_before_start_world_names_start_world_not_open_registry(self):
-        """view_registry is emc2p's own function, but wired to this
-        server's own _get_registrar (see mcp_server.py's module docstring)
-        -- the error it raises must point at start_world, the tool this
-        server actually has, not emc2p's own open_registry (not mounted here)."""
+        """view_registry is `core.registrar_sessions`'s own method, but that
+        instance is constructed with `open_tool_name="start_world"` (see
+        core.py) -- the error it raises must point at start_world, the
+        tool this server actually has, not emc2p's own open_registry (not
+        mounted here)."""
         ctx = _make_ctx()
         with pytest.raises(ValueError, match="start_world") as exc_info:
             view_registry("position", ctx)
@@ -180,7 +184,7 @@ class TestRegistryTools:
         iacs's own view_component tool wraps too."""
         ctx = _make_ctx()
         start_world(str(tmp_path / "save"), ctx)
-        registrar = _registrars[ctx.request_context.session]
+        registrar = _registrar_sessions.get_registrar(ctx.request_context.session)
         assert view_registry("position", ctx) == registrar.view_df("position").fillna("null").to_markdown()
 
     def test_update_registry_merges_new_entity(self, tmp_path):
@@ -188,7 +192,7 @@ class TestRegistryTools:
         start_world(str(tmp_path / "save"), ctx)
         result = update_registry("new_thing:\n    - origin\n", ctx=ctx)
         assert "Merged" in result
-        registrar = _registrars[ctx.request_context.session]
+        registrar = _registrar_sessions.get_registrar(ctx.request_context.session)
         assert registrar.get("origin").count().execute() == 2
 
     def test_update_registry_rejects_bare_mapping_components(self, tmp_path):
@@ -204,7 +208,7 @@ class TestRegistryTools:
         start_world(str(tmp_path / "save"), ctx)
         with pytest.raises(ValueError, match="car_a"):
             update_registry("car_a:\n    state: parked on street\n", ctx=ctx)
-        registrar = _registrars[ctx.request_context.session]
+        registrar = _registrar_sessions.get_registrar(ctx.request_context.session)
         assert "state" not in registrar.registry.component_types
 
     def test_update_registry_rejects_invented_component_type(self, tmp_path):
@@ -214,7 +218,7 @@ class TestRegistryTools:
         start_world(str(tmp_path / "save"), ctx)
         with pytest.raises(ValueError, match="parked_at"):
             update_registry("car_a:\n    - parked_at: parking_spot_1\n", ctx=ctx)
-        registrar = _registrars[ctx.request_context.session]
+        registrar = _registrar_sessions.get_registrar(ctx.request_context.session)
         assert "parked_at" not in registrar.registry.component_types
 
     def test_update_registry_suggests_close_match_for_typo(self, tmp_path):
@@ -276,7 +280,7 @@ class TestRegistryTools:
             ctx=ctx,
         )
         assert "Merged" in result
-        registrar = _registrars[ctx.request_context.session]
+        registrar = _registrar_sessions.get_registrar(ctx.request_context.session)
         assert registrar.get_entity_id("desk.journal") is not None
 
     def test_update_registry_rejects_component_name_used_as_nested_entity_key(self, tmp_path):
@@ -294,7 +298,7 @@ class TestRegistryTools:
         start_world(str(tmp_path / "save"), ctx)
         with pytest.raises(ValueError, match="location"):
             update_registry("car_b:\n    location:\n        - value: parked in parking_spot_1\n", ctx=ctx)
-        registrar = _registrars[ctx.request_context.session]
+        registrar = _registrar_sessions.get_registrar(ctx.request_context.session)
         assert registrar.get_entity_id("car_b.location") is None
 
     def test_update_registry_accepts_correct_list_form_for_known_component(self, tmp_path):
@@ -319,11 +323,11 @@ class TestRegistryTools:
         update_registry("door:\n    - description: first\n", ctx=ctx)
         update_registry("door:\n    - description: second\n", ctx=ctx)
 
-        world_text = (save_dir / "world" / "world.yaml").read_text()
+        world_text = (save_dir / "world" / "session.yaml").read_text()
         assert "second" in world_text
         assert "first" not in world_text
 
-        history_text = (save_dir / "world_history" / "world.yaml").read_text()
+        history_text = (save_dir / "world_history" / "session.yaml").read_text()
         assert "second" in history_text
         assert "first" in history_text
 
@@ -344,5 +348,5 @@ class TestRegistryTools:
         iacs's own view_entity tool wraps too."""
         ctx = _make_ctx()
         start_world(str(tmp_path / "save"), ctx)
-        registrar = _registrars[ctx.request_context.session]
+        registrar = _registrar_sessions.get_registrar(ctx.request_context.session)
         assert view_entity("player", ctx) == registrar.view_entity("player", format="markdown")

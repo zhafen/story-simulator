@@ -85,11 +85,13 @@ story_simulator_mission:
         - work_state: done
     single_shared_source_key:
         - description: >
-              Every direct registrar.update() call (core.py, spatial.py)
-              must merge under the same source key (config.WORLD_FILE_ID), or
-              the same alias written from two call sites would hash to two
-              different entity_ids and silently fork a duplicate entity instead
-              of updating the original.
+              Every direct registrar.update() call (core.py, spatial.py) and
+              every write through core.registrar_sessions (emc2p's own
+              RegistrarSessions) must merge under the same source key
+              (emc2p.mcp_server.SOURCE_KEY), or the same alias written from
+              two call sites would hash to two different entity_ids and
+              silently fork a duplicate entity instead of updating the
+              original.
         - requirement
         - impact:
               type: reliability

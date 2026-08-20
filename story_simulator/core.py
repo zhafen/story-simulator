@@ -27,20 +27,17 @@ import shutil
 import subprocess
 import time
 import urllib.parse
-import weakref
 from pathlib import Path
 
 import pandas as pd
 import psycopg
 import psycopg.sql
-import yaml
+from emc2p.mcp_server import SOURCE_KEY, RegistrarSessions
 from emc2p.registrar import Registrar
-from emc2p.validate_write import CONSOLIDATION_GUIDANCE
 
 from story_simulator.config import (
     DEFAULT_WORLD_DIR,
     MANIFEST_DIR,
-    WORLD_FILE_ID,
     event_responder,
     keyed_subagent_time_budget_seconds,
     registry_schema_name,
@@ -51,11 +48,8 @@ from story_simulator.resolve import JudgmentRequest, NeedsExternalInput, TurnRep
 
 # save_dir's two export subdirectories, each holding one EC yaml file per
 # original source -- directories, not fixed filenames, so a save can be split.
-WORLD_DIRNAME = WORLD_FILE_ID
+WORLD_DIRNAME = "world"
 WORLD_HISTORY_DIRNAME = "world_history"
-
-_registrars: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
-_save_dirs: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
 
 # The single well-known entity `process_event` writes each popped event's
 # end_time onto, as a `world_clock` component -- see `_next_time_stamp`.
@@ -167,21 +161,6 @@ def advance_clock(registrar: Registrar, alias: str) -> float:
     return float(row["event.start_time"]) + float(row["event.duration"])
 
 
-# Session state -- looked up by `session`, an opaque, weak-referenceable
-# object (nothing here depends on any specific session type).
-
-
-def _get_registrar(session) -> Registrar:
-    """Return this session's open world Registrar, or raise a clear error if none is open."""
-    if session not in _registrars:
-        raise ValueError("No world open for this session yet — call start_world first.")
-    return _registrars[session]
-
-
-def _get_save_dir(session) -> Path:
-    return _save_dirs[session]
-
-
 def _next_time_stamp(registrar: Registrar) -> float:
     """The world-time stamp for `position.time` and friends: the world's
     current in-fiction "now" (seconds since world creation).
@@ -212,6 +191,21 @@ def _next_time_stamp(registrar: Registrar) -> float:
     if df is None or df.empty:
         return 0.0
     return float(df["world_clock.value"].max())
+
+
+# Session state (which Registrar/save_dir a session is talking to) and
+# view_registry/view_entity/update_registry/consolidate_review themselves
+# live on this instance -- nothing about reading/writing a registry is
+# story-simulator-specific, so it isn't reimplemented here. `start_world`
+# (below) hands this instance an already-loaded Registrar via
+# `set_registrar` rather than its own `open` (whose manifest_dir-seeding
+# logic doesn't match `start_world`'s own richer scenario/resume loading).
+registrar_sessions = RegistrarSessions(
+    time_provider=_next_time_stamp,
+    export_dirname=WORLD_DIRNAME,
+    export_history_dirname=WORLD_HISTORY_DIRNAME,
+    open_tool_name="start_world",
+)
 
 
 def _yaml_files(directory: Path) -> list[Path]:
@@ -342,164 +336,6 @@ def _ensure_postgres_schema(save_dir: Path) -> None:
                 psycopg.sql.Identifier(schema)
             )
         )
-
-
-# World save I/O
-
-
-def _export_world_yaml(registrar: Registrar, save_dir: Path) -> None:
-    """Re-export the registry's state to `save_dir`'s `world/`/`world_history/` dirs.
-
-    A straight, mechanical round-trip (`Registrar.export_manifest`), run
-    after every registry write so a save's own YAML reads as a live
-    mirror of the registry rather than frozen turn-zero seed data. See
-    docs/manifest/history.yaml: project_history.turn_pipeline_removed and
-    .world_yaml_sync_reverses_old_archivist_design for why this replaced
-    the old LLM-driven Archivist read/write loop.
-
-    Writes to two directories, not one:
-    - `world/`: current state, collapsed -- a time_dimension'd component
-      type shows only its current row per entity, not every restatement.
-    - `world_history/`: the same content, uncollapsed -- full change
-      history, since the registry keeps it forever but it would
-      otherwise only exist in this process's own DB connection.
-
-    Each is a directory, not a fixed filename, so a save can be split
-    across multiple files later -- see docs/manifest/history.yaml:
-    project_history.world_save_format_switched_from_fixed_filenames_to_directories.
-
-    Also re-exports the field-schema manifest to its own `builtins.yaml`
-    alongside `world.yaml`; deleted rather than left to accumulate, since
-    it's static schema, not game state.
-    """
-    __iacs__ = {"solution of": "story_simulator_mission.seed_yaml_reflects_live_state"}
-    world_dir = save_dir / WORLD_DIRNAME
-    world_yaml = world_dir / f"{WORLD_FILE_ID}.yaml"
-    for path in registrar.export_manifest(output_dir=str(world_dir)):
-        if Path(path) != world_yaml:
-            Path(path).unlink(missing_ok=True)
-
-    world_history_dir = save_dir / WORLD_HISTORY_DIRNAME
-    world_history_yaml = world_history_dir / f"{WORLD_FILE_ID}.yaml"
-    for path in registrar.export_manifest(
-        output_dir=str(world_history_dir), collapse_time_dimension=False
-    ):
-        if Path(path) != world_history_yaml:
-            Path(path).unlink(missing_ok=True)
-
-
-def _validate_registry_write(registrar: Registrar, yaml_string: str) -> set[str]:
-    """The checks a write must pass before it's safe to merge (or, for
-    the preview flow below, safe to show a confirm token for).
-
-    Raises on the first one that fails. Returns the set of component
-    types this write actually references, since both callers
-    (`_update_registry_and_sync` and `_preview_registry_write`) need it.
-
-    All the actual check logic now lives in iacs, generalized from what
-    this function used to hand-roll itself (see
-    docs/manifest/history.yaml: project_history.
-    validate_registry_write_checks_moved_to_iacs). The bare-mapping check
-    (a component given as a dict instead of a list) is
-    `iacs.dataflows.etl.load_yaml`'s own `_find_malformed_entities` --
-    private there since its only other caller is `registrar.update()`
-    itself, reused directly here rather than duplicated because the
-    preview flow below needs this same check without actually merging.
-    The other two (component-named-as-nested-entity, unknown component
-    type) are `registrar.validate_write`'s own job -- see its docstring
-    for what each rejects.
-    """
-    from emc2p.dataflows.etl.load_yaml import _find_malformed_entities
-
-    parsed = yaml.safe_load(yaml_string)
-    if isinstance(parsed, dict):
-        malformed = _find_malformed_entities(parsed)
-        if malformed:
-            raise ValueError(
-                "Each entity's components must be a YAML list (a leading `- ` before each "
-                "component name), e.g. `alias:\n    - component:\n        value: x` -- a bare "
-                "mapping (`alias:\n    component:\n        value: x`) is silently ignored "
-                f"rather than merged. Malformed here: {', '.join(malformed)}."
-            )
-
-    return registrar.validate_write(yaml_string)
-
-
-def _update_registry_and_sync(registrar: Registrar, save_dir: Path, yaml_string: str) -> None:
-    """Merge `yaml_string` into the registry, then sync `save_dir`'s YAML to match."""
-    _validate_registry_write(registrar, yaml_string)
-    registrar.update(
-        input_dirs=[str(MANIFEST_DIR)],
-        yaml_strings={WORLD_FILE_ID: yaml_string},
-        time=_next_time_stamp(registrar),
-    )
-    _export_world_yaml(registrar, save_dir)
-
-
-def _component_write_summary(registrar: Registrar, component_type: str, limit: int = 3) -> str:
-    """Stats + peek for one component type -- row count, plus up to
-    `limit` existing sample rows.
-
-    So a caller about to write this component type can see the
-    shape/convention already in use for it. Part of update_registry's
-    preview flow (see `_preview_registry_write`, #74/docs/manifest/
-    history.yaml: project_history.update_registry_preview_confirm_flow_added).
-    """
-    try:
-        df = registrar.view_df(component_type)
-    except KeyError:
-        return f"- {component_type}: declared, but no data written yet."
-    if df.empty:
-        return f"- {component_type}: declared, 0 rows written yet."
-    sample = df.head(limit).fillna("null").to_markdown()
-    return f"- {component_type}: {len(df)} row(s) so far. Sample:\n{sample}"
-
-
-def _encode_pending_write(yaml_string: str) -> str:
-    """Self-contained confirm_token for update_registry's preview flow.
-
-    Encodes `yaml_string` directly, the same way `_encode_token` encodes
-    `advance_simulation`'s resume state, rather than stashing it in
-    server-side session state that a subprocess restart between the
-    preview and confirm calls would silently lose (see this project's
-    own `stateless_client` mandate).
-    """
-    return base64.urlsafe_b64encode(yaml_string.encode()).decode()
-
-
-def _decode_pending_write(confirm_token: str) -> str:
-    return base64.urlsafe_b64decode(confirm_token.encode()).decode()
-
-
-def _preview_registry_write(registrar: Registrar, yaml_string: str) -> str:
-    """Validate `yaml_string` (same checks `_update_registry_and_sync`
-    runs before merging) without merging it yet, and build a preview.
-
-    The component types this write references, every component type
-    actually available to compare against, and a stats+peek summary for
-    each referenced type -- so a caller can notice a wrong-but-real
-    component choice (e.g. `parent`/`todo`/`position` instead of
-    `location` -- see #63/docs/manifest/history.yaml) before
-    committing, not after. The returned text includes a confirm_token
-    (see `_encode_pending_write`) to pass back to actually merge this
-    exact write.
-    """
-    referenced = _validate_registry_write(registrar, yaml_string)
-    known = sorted(registrar.registry.known_component_types)
-    token = _encode_pending_write(yaml_string)
-    summaries = "\n".join(_component_write_summary(registrar, c) for c in sorted(referenced)) or "(none referenced)"
-    return (
-        "Not yet merged -- review below, then confirm or correct it.\n\n"
-        f"Components this write references: {sorted(referenced)}\n"
-        f"All component types actually available: {known}\n\n"
-        f"Stats + peek for each referenced component type:\n{summaries}\n\n"
-        "If this looks right, call update_registry again with this exact "
-        f"confirm_token (and no yaml_string) to merge it:\n{token}\n\n"
-        "If something looks wrong -- a component you referenced isn't the one you "
-        "meant, or the peek shows existing rows shaped differently than what you "
-        "wrote -- call update_registry again with corrected yaml_string (and "
-        "preview=True) instead of this token."
-    )
 
 
 # Turn resolution
@@ -635,8 +471,7 @@ async def process_event(registrar: Registrar, alias: str, replay: TurnReplay, se
     """
     end_time = advance_clock(registrar, alias)
     registrar.update(
-        input_dirs=[str(MANIFEST_DIR)],
-        yaml_strings={WORLD_FILE_ID: f"{WORLD_CLOCK_ALIAS}:\n    - world_clock:\n        value: {end_time}\n"},
+        yaml_strings={SOURCE_KEY: f"{WORLD_CLOCK_ALIAS}:\n    - world_clock:\n        value: {end_time}\n"},
     )
     resolve_narration = await resolve_event(alias, replay, end_time, session)
     plan_narration = await plan_events(alias, replay, session)
@@ -780,7 +615,8 @@ def start_world(session, save_dir: str, scenario_dir: str | None = None) -> str:
     exact registry_url lets its deeper introspection (validate_yaml,
     describe_format, ...) operate on this world instead of iacs's own
     unrelated example manifest. Not required for ordinary reads any more --
-    view_registry/view_entity (below) cover that directly, via the same
+    view_registry/view_entity (mounted from emc2p's RegistrarSessions,
+    see mcp_server.py) cover that directly, via the same
     underlying Registrar methods iacs's own tools use, so there's no
     separate MCP server a host needs to discover just to look something
     up. (An earlier version of this removed view_registry/view_entity
@@ -818,19 +654,18 @@ def start_world(session, save_dir: str, scenario_dir: str | None = None) -> str:
             or _yaml_files(save_dir_path)
         )
         if found:
-            # Merged as one WORLD_FILE_ID-keyed string, not passed as input_dirs
-            # -- see WORLD_FILE_ID's comment for why every write shares one key.
+            # Merged as one SOURCE_KEY-keyed string, not passed as input_dirs
+            # -- see SOURCE_KEY's comment for why every write shares one key.
             seed_text = "\n".join(f.read_text() for f in found)
             registrar.update(
-                input_dirs=[str(MANIFEST_DIR)], yaml_strings={WORLD_FILE_ID: seed_text}
+                input_dirs=[str(MANIFEST_DIR)], yaml_strings={SOURCE_KEY: seed_text}
             )
 
     # Declares the manifest's own component-type schemas (location, event,
     # ...) regardless of whether this save was fresh, resumed, or already declared.
     registrar.update(input_dirs=[str(MANIFEST_DIR)])
 
-    _registrars[session] = registrar
-    _save_dirs[session] = save_dir_path
+    registrar_sessions.set_registrar(session, registrar, export_dir=save_dir_path)
     return (
         f"World opened at {save_dir_path}. Component types: {registrar.registry.component_types}. "
         "Call view_registry or view_entity to see what's there. "
@@ -839,123 +674,6 @@ def start_world(session, save_dir: str, scenario_dir: str | None = None) -> str:
         f"database_url={registry_url(save_dir_path)!r} to point them at this exact world too -- "
         f"optional, not required for ordinary reads."
     )
-
-
-def view_registry(session, component_type: str) -> str:
-    """View all recorded data for one component type (e.g. "position", "object", "character").
-
-    Covers both the starting scenario and everything recorded since, since
-    it reads straight from the registry -- the same `view_df` method
-    iacs's own `view_component` tool wraps too (see this module's own
-    docstring history for why this exists as a story-simulator tool
-    at all rather than relying on iacs's copy: docs/manifest/history.yaml,
-    project_history.story_simulator_view_tools_reinstated_as_iacs_delegates).
-    Rendered as a markdown table, not CSV -- published format comparisons
-    put CSV among the worst-parsed formats for LLMs, which is what
-    actually reads this (the responder standing in for this call), not
-    another program.
-    """
-    registrar = _get_registrar(session)
-    return registrar.view_df(component_type).fillna("null").to_markdown()
-
-
-def view_entity(session, entity_id: str) -> str:
-    """Return every recorded component instance for a specific entity.
-
-    Delegates straight to iacs's own `Registrar.view_entity` -- the same
-    entity-traversal logic iacs's own `view_entity` tool already wraps,
-    not reimplemented here a second time (an earlier version of this
-    function did reimplement it independently; see docs/manifest/
-    history.yaml: project_history.
-    story_simulator_view_tools_reinstated_as_iacs_delegates for why that
-    changed).
-
-    Args:
-        entity_id: Entity hash, alias, or unambiguous path fragment (e.g.
-            "player", "desk", or "journaling_desk.desk").
-    """
-    registrar = _get_registrar(session)
-    return registrar.view_entity(entity_id, format="markdown")
-
-
-def consolidate_review(session, limit: int = 20) -> str:
-    """Show every component type recorded in this world so far, for the
-    host to review and consolidate.
-
-    Delegates straight to iacs's own `Registrar.summarize_components`
-    for the data report -- reinstated here as a story-simulator tool
-    for the same discoverability reason view_registry/view_entity
-    already are (docs/manifest/history.yaml: project_history.
-    story_simulator_view_tools_reinstated_as_iacs_delegates) rather
-    than relying on a connected host to find iacs-mcp's own copy of
-    this tool. The "please consolidate" instruction appended to the
-    report is `iacs.validate_write.CONSOLIDATION_GUIDANCE`, composed in
-    here rather than baked into `summarize_components` itself (iacs PR
-    #100: that method is a plain data report, not an agent-instruction
-    generator -- see this repo's docs/manifest/history.yaml:
-    project_history.validate_registry_write_checks_moved_to_iacs).
-
-    #76's post-write alternative to #74's pre-write preview/confirm flow:
-    instead of reviewing one write before committing it, review
-    everything committed so far and fix anything wrong after the fact.
-    Compared against #74 (and the plain baseline) via
-    tests/location_write_harness.py.
-
-    Args:
-        limit: Max sample rows shown per component type (default 20).
-    """
-    registrar = _get_registrar(session)
-    return f"{registrar.summarize_components(limit)}\n\n{CONSOLIDATION_GUIDANCE}"
-
-
-def update_registry(
-    session,
-    yaml_string: str | None = None,
-    preview: bool = False,
-    confirm_token: str | None = None,
-) -> str:
-    """Merge entity-first YAML into the world registry, run through the same ETL as save files.
-
-    Default behavior (`preview` omitted/False, `confirm_token` omitted)
-    is unchanged from before this flow existed: `yaml_string` merges
-    immediately. `preview=True` opts into a two-round-trip alternative
-    instead, for #73/#74's comparison against that default (see
-    docs/manifest/history.yaml: project_history.
-    update_registry_preview_confirm_flow_added) -- existing callers that
-    never pass `preview`/`confirm_token` see no behavior change at all.
-
-    Args:
-        yaml_string: Entity-first YAML content to merge (or, with
-            `preview=True`, to preview before merging). Omit when passing
-            `confirm_token` instead.
-        preview: If True, don't merge `yaml_string` yet -- validate it and
-            return a review (components referenced, all components
-            actually available, a stats+peek summary for each referenced
-            type) plus a confirm_token to merge it with, on a follow-up
-            call. Ignored if `confirm_token` is given.
-        confirm_token: A token from a prior `preview=True` call -- merges
-            that exact previously-previewed write now. `yaml_string` is
-            not needed (and ignored) in this call.
-    """
-    registrar = _get_registrar(session)
-    save_dir = _get_save_dir(session)
-
-    if confirm_token is not None:
-        pending_yaml = _decode_pending_write(confirm_token)
-        _update_registry_and_sync(registrar, save_dir, pending_yaml)
-        return "Merged into the registry and synced to save_dir/world.yaml."
-
-    if yaml_string is None:
-        raise ValueError(
-            "Provide yaml_string to merge (optionally with preview=True to review it "
-            "first), or confirm_token from a prior preview to merge that write now."
-        )
-
-    if not preview:
-        _update_registry_and_sync(registrar, save_dir, yaml_string)
-        return "Merged into the registry and synced to save_dir/world.yaml."
-
-    return _preview_registry_write(registrar, yaml_string)
 
 
 async def advance_simulation(session, resume_token: str | None = None, answer: str | None = None) -> dict:
@@ -999,7 +717,7 @@ async def advance_simulation(session, resume_token: str | None = None, answer: s
             recorded via update_registry before you answer. Omit `answer`
             itself along with `resume_token` on a fresh call.
     """
-    registrar = _get_registrar(session)
+    registrar = registrar_sessions.get_registrar(session)
     resume_alias, replay = _resolve_args(resume_token, answer)
     alias, replay, prompt, responder = await _run_event_loop(
         registrar, session, resume_alias=resume_alias, replay=replay

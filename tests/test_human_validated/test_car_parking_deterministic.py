@@ -20,9 +20,9 @@ from pathlib import Path
 
 from emc2p.registrar import Registrar
 
-from conftest import _make_ctx
+from conftest import _make_ctx, update_registry
 from story_simulator.config import registry_url
-from story_simulator.mcp_server import advance_simulation, start_world, update_registry
+from story_simulator.mcp_server import advance_simulation, start_world
 
 REPO_ROOT = Path(__file__).parent.parent.parent
 PARKING_SCENARIO_DIR = REPO_ROOT / "tests" / "data" / "scenarios" / "parking"

@@ -3,16 +3,19 @@ that works with no optional module (character, npc, physics, terrain, spatial) a
 """
 
 import math
+from unittest.mock import MagicMock
 
+from emc2p.mcp_server import SOURCE_KEY
 from emc2p.registrar import Registrar
 
-from story_simulator.config import MANIFEST_DIR, WORLD_FILE_ID
-from story_simulator.core import _update_registry_and_sync, pop_event, safe_view_current
+from story_simulator import core
+from story_simulator.config import MANIFEST_DIR
+from story_simulator.core import pop_event, safe_view_current
 
 
 def _registrar_from_yaml(yaml_text: str) -> Registrar:
     registrar = Registrar()
-    registrar.update(input_dirs=[str(MANIFEST_DIR)], yaml_strings={WORLD_FILE_ID: yaml_text})
+    registrar.update(input_dirs=[str(MANIFEST_DIR)], yaml_strings={SOURCE_KEY: yaml_text})
     return registrar
 
 
@@ -110,11 +113,13 @@ def test_update_registry_backfills_time_for_a_scenario_local_time_dimension_fiel
     # merging a scenario's own seed YAML.
     registrar.update(input_dirs=[str(MANIFEST_DIR)])
 
+    session = MagicMock()  # a WeakKeyDictionary key -- plain object() can't be weakly referenced
+    core.registrar_sessions.set_registrar(session, registrar, export_dir=save_dir)
+
     # Seed load: declares race_placement's own schema (time_dimension'd
     # "time" field), the same way start_world merges a scenario's seed YAML.
-    _update_registry_and_sync(
-        registrar,
-        save_dir,
+    core.registrar_sessions.update_registry(
+        session,
         "race_placement:\n"
         "    - component_type\n"
         "    - field:\n"
@@ -134,7 +139,7 @@ def test_update_registry_backfills_time_for_a_scenario_local_time_dimension_fiel
 
     # A later, separate write -- like a real per-turn update_registry call --
     # that only writes race_placement's value, never redeclaring its schema.
-    _update_registry_and_sync(registrar, save_dir, "car_a:\n    - race_placement:\n        value: 1\n")
+    core.registrar_sessions.update_registry(session, "car_a:\n    - race_placement:\n        value: 1\n")
 
     df = safe_view_current(registrar, "race_placement.time", aliases="car_a")
     assert df is not None and not df.empty

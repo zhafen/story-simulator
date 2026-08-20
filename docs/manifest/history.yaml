@@ -520,3 +520,66 @@ project_history:
               resolve_event/plan_events/TurnReplay.resolve for the
               keyed_subagent responder's own registry tool access, which
               this change didn't touch.
+    registry_read_write_moved_to_emc2p_registrar_sessions:
+        - description: >
+              view_registry/view_entity/update_registry (preview/
+              confirm_token flow included)/consolidate_review, and the
+              save_dir export sync that rode along with update_registry,
+              moved wholesale into emc2p as emc2p.mcp_server.
+              RegistrarSessions -- registry read/write accuracy is
+              emc2p's own job, generalized, not story-simulator's to
+              duplicate. story-simulator's own `_registrars`/`_save_dirs`
+              WeakKeyDictionary module globals (and `_get_registrar`/
+              `_get_save_dir`) are gone too, in favor of a single
+              `core.registrar_sessions` instance (constructed with
+              story-simulator's own `_next_time_stamp` as `time_provider`,
+              `"world"`/`"world_history"` as the export dirnames -- kept
+              as-is, not renamed to match the new source key below -- and
+              `open_tool_name="start_world"` so its own "no registry open"
+              error names the tool this server actually has) that both
+              `mcp_server.py` (`.mount(server, exclude={"open_registry"})`)
+              and `keyed_subagent.py`'s in-process dispatch call into
+              directly.
+
+              A class instance, not a second module-global dict living
+              inside an imported module (which one early design draft
+              considered and rejected as "funky" -- reassigning another
+              module's own internals from outside is exactly the kind of
+              action-at-a-distance a class constructor avoids) -- see
+              `RegistrarSessions.__init__`'s own docstring for the
+              constructor-injected behavior (`time_provider`,
+              `export_dirname`/`export_history_dirname`,
+              `open_tool_name`) this let a generic emc2p class expose
+              without any story-simulator-specific code inside emc2p
+              itself.
+
+              The old `WORLD_FILE_ID = "world"` source key every direct
+              registrar.update() call had to share -- config.py's own
+              comment on it explained *why* (a different key at any call
+              site forks a duplicate entity) but the name itself was
+              backward-compat cruft from when this project's own writes
+              were the only ones that existed. Renamed to `SOURCE_KEY =
+              "session"` in emc2p (nothing about "session" is
+              story-simulator-specific), config.WORLD_FILE_ID deleted
+              outright rather than kept as an alias -- nothing was
+              depending on it yet. This also renamed update_registry's
+              exported yaml filename from `world.yaml`/`world_history/
+              world.yaml` to `session.yaml`/`world_history/session.yaml`
+              (the directory names themselves, `world`/`world_history`,
+              are unaffected -- those are `export_dirname`/
+              `export_history_dirname`, still story-simulator's own).
+
+              Root-caused, in the same pass, a real bug this redesign's
+              first draft had worked around instead of fixing:
+              Registry._seq_column only consulted the current write
+              batch's own freshly-loaded schema for a component type's
+              time_dimension field, not the accumulated registry's own
+              carried-forward schema -- the same class of bug
+              time_filled_registry had (see
+              backfill_time_dimension_fields_using_accumulated_registry_
+              schema_too, emc2p's own history). Fixing _seq_column itself
+              to fall back to the accumulated registry's schema removed
+              the need for any reload-manifest-on-every-write mechanism
+              entirely -- a genuine simplification the "no backward
+              compatibility to preserve yet" mandate made possible to
+              reach for instead of a workaround.

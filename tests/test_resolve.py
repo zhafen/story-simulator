@@ -5,7 +5,7 @@ No live model calls: `call_keyed_subagent` is monkeypatched, since
 these are mechanical dispatch/replay-bookkeeping checks, not a test of
 DeepSeek (or any model)'s actual judgment quality -- see
 tests/location_write_harness.py for that kind of comparison. The
-tool-calling loop itself (`emc2p.agents.keyed_subagent.run_tool_calling_loop`)
+tool-calling loop itself (`emc2p.agents.tool_calling_loop.run_tool_calling_loop`)
 has its own tests in the emc2p repo.
 """
 

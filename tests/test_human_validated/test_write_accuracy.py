@@ -28,9 +28,8 @@ from pathlib import Path
 
 import pytest
 
-from test_human_validated.helpers import HeadlessSession, _event_states, _load_registrar, _location, _parked_at
+from test_human_validated.helpers import HeadlessSession, _event_states, _load_registrar, _parked_at, _placement
 from emc2p.testing.registry_checks import unexpected_components
-from story_simulator.core import safe_view_current
 
 REPO_ROOT = Path(__file__).parent.parent.parent
 PARKING_SCENARIO_DIR = REPO_ROOT / "tests" / "data" / "scenarios" / "parking"
@@ -66,24 +65,6 @@ _RACE_WRITE_GIVEN_INSTRUCTION = (
 )
 
 
-def _placement(registrar, alias: str) -> int | str | None:
-    """The current `race_placement.value` recorded for an aliased car, or
-    None if it has none yet.
-
-    Returns the raw recorded value uncoerced if it isn't int-like (e.g.
-    a misfire that wrote "1st" instead of 1) so a failing assertion
-    shows what was actually written instead of crashing on a bare `int()` conversion.
-    """
-    df = safe_view_current(registrar, "race_placement.value", aliases=alias)
-    if df is None or df.empty:
-        return None
-    value = df.iloc[-1]["race_placement.value"]
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return value
-
-
 @pytest.mark.live
 def test_car_parking_write_accuracy_given_assignment(tmp_path):
     """Given each car's final parking spot directly, does update_registry
@@ -100,13 +81,13 @@ def test_car_parking_write_accuracy_given_assignment(tmp_path):
         )
         r = _load_registrar(save_dir, narration)
 
-        assert _parked_at(_location(r, "car_b"), "parking_spot_1"), (
+        assert _parked_at(r.get_current_value("location", alias="car_b"), "parking_spot_1"), (
             f"car_b was told to park in parking_spot_1 -- narration: {narration!r}"
         )
-        assert _parked_at(_location(r, "car_c"), "parking_spot_2"), (
+        assert _parked_at(r.get_current_value("location", alias="car_c"), "parking_spot_2"), (
             f"car_c was told to park in parking_spot_2 -- narration: {narration!r}"
         )
-        assert _parked_at(_location(r, "car_a"), "street"), (
+        assert _parked_at(r.get_current_value("location", alias="car_a"), "street"), (
             f"car_a was told to park on the street -- narration: {narration!r}"
         )
 

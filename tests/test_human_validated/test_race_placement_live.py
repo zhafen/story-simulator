@@ -29,10 +29,8 @@ from pathlib import Path
 
 import pytest
 
-from test_human_validated.helpers import HeadlessSession, _event_states, _load_registrar
-from emc2p.registrar import Registrar
+from test_human_validated.helpers import HeadlessSession, _event_states, _load_registrar, _placement
 from emc2p.testing.registry_checks import write_time
-from story_simulator.core import safe_view_current
 
 REPO_ROOT = Path(__file__).parent.parent.parent
 RACE_SCENARIO_DIR = REPO_ROOT / "tests" / "data" / "scenarios" / "race"
@@ -47,15 +45,6 @@ _RUN_TO_DONE_RACE_INSTRUCTION = (
     "(1 = first to finish), based on which cars' own trips have already finished by this "
     "point in time. Don't narrate anything back to me."
 )
-
-
-def _placement(registrar: Registrar, alias: str) -> int | None:
-    """The current `race_placement.value` recorded for an aliased car, or
-    None if it has none yet."""
-    df = safe_view_current(registrar, "race_placement.value", aliases=alias)
-    if df is None or df.empty:
-        return None
-    return int(df.iloc[-1]["race_placement.value"])
 
 
 @pytest.mark.live

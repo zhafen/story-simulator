@@ -1,7 +1,6 @@
-from unittest.mock import MagicMock
-
 import pytest
 
+from conftest import _make_ctx
 from story_simulator.config import LIVING_WORLD_DIR
 from story_simulator.core import _get_registrar, _registrars, _save_dirs
 from story_simulator.mcp_server import (
@@ -11,13 +10,6 @@ from story_simulator.mcp_server import (
     view_entity,
     view_registry,
 )
-
-
-def _make_ctx():
-    """Return a minimal mock Context whose session supports weak references."""
-    ctx = MagicMock()
-    ctx.request_context.session = MagicMock()
-    return ctx
 
 
 # MCP tool registration smoke tests

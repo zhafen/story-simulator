@@ -23,13 +23,7 @@ from pathlib import Path
 
 import pytest
 
-from test_human_validated.helpers import (
-    HeadlessSession,
-    _event_states,
-    _load_registrar,
-    _location,
-    _parked_at,
-)
+from test_human_validated.helpers import HeadlessSession, _event_states, _load_registrar, _parked_at
 from emc2p.testing.registry_checks import write_time
 
 REPO_ROOT = Path(__file__).parent.parent.parent
@@ -71,15 +65,15 @@ def test_parking_split_across_two_events_per_car(tmp_path):
         )
         r = _load_registrar(save_dir, narration)
 
-        assert _parked_at(_location(r, "car_b"), "parking_spot_1"), (
+        assert _parked_at(r.get_current_value("location", alias="car_b"), "parking_spot_1"), (
             "Car B should be first to actually arrive (it left earlier than Car C by more "
             f"than their trip-length difference) and take the first spot -- narration: {narration!r}"
         )
-        assert _parked_at(_location(r, "car_c"), "parking_spot_2"), (
+        assert _parked_at(r.get_current_value("location", alias="car_c"), "parking_spot_2"), (
             "Car C should be second to arrive (after Car B, before Car A) and take the "
             f"remaining dedicated spot -- narration: {narration!r}"
         )
-        assert _parked_at(_location(r, "car_a"), "street"), (
+        assert _parked_at(r.get_current_value("location", alias="car_a"), "street"), (
             "Car A starts first but has the longest drive, so it should actually arrive "
             f"last and end up parked on the street -- narration: {narration!r}"
         )

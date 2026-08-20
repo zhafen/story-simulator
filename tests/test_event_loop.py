@@ -17,18 +17,11 @@ anything on the responder's behalf (see core.py's own docstrings).
 """
 
 import asyncio
-from unittest.mock import MagicMock
 
 import pytest
 
+from conftest import _make_ctx
 from story_simulator.mcp_server import advance_simulation, start_world, update_registry
-
-
-def _make_ctx():
-    """Return a minimal mock Context whose session supports weak references."""
-    ctx = MagicMock()
-    ctx.request_context.session = MagicMock()
-    return ctx
 
 
 def _world(tmp_path, name="save"):

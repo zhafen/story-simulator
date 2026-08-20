@@ -39,13 +39,7 @@ from pathlib import Path
 
 from collections import Counter
 
-from test_human_validated.helpers import (
-    LOW_QUALITY_MODEL,
-    HeadlessSession,
-    _load_registrar,
-    _location,
-    _parked_at,
-)
+from test_human_validated.helpers import LOW_QUALITY_MODEL, HeadlessSession, _load_registrar, _parked_at
 from emc2p.testing.registry_checks import unexpected_components
 
 REPO_ROOT = Path(__file__).parent.parent
@@ -146,7 +140,7 @@ def run_one(approach: str, tmp_dir: Path, model: str = LOW_QUALITY_MODEL) -> tup
         )
         try:
             r = _load_registrar(save_dir, narration)
-            success = _parked_at(_location(r, "car_a"), "parking_spot_1")
+            success = _parked_at(r.get_current_value("location", alias="car_a"), "parking_spot_1")
             misfires = unexpected_components(r, "car_a", _EXPECTED_CAR_A_COMPONENTS)
         except AssertionError as exc:
             # _load_registrar's own assertion: the model never actually called

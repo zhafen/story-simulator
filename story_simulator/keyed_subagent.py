@@ -9,14 +9,14 @@ check-in, where it does still round-trip to the host over MCP -- and
 it's selected/configured).
 
 The actual tool-calling loop (model completion, tool dispatch, iteration
-cap, usage logging) lives in `emc2p.agents.keyed_subagent` -- nothing
+cap, usage logging) lives in `emc2p.agents.tool_calling_loop` -- nothing
 story-simulator-specific about driving an LLM through a sequence of tool
 calls until it gives a final answer, so that mechanism moved to emc2p
 (alongside `emc2p.testing.headless_session`, extracted from this project
 the same way) rather than staying duplicated here. This module supplies
 only the story-simulator-specific part: which four tools to expose
 (`view_registry`/`view_entity`/`update_registry`/`consolidate_review`,
-`emc2p.agents.keyed_subagent.REGISTRAR_TOOL_SPECS`'s own shape) and how to
+`emc2p.agents.tool_calling_loop.REGISTRAR_TOOL_SPECS`'s own shape) and how to
 actually dispatch them -- wired directly to `story_simulator.core`'s own
 functions (the exact same ones `mcp_server.py`'s tools delegate to),
 called in-process (no MCP round-trip, no second subprocess) since
@@ -36,7 +36,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from emc2p.agents.keyed_subagent import REGISTRAR_TOOL_SPECS, run_tool_calling_loop
+from emc2p.agents.tool_calling_loop import REGISTRAR_TOOL_SPECS, run_tool_calling_loop
 
 from story_simulator import core
 from story_simulator.config import keyed_subagent_model

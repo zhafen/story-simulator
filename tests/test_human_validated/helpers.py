@@ -5,7 +5,7 @@ story-simulator-mcp through a real MCP client.
 sibling test module in this tests/test_human_validated/ package.
 Carries no live test of its own: the original combined driving+parking
 scenario this file used to test (test_car_parking_core_sim) was
-removed once #57 established that combined event resolves unreliably
+removed once it became clear that combined event resolves unreliably
 in a way the split-events structure (test_parking_split_live.py)
 doesn't -- see docs/manifest/history.yaml:
 project_history.combined_parking_test_removed.
@@ -92,8 +92,8 @@ class HeadlessSession(_Emc2pHeadlessSession):
     not `config.event_responder()`'s own "host" default -- a test-harness
     default only, set via STORY_SIM_RESPONDER in the spawned subprocess's
     own env, independent of whatever a real deployment's own
-    STORY_SIM_RESPONDER is configured to (issue #58 item 3, switching
-    that deployment default, is separate and unstarted). Read from
+    STORY_SIM_RESPONDER is configured to (switching that deployment
+    default is separate, currently unstarted work). Read from
     LIVE_TEST_RESPONDER_ENV_VAR (STORY_SIM_LIVE_TEST_RESPONDER) at
     construction time when not passed explicitly, so the whole suite's
     default can be flipped for one run
@@ -101,7 +101,7 @@ class HeadlessSession(_Emc2pHeadlessSession):
     editing any test file. Callers whose own point is exercising the
     *connected* model's reasoning/MCP-write behavior specifically --
     every current caller in this test suite except
-    tests/test_keyed_subagent_live.py -- pass `responder="host"`
+    tests/test_race_placement_via_keyed_subagent.py -- pass `responder="host"`
     explicitly instead, which always wins over the env var regardless:
     with keyed_subagent as responder, resolve/plan judgment calls never
     reach the connected model at all (answered in-process instead), which
@@ -161,22 +161,6 @@ def _load_registrar(save_dir: Path, narration: str) -> Registrar:
     return Registrar.load(registry_url(save_dir))
 
 
-def _location(registrar: Registrar, alias: str) -> str | None:
-    """The current `location.value` recorded for an aliased entity, or
-    None if it has none yet.
-
-    `location` is a declared, time_dimension'd component type (see
-    manifest/builtins.yaml), so this resolves the current row per
-    entity rather than assuming a single write. Filters via `aliases`
-    (emc2p's own alias-resolution, not a local re-filter) since `alias`
-    here is always expected to name exactly one entity.
-    """
-    df = safe_view_current(registrar, "location.value", aliases=alias)
-    if df is None or df.empty:
-        return None
-    return str(df.iloc[-1]["location.value"])
-
-
 def _parked_at(location: str | None, spot: str) -> bool:
     """Loosely checks a recorded `location` value names `spot` (e.g.
     "parking_spot_1" or "street"), not any one exact phrasing.
@@ -185,9 +169,28 @@ def _parked_at(location: str | None, spot: str) -> bool:
     freeform phrase", and confirmed live that a model's correct answer
     can reasonably come out phrased several ways ("parked in
     parking_spot_1" vs. just "parking_spot_1") -- the model shouldn't
-    have to guess the one exact wording a test hardcodes.
+    have to guess the one exact wording a test hardcodes. Takes the
+    value directly (e.g. from `registrar.get_current_value("location",
+    alias=alias)`) rather than reading it itself.
     """
     return location is not None and spot in location
+
+
+def _placement(registrar: Registrar, alias: str) -> int | str | None:
+    """The current `race_placement.value` recorded for an aliased car, or
+    None if it has none yet.
+
+    Returns the raw recorded value uncoerced if it isn't int-like (e.g.
+    a misfire that wrote "1st" instead of 1) so a failing assertion
+    shows what was actually written instead of crashing on a bare `int()` conversion.
+    """
+    value = registrar.get_current_value("race_placement", "value", alias)
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return value
 
 
 def _event_states(registrar: Registrar) -> dict[str, str]:

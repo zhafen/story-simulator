@@ -1,11 +1,6 @@
-"""Live end-to-end confirmation that "keyed_subagent" actually resolves
-a scenario and persists what it decides.
-
-See story_simulator.keyed_subagent/emc2p.agents.keyed_subagent. The
-missing "Test plan" item PR #59/issue #58 both called for and left
-unstarted: "Run a live test confirming update_registry calls are
-actually persisted by keyed_subagent (save_dir/world/ gets
-created/updated)".
+"""Live confirmation that the simulation resolves and persists correctly
+when a responder other than the connected model does the resolve/plan
+reasoning and the update_registry writes.
 
 Reuses tests/data/scenarios/race (the same fixture
 tests/test_race_placement_live.py exercises against the *connected*
@@ -17,16 +12,22 @@ judgment call: HeadlessSession defaults to responder="keyed_subagent"
 driving advance_simulation to "done" -- keyed_subagent (DeepSeek by
 default) does the actual reasoning and update_registry writes itself,
 in-process, via its own registry tool access.
+
+Not a test of keyed_subagent's own tool-calling mechanics (dispatch,
+iteration cap, usage logging, ...) -- that lives in emc2p's own
+tests/agents/test_tool_calling_loop.py. What this checks is simulation
+correctness (does the race still resolve in the right order, with the
+right timing) and CLAUDE.md's own re-export-on-every-update_registry
+invariant (save_dir/world/ actually gets created/updated), independent
+of which responder is doing the driving.
 """
 
 from pathlib import Path
 
 import pytest
 
-from test_human_validated.helpers import HeadlessSession, _event_states, _load_registrar
-from emc2p.registrar import Registrar
+from test_human_validated.helpers import HeadlessSession, _event_states, _load_registrar, _placement
 from emc2p.testing.registry_checks import write_time
-from story_simulator.core import safe_view_current
 
 REPO_ROOT = Path(__file__).parent.parent.parent
 RACE_SCENARIO_DIR = REPO_ROOT / "tests" / "data" / "scenarios" / "race"
@@ -41,19 +42,11 @@ _DRIVE_TO_DONE_INSTRUCTION = (
 )
 
 
-def _placement(registrar: Registrar, alias: str) -> int | None:
-    """The current `race_placement.value` recorded for an aliased car, or
-    None if it has none yet."""
-    df = safe_view_current(registrar, "race_placement.value", aliases=alias)
-    if df is None or df.empty:
-        return None
-    return int(df.iloc[-1]["race_placement.value"])
-
-
 @pytest.mark.live
-def test_keyed_subagent_resolves_race_and_persists_to_save_dir(tmp_path):
-    """keyed_subagent, not the connected model, must actually do the
-    reasoning and recording here.
+def test_race_placement_resolves_and_persists_via_keyed_subagent(tmp_path):
+    """Does the simulation still resolve correctly, and does the write
+    actually persist, when keyed_subagent (not the connected model) is
+    doing the resolve/plan reasoning and the update_registry writes?
 
     Confirmed two ways: (1) the same correctness checks
     test_race_placement_live.py runs against the connected model
@@ -61,9 +54,7 @@ def test_keyed_subagent_resolves_race_and_persists_to_save_dir(tmp_path):
     complete, each placement time-stamped with its own trip event's
     end_time), and (2) save_dir/world/ actually exists and isn't empty
     afterward -- CLAUDE.md's own re-export-on-every-update_registry
-    invariant, which the original bug this responder was built to fix
-    (issue #58) violated outright: 50 calls, zero real writes, zero
-    save_dir/world/ ever created.
+    invariant.
     """
     save_dir = tmp_path / "test_save"
 

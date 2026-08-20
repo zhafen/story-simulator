@@ -17,11 +17,11 @@ if this test fails too, it's a real bug independent of any model at all.
 
 import asyncio
 from pathlib import Path
-from unittest.mock import MagicMock
 
 from emc2p.registrar import Registrar
+
+from conftest import _make_ctx
 from story_simulator.config import registry_url
-from story_simulator.core import safe_view_current
 from story_simulator.mcp_server import advance_simulation, start_world, update_registry
 
 REPO_ROOT = Path(__file__).parent.parent.parent
@@ -35,28 +35,13 @@ _HOST_FRAMING = (
 )
 
 
-def _make_ctx():
-    ctx = MagicMock()
-    ctx.request_context.session = MagicMock()
-    return ctx
-
-
 def _location(save_dir, alias: str) -> str | None:
     """Read `alias`'s current location.value directly from the registry.
 
     Same read path (view_current on a time_dimension'd component) a
-    live test failure needs cross-checking against. Deliberately
-    self-contained (hand-filters by alias here rather than
-    using the registry's own `aliases` view param -- see task #36) so
-    this test doesn't depend on an iacs change still waiting on its own
-    PR merge.
+    live test failure needs cross-checking against.
     """
-    registrar = Registrar.load(registry_url(save_dir))
-    df = safe_view_current(registrar, "location.value")
-    if df is None:
-        return None
-    match = df[df["entity_id.alias"] == alias]
-    return None if match.empty else str(match.iloc[-1]["location.value"])
+    return Registrar.load(registry_url(save_dir)).get_current_value("location", alias=alias)
 
 
 def _resolve_prompt(alias: str, end_time: float) -> str:

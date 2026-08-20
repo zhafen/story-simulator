@@ -9,20 +9,17 @@ check-in, where it does still round-trip to the host over MCP -- and
 it's selected/configured).
 
 The actual tool-calling loop (model completion, tool dispatch, iteration
-cap, usage logging) lives in `emc2p.agents.tool_calling_loop` -- nothing
-story-simulator-specific about driving an LLM through a sequence of tool
-calls until it gives a final answer, so that mechanism moved to emc2p
-(alongside `emc2p.testing.headless_session`, extracted from this project
-the same way) rather than staying duplicated here. This module supplies
-only the story-simulator-specific part: which four tools to expose
-(`view_registry`/`view_entity`/`update_registry`/`consolidate_review`,
-`emc2p.agents.tool_calling_loop.REGISTRAR_TOOL_SPECS`'s own shape) and how to
-actually dispatch them -- wired directly to `story_simulator.core.registrar_sessions`'s
-own plain-session methods (the exact same instance `mcp_server.py`'s
-mounted tools delegate to), called in-process (no MCP round-trip, no
-second subprocess) since `call_keyed_subagent` already runs inside
-story-simulator-mcp's own process, on the same already-open registrar
-`session` identifies.
+cap, usage logging), the tool list, and the dispatch-by-name routing
+itself all live in emc2p now (`emc2p.agents.tool_calling_loop.
+run_tool_calling_loop`/`REGISTRAR_TOOL_SPECS`, `RegistrarSessions.
+dispatch`) -- nothing story-simulator-specific about any of it, so none
+of it stays duplicated here. This module supplies only what's actually
+story-simulator's own: which model answers (`keyed_subagent_model()`),
+and this world's already-open `story_simulator.core.registrar_sessions`
+instance plus `session` identity, so `dispatch()`'s calls land in-process
+(no MCP round-trip, no second subprocess) on this exact world's registrar
+rather than a fresh one -- `call_keyed_subagent` already runs inside
+story-simulator-mcp's own process.
 
 `mcp_server.py`'s own tools -- start_world/advance_simulation, and
 update_registry's preview/confirm_token flow -- are deliberately not
@@ -49,19 +46,6 @@ REPO_ROOT = Path(__file__).parent.parent
 USAGE_LOG_PATH = REPO_ROOT / ".keyed_subagent_usage.jsonl"
 
 
-def _dispatch_tool_call(name: str, arguments: dict, session: Any) -> str:
-    sessions = core.registrar_sessions
-    if name == "view_registry":
-        return sessions.view_registry(session, arguments["component_type"])
-    if name == "view_entity":
-        return sessions.view_entity(session, arguments["entity_id"])
-    if name == "update_registry":
-        return sessions.update_registry(session, arguments["yaml_string"])
-    if name == "consolidate_review":
-        return sessions.consolidate_review(session, arguments.get("limit", 20))
-    return f"Error: unknown tool {name!r}"
-
-
 async def call_keyed_subagent(prompt: str, session: Any) -> str:
     """Answer one already-framed judgment prompt via `keyed_subagent_model()`,
     with real registry access so it can actually persist what it decides.
@@ -71,13 +55,13 @@ async def call_keyed_subagent(prompt: str, session: Any) -> str:
 
     `session` is the same MCP session id `core.registrar_sessions` already
     keys its `_registrars`/`_export_dirs` off of -- passed through from
-    `TurnReplay.resolve` (see that module) so the tool calls below land on
-    this exact world's already-open registrar, not a fresh one.
+    `TurnReplay.resolve` (see that module) so `dispatch()`'s calls below
+    land on this exact world's already-open registrar, not a fresh one.
     """
     return await run_tool_calling_loop(
         prompt,
         model=keyed_subagent_model(),
-        dispatch=lambda name, arguments: _dispatch_tool_call(name, arguments, session),
+        dispatch=lambda name, arguments: core.registrar_sessions.dispatch(session, name, arguments),
         tools=REGISTRAR_TOOL_SPECS,
         usage_log_path=USAGE_LOG_PATH,
     )

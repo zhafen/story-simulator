@@ -43,10 +43,11 @@ class TestMcpToolRegistration:
         assert "open_registry" not in self._tool_names()
 
     def test_view_registry_view_entity_update_registry_are_mounted_from_registrar_sessions(self):
-        """Mounted directly from `core.registrar_sessions` (an emc2p
-        RegistrarSessions instance), not reimplemented here -- see
-        mcp_server.py's own docstring. Descriptions carry over from that
-        instance's own methods, so a match confirms the same mount."""
+        """Mounted directly from `core.registrar_sessions`, not reimplemented here.
+
+        Descriptions carry over from that instance's own methods, so a
+        match confirms the same mount -- see mcp_server.py's own docstring.
+        """
         tools = {t.name: t for t in server._tool_manager.list_tools()}
         assert tools["view_registry"].description == _registrar_sessions.view_registry.__doc__
         assert tools["view_entity"].description == _registrar_sessions.view_entity.__doc__
@@ -163,11 +164,11 @@ class TestRegistryTools:
             _registrar_sessions.get_registrar(ctx.request_context.session)
 
     def test_view_registry_before_start_world_names_start_world_not_open_registry(self):
-        """view_registry is `core.registrar_sessions`'s own method, but that
-        instance is constructed with `open_tool_name="start_world"` (see
-        core.py) -- the error it raises must point at start_world, the
-        tool this server actually has, not emc2p's own open_registry (not
-        mounted here)."""
+        """view_registry's instance is constructed with open_tool_name="start_world" (core.py).
+
+        So the error it raises must point at start_world, the tool this
+        server actually has, not emc2p's own open_registry (not mounted here).
+        """
         ctx = _make_ctx()
         with pytest.raises(ValueError, match="start_world") as exc_info:
             view_registry("position", ctx)

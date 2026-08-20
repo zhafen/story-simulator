@@ -193,13 +193,8 @@ def _next_time_stamp(registrar: Registrar) -> float:
     return float(df["world_clock.value"].max())
 
 
-# Session state (which Registrar/save_dir a session is talking to) and
-# view_registry/view_entity/update_registry/consolidate_review themselves
-# live on this instance -- nothing about reading/writing a registry is
-# story-simulator-specific, so it isn't reimplemented here. `start_world`
-# (below) hands this instance an already-loaded Registrar via
-# `set_registrar` rather than its own `open` (whose manifest_dir-seeding
-# logic doesn't match `start_world`'s own richer scenario/resume loading).
+# Session state (which Registrar/save_dir a session is talking to) plus
+# view_registry/view_entity/update_registry/consolidate_review themselves.
 registrar_sessions = RegistrarSessions(
     time_provider=_next_time_stamp,
     export_dirname=WORLD_DIRNAME,

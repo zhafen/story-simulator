@@ -13,8 +13,9 @@ def _make_ctx():
 
 
 def update_registry(yaml_string: str, *, ctx) -> str:
-    """Stand-in for the `update_registry` tool this server used to define
-    itself -- now `core.registrar_sessions`' own method (mounted directly
-    onto the real server; see `story_simulator.mcp_server`), so tests call
-    it the same way a mounted tool's wrapper would."""
+    """Stand-in for the `update_registry` tool -- now `core.registrar_sessions`'s own method.
+
+    Mounted directly onto the real server (see `story_simulator.mcp_server`),
+    so tests call it the same way a mounted tool's wrapper would.
+    """
     return core.registrar_sessions.update_registry(ctx.request_context.session, yaml_string)

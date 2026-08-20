@@ -1,8 +1,8 @@
 file_info:
     - description: >
-        Human-validated regression fixture for tests/test_human_validated.py::
-        test_car_parking_core_sim. Three cars drive to a restaurant with only
-        two parking spots.
+        Regression fixture shared by tests/test_human_validated/
+        test_car_parking_deterministic.py and test_write_accuracy.py.
+        Three cars drive to a restaurant with only two parking spots.
 
 restaurant:
     - object:

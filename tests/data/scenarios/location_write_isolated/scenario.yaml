@@ -6,8 +6,8 @@ file_info:
         reasoning, no multi-car complexity, nothing to get right except
         correctly recording the car's final location. Deliberately
         strips away every OTHER kind of reasoning this session's other
-        scenarios exercise (tests/test_race_placement_live.py for
-        arrival order, tests/test_parking_split_live.py for driving/
+        scenarios exercise (tests/test_human_validated/test_race_placement_live.py
+        for arrival order, test_parking_split_live.py for driving/
         parking separation), isolating just the write-formatting step
         itself.
 

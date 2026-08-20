@@ -487,3 +487,99 @@ project_history:
               out that same answer unaided. Single rep per test, same as
               this suite's other live regressions -- not
               location_write_harness.py's many-rep comparative mode.
+    world_clock_persisted:
+        - description: >
+              _current_world_time used to be a plain in-process
+              weakref.WeakKeyDictionary keyed by MCP session, set in
+              process_event from the popped event's own end_time and read
+              by _next_time_stamp for every write made while resolving
+              that event's turn. Sharper than "resets on a subprocess
+              crash": it reset on *every* idle-triggered MCP disconnect
+              too (a routine, expected event per CLAUDE.md's own recovery
+              guidance) — see docs/manifest/story-simulator.yaml:
+              world_time_concept for the write-lands-in-the-reconnect-
+              window staleness risk this created.
+
+              Replaced with a `world_clock` component (manifest/
+              builtins.yaml) on a fixed entity alias
+              (core.WORLD_CLOCK_ALIAS), written by process_event the same
+              way every other piece of world state is, and read by
+              _next_time_stamp(registrar) instead of
+              _next_time_stamp(session). Deliberately not flagged
+              time_dimension like position.time/state.time/... — a
+              world_clock row's own value IS the world time, so there's no
+              independent "when was this recorded" axis to backfill it
+              against; _next_time_stamp takes the highest value across
+              every accumulated row instead, relying on world time only
+              ever moving forward rather than on write order.
+
+              Also dropped `session` as a parameter of
+              _update_registry_and_sync (it only ever used it to call
+              _next_time_stamp) and of process_event's own direct write —
+              session is still threaded through process_event/
+              resolve_event/plan_events/TurnReplay.resolve for the
+              keyed_subagent responder's own registry tool access, which
+              this change didn't touch.
+    registry_read_write_moved_to_emc2p_registrar_sessions:
+        - description: >
+              view_registry/view_entity/update_registry (preview/
+              confirm_token flow included)/consolidate_review, and the
+              save_dir export sync that rode along with update_registry,
+              moved wholesale into emc2p as emc2p.mcp_server.
+              RegistrarSessions -- registry read/write accuracy is
+              emc2p's own job, generalized, not story-simulator's to
+              duplicate. story-simulator's own `_registrars`/`_save_dirs`
+              WeakKeyDictionary module globals (and `_get_registrar`/
+              `_get_save_dir`) are gone too, in favor of a single
+              `core.registrar_sessions` instance (constructed with
+              story-simulator's own `_next_time_stamp` as `time_provider`,
+              `"world"`/`"world_history"` as the export dirnames -- kept
+              as-is, not renamed to match the new source key below -- and
+              `open_tool_name="start_world"` so its own "no registry open"
+              error names the tool this server actually has) that both
+              `mcp_server.py` (`.mount(server, exclude={"open_registry"})`)
+              and `keyed_subagent.py`'s in-process dispatch call into
+              directly.
+
+              A class instance, not a second module-global dict living
+              inside an imported module (which one early design draft
+              considered and rejected as "funky" -- reassigning another
+              module's own internals from outside is exactly the kind of
+              action-at-a-distance a class constructor avoids) -- see
+              `RegistrarSessions.__init__`'s own docstring for the
+              constructor-injected behavior (`time_provider`,
+              `export_dirname`/`export_history_dirname`,
+              `open_tool_name`) this let a generic emc2p class expose
+              without any story-simulator-specific code inside emc2p
+              itself.
+
+              The old `WORLD_FILE_ID = "world"` source key every direct
+              registrar.update() call had to share -- config.py's own
+              comment on it explained *why* (a different key at any call
+              site forks a duplicate entity) but the name itself was
+              backward-compat cruft from when this project's own writes
+              were the only ones that existed. Renamed to `SOURCE_KEY =
+              "session"` in emc2p (nothing about "session" is
+              story-simulator-specific), config.WORLD_FILE_ID deleted
+              outright rather than kept as an alias -- nothing was
+              depending on it yet. This also renamed update_registry's
+              exported yaml filename from `world.yaml`/`world_history/
+              world.yaml` to `session.yaml`/`world_history/session.yaml`
+              (the directory names themselves, `world`/`world_history`,
+              are unaffected -- those are `export_dirname`/
+              `export_history_dirname`, still story-simulator's own).
+
+              Root-caused, in the same pass, a real bug this redesign's
+              first draft had worked around instead of fixing:
+              Registry._seq_column only consulted the current write
+              batch's own freshly-loaded schema for a component type's
+              time_dimension field, not the accumulated registry's own
+              carried-forward schema -- the same class of bug
+              time_filled_registry had (see
+              backfill_time_dimension_fields_using_accumulated_registry_
+              schema_too, emc2p's own history). Fixing _seq_column itself
+              to fall back to the accumulated registry's schema removed
+              the need for any reload-manifest-on-every-write mechanism
+              entirely -- a genuine simplification the "no backward
+              compatibility to preserve yet" mandate made possible to
+              reach for instead of a workaround.

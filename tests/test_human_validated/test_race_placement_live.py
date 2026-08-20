@@ -1,7 +1,8 @@
-"""Permanent live regression for task #57: does a weak model reason about
-event *arrival order* correctly, checked exactly via a dedicated
-race_placement component rather than by matching substrings in freeform
-outcome text.
+"""Permanent live regression for task #57: does a weak model reason
+about event *arrival order* correctly.
+
+Checked exactly via a dedicated race_placement component rather than
+by matching substrings in freeform outcome text.
 
 Grew out of a throwaway diagnostic that isolated arrival-order reasoning
 from tests/test_human_validated.py::test_car_parking_core_sim's parking-spot
@@ -28,19 +29,14 @@ from pathlib import Path
 
 import pytest
 
-from test_human_validated import HeadlessSession, _event_states, _load_registrar
-from emc2p.registrar import Registrar
+from test_human_validated.helpers import HeadlessSession, _event_states, _load_registrar, _placement
 from emc2p.testing.registry_checks import write_time
-from story_simulator.core import safe_view_current
 
-REPO_ROOT = Path(__file__).parent.parent
+REPO_ROOT = Path(__file__).parent.parent.parent
 RACE_SCENARIO_DIR = REPO_ROOT / "tests" / "data" / "scenarios" / "race"
 
 # Deliberately one open-ended instruction, not one per event (see
-# #61/docs/manifest/history.yaml: project_history.
-# live_tests_decoupled_from_turn_count) -- the model runs the whole batch
-# in as many or as few advance_simulation round-trips as it wants; this
-# test checks the final result and order, not turn count.
+# #61/docs/manifest/history.yaml). Checks the final result and order, not turn count.
 _RUN_TO_DONE_RACE_INSTRUCTION = (
     "Call advance_simulation and keep answering its prompts (resolve, then plan, for "
     "whatever event it names) until its status is \"done\". For each event's resolve step, "
@@ -51,23 +47,16 @@ _RUN_TO_DONE_RACE_INSTRUCTION = (
 )
 
 
-def _placement(registrar: Registrar, alias: str) -> int | None:
-    """The current `race_placement.value` recorded for an aliased car, or
-    None if it has none yet."""
-    df = safe_view_current(registrar, "race_placement.value", aliases=alias)
-    if df is None or df.empty:
-        return None
-    return int(df.iloc[-1]["race_placement.value"])
-
-
 @pytest.mark.live
 def test_race_placement_recorded_in_order(tmp_path):
     """Each car's event.start_time/duration already *is* its own true
-    finish time -- pop_event's own mechanical sort (soonest end_time
-    first) pops them in the real finishing order (B, C, A), not start
-    order or trip length -- so by the time any one event resolves,
-    whichever cars finished earlier are genuinely already finished, not a
-    guess about entities that haven't been touched yet.
+    finish time.
+
+    pop_event's own mechanical sort (soonest end_time first) pops them
+    in the real finishing order (B, C, A), not start order or trip
+    length -- so by the time any one event resolves, whichever cars
+    finished earlier are genuinely already finished, not a guess about
+    entities that haven't been touched yet.
 
     Deliberately checks only the *final* result, not turn-by-turn state
     (see #61/docs/manifest/history.yaml: project_history.
@@ -83,7 +72,9 @@ def test_race_placement_recorded_in_order(tmp_path):
     """
     save_dir = tmp_path / "test_save"
 
-    with HeadlessSession(save_dir) as session:
+    # This test's whole point is the *connected* model's own arrival-order
+    # reasoning -- explicit override of the keyed_subagent default.
+    with HeadlessSession(save_dir, responder="host") as session:
         print(f"HeadlessSession trace: {session.trace_path}")
         narration = session.send_turn(
             f"Use start_world with save_dir={save_dir} and scenario_dir={RACE_SCENARIO_DIR} "

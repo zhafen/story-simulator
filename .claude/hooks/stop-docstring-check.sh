@@ -1,35 +1,18 @@
 #!/bin/bash
 # Nudges a Claude Code session to review its own docstring edits for
-# conciseness before ending a turn -- see PR#96 review comment 11
-# (docstrings had grown to ~30-line rationale/history essays). Judging
-# "concise" isn't something a shell script can do; this only does the
-# cheap, deterministic part -- detect that a docstring-shaped region was
-# touched -- and hands the actual review back to the model already in the
-# loop for this session, the same way stop-hook-git-check.sh's plain-text
-# feedback loops a git-state finding back to the model rather than trying
-# to fix it in bash.
+# conciseness before ending a turn -- see PR#96 review comment 11.
 set -euo pipefail
 
 input=$(cat)
 
-# HeadlessSession (tests/test_human_validated.py) spawns its own `claude -p`
-# subprocess against this same repo, to drive story-simulator-mcp the way a
-# real external client would -- but that subprocess is still subject to this
-# repo's own Stop hooks. A nudge meant for an interactive human session
-# instead hijacks that automated turn: the model has no user to defer to, so
-# it just answers the nudge (reviewing docstrings) instead of the test's
-# actual instruction, and the test sees that as an unrelated failure. Opt
-# out for exactly that one caller via an env var it sets on its own
-# subprocess -- narrower than skipping this hook for every headless `-p`
-# invocation against this repo, which could hide a real nudge from some
-# other automated caller that actually has a way to act on it.
+# HeadlessSession's own `claude -p` subprocess has no user to defer to,
+# so it must opt out of this nudge via an env var it sets on itself.
 if [[ -n "${STORY_SIM_HEADLESS_TEST:-}" ]]; then
   exit 0
 fi
 
 # Recursion prevention: only nudge once per Stop attempt, mirroring
-# stop-hook-git-check.sh -- if the model's forced follow-up turn doesn't
-# resolve it, don't loop forever re-flagging the same diff.
+# stop-hook-git-check.sh.
 stop_hook_active=$(echo "$input" | jq -r '.stop_hook_active')
 if [[ "$stop_hook_active" = "true" ]]; then
   exit 0
@@ -44,11 +27,8 @@ cd "$repo_root"
 
 flagged=""
 
-# Tracked files with uncommitted changes (staged and/or unstaged) touching
-# a `"""` line -- a very likely proxy for "a docstring was added, removed,
-# or had its opening/closing line edited". Doesn't catch an edit confined
-# entirely to a docstring's interior lines with no `"""` in the diff, but a
-# false negative there just means one less nudge, not a wrong one.
+# Tracked files with uncommitted changes touching a `"""` line -- a
+# proxy for "a docstring was added, removed, or had its edges edited".
 while IFS= read -r f; do
   [[ -z "$f" || ! -f "$f" ]] && continue
   if git diff HEAD -- "$f" | grep -qE '^[+-].*"""'; then

@@ -1,16 +1,19 @@
-"""Diagnostic harness for #73: compares different approaches to recording a
-car's `location` once parked, measuring failure RATE across many reps per
-approach rather than a single pass/fail. Deliberately NOT a pytest test (no
-@pytest.mark.live here, not collected by the normal suite) -- this is a
-comparison tool, not a regression gate. Run directly:
+"""Diagnostic harness for #73: compares different approaches to
+recording a car's `location` once parked.
+
+Measures failure RATE across many reps per approach rather than a
+single pass/fail. Deliberately NOT a pytest test (no @pytest.mark.live
+here, not collected by the normal suite) -- this is a comparison tool,
+not a regression gate. Run directly:
 
     uv run python tests/location_write_harness.py --approach baseline --reps 10
 
 Isolates just the write-formatting step itself (see tests/data/scenarios/
 location_write_isolated/scenario.yaml: one car, one already-resolvable
 parking event, one spot) -- separate from arrival-order reasoning
-(tests/test_race_placement_live.py) or driving/parking separation
-(tests/test_parking_split_live.py), which are already covered elsewhere.
+(tests/test_human_validated/test_race_placement_live.py) or
+driving/parking separation (test_parking_split_live.py in that same
+package), which are already covered elsewhere.
 
 Three approaches are compared: "baseline" (today's direct single-shot
 update_registry write), "confirm" (#74's opt-in preview=True /
@@ -36,22 +39,14 @@ from pathlib import Path
 
 from collections import Counter
 
-from test_human_validated import (
-    LOW_QUALITY_MODEL,
-    HeadlessSession,
-    _load_registrar,
-    _location,
-    _parked_at,
-)
+from test_human_validated.helpers import LOW_QUALITY_MODEL, HeadlessSession, _load_registrar, _parked_at
 from emc2p.testing.registry_checks import unexpected_components
 
 REPO_ROOT = Path(__file__).parent.parent
 SCENARIO_DIR = REPO_ROOT / "tests" / "data" / "scenarios" / "location_write_isolated"
 
-# scripts/ isn't a package (no __init__.py, deliberately -- it's a
-# directory of standalone CLI scripts, see scripts/check-submodule-
-# pointers.sh), so this is a plain sys.path addition rather than a normal
-# import.
+# scripts/ isn't a package (no __init__.py, deliberately) -- so this is a
+# plain sys.path addition rather than a normal import.
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 from get_usage import get_usage  # noqa: E402
 
@@ -73,15 +68,11 @@ def _snapshot_usage(label: str) -> dict | None:
         return None
 
 # The scenario seed's own starting components (object, description) plus
-# `location`, the one thing a correct run is supposed to add to car_a --
-# see tests/data/scenarios/location_write_isolated/scenario.yaml. Anything
-# else showing up on car_a is a #83 misfire candidate (see
-# unexpected_components).
+# `location`, the one thing a correct run is supposed to add to car_a.
 _EXPECTED_CAR_A_COMPONENTS = {"object", "description", "location"}
 
 # Today's only approach: the model composes and writes correctly-formatted
-# entity-first YAML directly via update_registry, same mechanism
-# test_race_placement_live.py / test_parking_split_live.py exercise.
+# entity-first YAML directly via update_registry.
 _BASELINE_INSTRUCTION = (
     "Call advance_simulation and answer its prompts (resolve, then plan) until its "
     "status is \"done\" -- there is only one event. Record via update_registry that "
@@ -89,10 +80,8 @@ _BASELINE_INSTRUCTION = (
     "Don't narrate anything back to me."
 )
 
-# #74's preview/confirm alternative: write with preview=True first, check
-# the returned review (referenced/available component types, stats+peek
-# for each referenced type) against what was intended, then either confirm
-# with the returned confirm_token or correct and re-preview.
+# #74's preview/confirm alternative: write with preview=True first,
+# check the returned review against what was intended before confirming.
 _CONFIRM_INSTRUCTION = (
     "Call advance_simulation and answer its prompts (resolve, then plan) until its "
     "status is \"done\" -- there is only one event. Record via update_registry that "
@@ -106,9 +95,8 @@ _CONFIRM_INSTRUCTION = (
     "Don't narrate anything back to me."
 )
 
-# #76's post-write alternative: write normally (no confirmation step in
-# advance), then call consolidate_review to see everything recorded so
-# far and fix anything wrong via a follow-up update_registry call.
+# #76's post-write alternative: write normally (no confirmation step),
+# then call consolidate_review to see everything and fix anything wrong.
 _CONSOLIDATE_INSTRUCTION = (
     "Call advance_simulation and answer its prompts (resolve, then plan) until its "
     "status is \"done\" -- there is only one event. Record via update_registry that "
@@ -128,35 +116,35 @@ _APPROACHES = {
 
 def run_one(approach: str, tmp_dir: Path, model: str = LOW_QUALITY_MODEL) -> tuple[bool, str, dict, set[str]]:
     """One rep: opens a fresh world, asks the model to record car_a's
-    location under the given approach, returns (success, narration,
-    usage, misfires) -- narration kept for diagnosing failures after the
-    fact, not just the pass/fail count; usage (see
-    HeadlessSession.usage_summary) kept so #75's cost comparison isn't
-    limited to whichever approach happens to get run last; misfires (see
-    unexpected_components) names which component(s) car_a actually got
-    written to beyond what a correct run produces -- #83, collected every
-    rep (not just failures) since a false positive here is itself useful
-    signal. `model` defaults to this harness's usual weak-model target,
-    but #85 needs a stronger-model comparison point (Sonnet vs. Haiku
-    spend on the identical task) -- see --model."""
+    location under the given approach.
+
+    Returns (success, narration, usage, misfires) -- narration kept for
+    diagnosing failures after the fact, not just the pass/fail count;
+    usage (see HeadlessSession.usage_summary) kept so #75's cost
+    comparison isn't limited to whichever approach happens to get run
+    last; misfires (see unexpected_components) names which component(s)
+    car_a actually got written to beyond what a correct run produces --
+    #83, collected every rep (not just failures) since a false positive
+    here is itself useful signal. `model` defaults to this harness's
+    usual weak-model target, but #85 needs a stronger-model comparison
+    point (Sonnet vs. Haiku spend on the identical task) -- see --model.
+    """
     save_dir = tmp_dir / "save"
     instruction = _APPROACHES[approach]
-    with HeadlessSession(save_dir, model=model) as session:
+    # This harness compares how the *connected* model performs a write
+    # under each approach -- explicit override of the keyed_subagent default.
+    with HeadlessSession(save_dir, model=model, responder="host") as session:
         narration = session.send_turn(
             f"Use start_world with save_dir={save_dir} and scenario_dir={SCENARIO_DIR} "
             f"to open a story-simulator world. Then {instruction}"
         )
         try:
             r = _load_registrar(save_dir, narration)
-            success = _parked_at(_location(r, "car_a"), "parking_spot_1")
+            success = _parked_at(r.get_current_value("location", alias="car_a"), "parking_spot_1")
             misfires = unexpected_components(r, "car_a", _EXPECTED_CAR_A_COMPONENTS)
         except AssertionError as exc:
-            # _load_registrar's own assertion: the model never actually
-            # called start_world (confirmed happening live -- a weak model
-            # can narrate a plausible-sounding scene, or wander off into an
-            # unrelated tangent, without calling it). This is itself a rep
-            # outcome to count and report, not a harness bug -- letting it
-            # propagate would abort the whole batch on rep 1's bad luck.
+            # _load_registrar's own assertion: the model never actually called
+            # start_world -- a rep outcome to count, not a harness bug.
             success = False
             misfires = set()
             narration = f"{narration}\n\n[harness: {exc}]"
@@ -186,13 +174,8 @@ def main() -> None:
             except KeyboardInterrupt:
                 raise
             except BaseException as exc:
-                # Anything run_one doesn't already turn into a normal (False,
-                # ...) result -- e.g. HeadlessSession's own timeout/crash
-                # handling, which raises via pytest.fail (a BaseException,
-                # not Exception -- a plain `except Exception` here would
-                # miss it). One rep's crash still shouldn't cost the other
-                # 9; usage for this rep is unknown, so it's counted as zero
-                # rather than guessed.
+                # Anything run_one doesn't already turn into a normal (False, ...)
+                # result, e.g. HeadlessSession's own timeout/crash handling.
                 ok = False
                 narration = f"[harness error: {exc!r}]"
                 usage = {

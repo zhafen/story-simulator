@@ -43,6 +43,19 @@ runs the full suite. `-m "not live"` (what CI runs) skips tests marked
 code under `shelved/`, which isn't collected by default (see
 `pyproject.toml`'s `testpaths`).
 
+## Code style
+
+### Comments and docstrings
+
+- A docstring (module/class/function) opens with a summary of 2 lines or
+  less, then a blank line, then as much further detail as needed.
+- A comment block sitting as the first statement of a function body
+  becomes a docstring instead, formatted the same way.
+- Any other comment block (a module-level constant, a note mid-function)
+  is capped at a 2-line summary -- no continuation paragraph.
+- Already-compliant comments/docstrings don't need reformatting just to
+  match this convention.
+
 ## Branch / PR conventions
 
 - Branch off `main`, open a PR back into it. The PR template pre-fills the

@@ -1,6 +1,7 @@
 file_info:
     - description: >
-        Permanent regression fixture for tests/test_race_placement_live.py
+        Permanent regression fixture for
+        tests/test_human_validated/test_race_placement_live.py
         (task #57: the recurring bug where a weak model assumes a
         different, not-yet-resolved car's trip has already finished).
         Reuses the parking scenario's exact start_time/duration facts (so

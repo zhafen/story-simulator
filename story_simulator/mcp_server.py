@@ -24,19 +24,18 @@ STORY_SIM_RESPONDER -- see `story_simulator.config.event_responder`) -- see
 dedicated tool. `view_registry`/`view_entity`/`update_registry` remain
 directly callable too, for anything outside that loop.
 
-`view_registry`/`view_entity` are thin delegates to iacs's own Registrar
-methods (`view_df`/`view_entity`), not independent reimplementations --
-a prior version of each did reimplement the read/traversal logic itself,
-which turned out to just duplicate what iacs's own `view_component`/
-`view_entity` MCP tools already wrap. An even earlier iteration removed
-these two tools entirely in favor of requiring iacs's own tools instead;
-reverted after live evidence that a connected host reliably discovers and
-uses tools on THIS server but has never once discovered or called a tool
-on a separate one, however strongly nudged (see docs/manifest/history.yaml:
-project_history.story_simulator_view_tools_reinstated_as_iacs_delegates).
-Delegating (calling the same underlying Registrar object this server
-already holds) avoids the original duplication without repeating that
-discoverability problem.
+`view_registry`/`view_entity`/`update_registry`/`consolidate_review` are
+`core.registrar_sessions`'s own tools (a `RegistrarSessions` instance from
+`emc2p.mcp_server` -- see that class's own docstring), mounted directly
+onto this server (see the `.mount()` call near the bottom of this file)
+rather than reimplemented or manually delegated to here -- registry
+read/write is emc2p's job, generalized, not story-simulator's own to
+duplicate. `open_registry` (emc2p's own tool for opening a registrar by
+database_url) is excluded from the mount: this server already has
+`start_world` for that (Postgres bootstrap, save_dir seeding/export
+wiring included), and mounting `open_registry` too would let a client
+silently swap out the world's own registrar for an unrelated one
+mid-session.
 
 This file is deliberately thin: every `@server.tool()` function below just
 unpacks `ctx.request_context.session` into a plain session id and calls
@@ -140,82 +139,9 @@ def start_world(save_dir: str, ctx: Context, scenario_dir: str | None = None) ->
 
 
 @server.tool()
-def view_registry(component_type: str, ctx: Context) -> str:
-    """View all recorded data for one component type (e.g. "position", "object", "character").
-
-    Covers both the starting scenario and everything recorded since, since
-    it reads straight from the registry.
-    """
-    __iacs__ = {"solution of": "story_simulator_mission.tool_catalog.view_registry"}
-    return core.view_registry(ctx.request_context.session, component_type)
-
-
-@server.tool()
-def view_entity(entity_id: str, ctx: Context) -> str:
-    """Return every recorded component instance for a specific entity.
-
-    Args:
-        entity_id: Entity hash, alias, or unambiguous path fragment (e.g.
-            "player", "desk", or "journaling_desk.desk").
-    """
-    __iacs__ = {"solution of": "story_simulator_mission.tool_catalog.view_entity"}
-    return core.view_entity(ctx.request_context.session, entity_id)
-
-
-@server.tool()
-def update_registry(
-    yaml_string: str | None = None,
-    *,
-    ctx: Context,
-    preview: bool = False,
-    confirm_token: str | None = None,
-) -> str:
-    """Merge entity-first YAML into the world registry, run through the same ETL as save files.
-
-    Ordinary use: call with just `yaml_string` -- it merges immediately,
-    exactly as always. `preview=True` is an opt-in alternative: instead of
-    merging, you get back a review (which component types your write
-    references, every component type actually available, and a stats+peek
-    summary of existing rows for each referenced type) plus a
-    confirm_token. If the review looks right, call again with that
-    confirm_token (no yaml_string needed) to actually merge it; if
-    something looks off, call again with corrected yaml_string instead.
-
-    Args:
-        yaml_string: Entity-first YAML content to merge (or preview).
-            Omit when passing confirm_token instead.
-        preview: Review before merging instead of merging immediately.
-        confirm_token: From a prior preview=True call -- merges that exact
-            write now.
-    """
-    __iacs__ = {"solution of": "story_simulator_mission.tool_catalog.update_registry"}
-    return core.update_registry(ctx.request_context.session, yaml_string, preview, confirm_token)
-
-
-@server.tool()
-def consolidate_review(ctx: Context, limit: int = 20) -> str:
-    """Show every component type recorded in this world so far, for you to review and consolidate.
-
-    Unlike view_registry (one component type at a time), this covers
-    everything written so far in one call, so you can notice the same
-    fact recorded twice under different (possibly invented) component
-    names, or a wrong-but-real component holding data that belongs under
-    the correct one instead -- without already having to suspect which
-    type to check. Nothing is changed automatically: if you find
-    something, write a correction yourself via update_registry.
-
-    Args:
-        limit: Max sample rows shown per component type (default 20).
-    """
-    __iacs__ = {"solution of": "story_simulator_mission.tool_catalog.consolidate_review"}
-    return core.consolidate_review(ctx.request_context.session, limit)
-
-
-@server.tool()
 async def advance_simulation(ctx: Context, resume_token: str | None = None, answer: str | None = None) -> dict:
     """Fast-forward through any events whose end_time has been reached,
-    and pause whenever a turn needs input only outside story-simulator's
-    own process can supply.
+    and pause when a turn needs input story-simulator's own process can't supply.
 
     The event-driven simulation (see `core.py`) -- world state is `event`
     entities, each ready to resolve once world time reaches its own
@@ -252,6 +178,11 @@ async def advance_simulation(ctx: Context, resume_token: str | None = None, answ
     """
     __iacs__ = {"solution of": "story_simulator_mission.tool_catalog.advance_simulation"}
     return await core.advance_simulation(ctx.request_context.session, resume_token, answer)
+
+
+# Mounts view_registry/view_entity/update_registry/consolidate_review --
+# see this module's own docstring for why open_registry is excluded.
+core.registrar_sessions.mount(server, exclude={"open_registry"})
 
 
 def main() -> None:

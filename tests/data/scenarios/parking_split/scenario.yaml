@@ -1,6 +1,7 @@
 file_info:
     - description: >
-        Structural regression fixture for tests/test_parking_split_live.py
+        Structural regression fixture for
+        tests/test_human_validated/test_parking_split_live.py
         (task #65, investigating #57). Splits tests/data/scenarios/parking/
         scenario.yaml's single combined "trip" event (driving + parking
         bundled into one resolution) into two separate, pre-planned events

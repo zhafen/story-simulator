@@ -1,6 +1,5 @@
 """Live regression for task #65, investigating #57: does first-come-first-served
-parking still come out right once "driving" and "parking" are no longer
-bundled into one event's resolution?
+parking still work once "driving"/"parking" aren't bundled into one event.
 
 tests/test_human_validated.py::test_car_parking_core_sim and
 tests/test_race_placement_live.py's evidence (see #61/docs/manifest/
@@ -24,16 +23,10 @@ from pathlib import Path
 
 import pytest
 
-from test_human_validated import (
-    HeadlessSession,
-    _event_states,
-    _load_registrar,
-    _location,
-    _parked_at,
-)
+from test_human_validated.helpers import HeadlessSession, _event_states, _load_registrar, _parked_at
 from emc2p.testing.registry_checks import write_time
 
-REPO_ROOT = Path(__file__).parent.parent
+REPO_ROOT = Path(__file__).parent.parent.parent
 PARKING_SPLIT_SCENARIO_DIR = REPO_ROOT / "tests" / "data" / "scenarios" / "parking_split"
 
 _RUN_TO_DONE_SPLIT_INSTRUCTION = (
@@ -49,19 +42,22 @@ _RUN_TO_DONE_SPLIT_INSTRUCTION = (
 
 @pytest.mark.live
 def test_parking_split_across_two_events_per_car(tmp_path):
-    """Same first-come-first-served facts as test_car_parking_core_sim (car_b
-    arrives first, car_c second, car_a last) but each car's drive and its
-    parking decision are separate, pre-planned events -- car_a_drive/
-    car_a_park, etc. -- rather than one combined car_a_trip. Checks final
-    location for each car, that all six events reached event_state
-    complete, and order evidence via each car's location write being
-    time-stamped with its own *parking* event's end_time (not its driving
-    event's), confirming the spot was assigned once that car's own parking
-    event resolved.
+    """Same first-come-first-served facts as test_car_parking_core_sim
+    (car_b arrives first, car_c second, car_a last).
+
+    But each car's drive and its parking decision are separate,
+    pre-planned events -- car_a_drive/car_a_park, etc. -- rather than
+    one combined car_a_trip. Checks final location for each car, that
+    all six events reached event_state complete, and order evidence
+    via each car's location write being time-stamped with its own
+    *parking* event's end_time (not its driving event's), confirming
+    the spot was assigned once that car's own parking event resolved.
     """
     save_dir = tmp_path / "test_save"
 
-    with HeadlessSession(save_dir) as session:
+    # This test's whole point is the *connected* model's own driving/parking
+    # split reasoning -- explicit override of the keyed_subagent default.
+    with HeadlessSession(save_dir, responder="host") as session:
         print(f"HeadlessSession trace: {session.trace_path}")
         narration = session.send_turn(
             f"Use start_world with save_dir={save_dir} and scenario_dir={PARKING_SPLIT_SCENARIO_DIR} "
@@ -69,15 +65,15 @@ def test_parking_split_across_two_events_per_car(tmp_path):
         )
         r = _load_registrar(save_dir, narration)
 
-        assert _parked_at(_location(r, "car_b"), "parking_spot_1"), (
+        assert _parked_at(r.get_current_value("location", alias="car_b"), "parking_spot_1"), (
             "Car B should be first to actually arrive (it left earlier than Car C by more "
             f"than their trip-length difference) and take the first spot -- narration: {narration!r}"
         )
-        assert _parked_at(_location(r, "car_c"), "parking_spot_2"), (
+        assert _parked_at(r.get_current_value("location", alias="car_c"), "parking_spot_2"), (
             "Car C should be second to arrive (after Car B, before Car A) and take the "
             f"remaining dedicated spot -- narration: {narration!r}"
         )
-        assert _parked_at(_location(r, "car_a"), "street"), (
+        assert _parked_at(r.get_current_value("location", alias="car_a"), "street"), (
             "Car A starts first but has the longest drive, so it should actually arrive "
             f"last and end up parked on the street -- narration: {narration!r}"
         )

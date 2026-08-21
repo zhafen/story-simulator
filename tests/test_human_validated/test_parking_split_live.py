@@ -23,7 +23,7 @@ from pathlib import Path
 
 import pytest
 
-from test_human_validated.helpers import HeadlessSession, _event_states, _load_registrar, _parked_at
+from test_human_validated.helpers import McpClientSession, _event_states, _load_registrar, _parked_at
 from emc2p.testing.registry_checks import write_time
 
 REPO_ROOT = Path(__file__).parent.parent.parent
@@ -57,13 +57,13 @@ def test_parking_split_across_two_events_per_car(tmp_path):
 
     # This test's whole point is the *connected* model's own driving/parking
     # split reasoning -- explicit override of the keyed_subagent default.
-    # Both timeouts raised well past HeadlessSession's own 120s/240s
+    # Both timeouts raised well past McpClientSession's own 120s/240s
     # defaults -- confirmed live that a "host"-responder run driving all six
     # resolve+plan steps itself (twice as many as the three-event race test)
     # routinely needs more than the default 120s session_timeout, timing out
     # mid-event rather than failing on anything about the simulation itself.
-    with HeadlessSession(save_dir, responder="host", turn_timeout=420, session_timeout=420) as session:
-        print(f"HeadlessSession trace: {session.trace_path}")
+    with McpClientSession(save_dir, responder="host", turn_timeout=420, session_timeout=420) as session:
+        print(f"McpClientSession trace: {session.trace_path}")
         narration = session.send_turn(
             f"Use start_world with save_dir={save_dir} and scenario_dir={PARKING_SPLIT_SCENARIO_DIR} "
             f"to open a story-simulator world. Then {_RUN_TO_DONE_SPLIT_INSTRUCTION}"

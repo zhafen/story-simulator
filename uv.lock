@@ -570,7 +570,7 @@ wheels = [
 [[package]]
 name = "emc2p"
 version = "0.1.0"
-source = { editable = "emc2p" }
+source = { git = "https://github.com/zhafen/emc2p?rev=eecfea6c83e17cf3469d82329fcd6e10e0537a87#eecfea6c83e17cf3469d82329fcd6e10e0537a87" }
 dependencies = [
     { name = "duckdb" },
     { name = "ibis-framework", extra = ["duckdb"] },
@@ -591,22 +591,6 @@ mcp = [
 testing = [
     { name = "pytest" },
 ]
-
-[package.metadata]
-requires-dist = [
-    { name = "duckdb", specifier = ">=1.3.2" },
-    { name = "ibis-framework", extras = ["duckdb"], specifier = ">=2.0.0" },
-    { name = "litellm", marker = "extra == 'agents'", specifier = ">=1.97.0" },
-    { name = "mcp", marker = "extra == 'mcp'", specifier = ">=1.28.1,<2" },
-    { name = "pandas", specifier = ">=2.0.0" },
-    { name = "pandera", extras = ["ibis"], specifier = ">=0.25.0" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=7.0.0" },
-    { name = "pytest", marker = "extra == 'testing'", specifier = ">=7.0.0" },
-    { name = "pyyaml", specifier = ">=6.0" },
-    { name = "sf-hamilton", specifier = ">=1.88.0" },
-    { name = "tabulate", specifier = ">=0.10.0" },
-]
-provides-extras = ["dev", "testing", "agents", "mcp"]
 
 [[package]]
 name = "fastuuid"
@@ -2450,7 +2434,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "emc2p", extras = ["agents", "mcp", "testing"], editable = "emc2p" },
+    { name = "emc2p", extras = ["agents", "mcp", "testing"], git = "https://github.com/zhafen/emc2p?rev=eecfea6c83e17cf3469d82329fcd6e10e0537a87" },
     { name = "matplotlib", specifier = ">=3.11.0" },
     { name = "mcp", specifier = ">=1.28.1" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.2" },

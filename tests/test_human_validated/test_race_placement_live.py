@@ -29,7 +29,8 @@ from pathlib import Path
 
 import pytest
 
-from test_human_validated.helpers import McpClientSession, _event_states, _load_registrar, _placement
+from test_human_validated.helpers import McpClientSession, _event_states, _load_registrar, _placement, load_expected
+from emc2p.testing.expected_fixtures import assert_subset
 from emc2p.testing.registry_checks import write_time
 
 REPO_ROOT = Path(__file__).parent.parent.parent
@@ -81,24 +82,14 @@ def test_race_placement_recorded_in_order(tmp_path):
             f"to open a story-simulator world. Then {_RUN_TO_DONE_RACE_INSTRUCTION}"
         )
         r = _load_registrar(save_dir, narration)
+        expected = load_expected("race")
 
-        assert _placement(r, "car_b") == 1, (
-            "Car B should be first to actually finish (it left earlier than Car C by more "
-            f"than their trip-length difference) -- narration: {narration!r}"
-        )
-        assert _placement(r, "car_c") == 2, (
-            "Car C should be second to finish (after Car B, before Car A) -- "
-            f"narration: {narration!r}"
-        )
-        assert _placement(r, "car_a") == 3, (
-            "Car A starts first but has the longest trip, so it should actually finish last "
-            f"-- narration: {narration!r}"
-        )
-
-        states = _event_states(r)
-        assert states.get("car_b_trip") == "complete", states
-        assert states.get("car_c_trip") == "complete", states
-        assert states.get("car_a_trip") == "complete", states
+        placements = {alias: _placement(r, alias) for alias in expected.race_placement}
+        try:
+            assert_subset("race_placement", expected.race_placement, placements)
+            assert_subset("event_state", expected.event_state, _event_states(r))
+        except AssertionError as exc:
+            raise AssertionError(f"{exc} -- narration: {narration!r}") from exc
 
         times = {alias: write_time(r, "race_placement", alias) for alias in ("car_b", "car_c", "car_a")}
         assert times["car_b"] == pytest.approx(1020), (

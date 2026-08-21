@@ -23,7 +23,8 @@ from pathlib import Path
 
 import pytest
 
-from test_human_validated.helpers import McpClientSession, _event_states, _load_registrar, _parked_at
+from test_human_validated.helpers import McpClientSession, _event_states, _load_registrar, _parked_at, load_expected
+from emc2p.testing.expected_fixtures import assert_subset
 from emc2p.testing.registry_checks import write_time
 
 REPO_ROOT = Path(__file__).parent.parent.parent
@@ -69,23 +70,17 @@ def test_parking_split_across_two_events_per_car(tmp_path):
             f"to open a story-simulator world. Then {_RUN_TO_DONE_SPLIT_INSTRUCTION}"
         )
         r = _load_registrar(save_dir, narration)
+        expected = load_expected("parking_split")
 
-        assert _parked_at(r.get_current_value("location", alias="car_b"), "parking_spot_1"), (
-            "Car B should be first to actually arrive (it left earlier than Car C by more "
-            f"than their trip-length difference) and take the first spot -- narration: {narration!r}"
-        )
-        assert _parked_at(r.get_current_value("location", alias="car_c"), "parking_spot_2"), (
-            "Car C should be second to arrive (after Car B, before Car A) and take the "
-            f"remaining dedicated spot -- narration: {narration!r}"
-        )
-        assert _parked_at(r.get_current_value("location", alias="car_a"), "street"), (
-            "Car A starts first but has the longest drive, so it should actually arrive "
-            f"last and end up parked on the street -- narration: {narration!r}"
-        )
+        for alias, spot in expected.location.items():
+            assert _parked_at(r.get_current_value("location", alias=alias), spot), (
+                f"{alias} should be parked at {spot} -- narration: {narration!r}"
+            )
 
-        states = _event_states(r)
-        for alias in ("car_a_drive", "car_a_park", "car_b_drive", "car_b_park", "car_c_drive", "car_c_park"):
-            assert states.get(alias) == "complete", (alias, states)
+        try:
+            assert_subset("event_state", expected.event_state, _event_states(r))
+        except AssertionError as exc:
+            raise AssertionError(f"{exc} -- narration: {narration!r}") from exc
 
         times = {alias: write_time(r, "location", alias) for alias in ("car_b", "car_c", "car_a")}
         assert times["car_b"] == pytest.approx(1030), (

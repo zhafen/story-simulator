@@ -9,7 +9,7 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "emc2p[agents,mcp]",
+    "emc2p[agents,mcp,testing]",
     "matplotlib>=3.11.0",
     "mcp>=1.28.1",
     "psycopg[binary]>=3.2",
@@ -23,6 +23,9 @@ dependencies = [
 # already covered by this project's own bare `mcp` dependency above,
 # but declared explicitly too since mcp_server.py now imports
 # emc2p.mcp_server directly, not just incidentally sharing the package.
+# Its "testing" extra is likewise just documentation here (this project
+# already depends on pytest directly), declared so tests/test_human_validated
+# reusing emc2p.testing.expected_fixtures reads as an intentional dependency.
 
 [project.scripts]
 story-simulator-mcp = "story_simulator.mcp_server:main"

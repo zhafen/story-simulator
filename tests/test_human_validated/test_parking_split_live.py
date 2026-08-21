@@ -57,7 +57,12 @@ def test_parking_split_across_two_events_per_car(tmp_path):
 
     # This test's whole point is the *connected* model's own driving/parking
     # split reasoning -- explicit override of the keyed_subagent default.
-    with HeadlessSession(save_dir, responder="host") as session:
+    # Both timeouts raised well past HeadlessSession's own 120s/240s
+    # defaults -- confirmed live that a "host"-responder run driving all six
+    # resolve+plan steps itself (twice as many as the three-event race test)
+    # routinely needs more than the default 120s session_timeout, timing out
+    # mid-event rather than failing on anything about the simulation itself.
+    with HeadlessSession(save_dir, responder="host", turn_timeout=420, session_timeout=420) as session:
         print(f"HeadlessSession trace: {session.trace_path}")
         narration = session.send_turn(
             f"Use start_world with save_dir={save_dir} and scenario_dir={PARKING_SPLIT_SCENARIO_DIR} "

@@ -10,3 +10,4 @@ venv/
 render.svg
 /data/sandbox/
 /.live_test_traces/
+/.keyed_subagent_usage.jsonl

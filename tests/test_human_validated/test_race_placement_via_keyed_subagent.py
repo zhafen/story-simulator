@@ -7,7 +7,7 @@ tests/test_race_placement_live.py exercises against the *connected*
 model), since its expected finishing order is already known-good -- car_b
 first, car_c second, car_a third -- see that test's own docstring for
 why. The difference here is who answers each event's resolve/plan
-judgment call: HeadlessSession defaults to responder="keyed_subagent"
+judgment call: McpClientSession defaults to responder="keyed_subagent"
 (see its own docstring), so the connected model's own job narrows to just
 driving advance_simulation to "done" -- keyed_subagent (DeepSeek by
 default) does the actual reasoning and update_registry writes itself,
@@ -26,7 +26,7 @@ from pathlib import Path
 
 import pytest
 
-from test_human_validated.helpers import HeadlessSession, _event_states, _load_registrar, _placement
+from test_human_validated.helpers import McpClientSession, _event_states, _load_registrar, _placement
 from emc2p.testing.registry_checks import write_time
 
 REPO_ROOT = Path(__file__).parent.parent.parent
@@ -58,10 +58,10 @@ def test_race_placement_resolves_and_persists_via_keyed_subagent(tmp_path):
     """
     save_dir = tmp_path / "test_save"
 
-    # Both timeouts raised well past HeadlessSession's own 120s/240s defaults --
+    # Both timeouts raised well past McpClientSession's own 120s/240s defaults --
     # keyed_subagent's own nested DeepSeek rounds cost real time inside each call.
-    with HeadlessSession(save_dir, turn_timeout=420, session_timeout=420) as session:  # responder="keyed_subagent", the new default
-        print(f"HeadlessSession trace: {session.trace_path}")
+    with McpClientSession(save_dir, turn_timeout=420, session_timeout=420) as session:  # responder="keyed_subagent", the new default
+        print(f"McpClientSession trace: {session.trace_path}")
         narration = session.send_turn(
             f"Use start_world with save_dir={save_dir} and scenario_dir={RACE_SCENARIO_DIR} "
             f"to open a story-simulator world. Then {_DRIVE_TO_DONE_INSTRUCTION}"

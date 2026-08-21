@@ -29,7 +29,7 @@ from pathlib import Path
 
 import pytest
 
-from test_human_validated.helpers import HeadlessSession, _event_states, _load_registrar, _placement
+from test_human_validated.helpers import McpClientSession, _event_states, _load_registrar, _placement
 from emc2p.testing.registry_checks import write_time
 
 REPO_ROOT = Path(__file__).parent.parent.parent
@@ -74,8 +74,8 @@ def test_race_placement_recorded_in_order(tmp_path):
 
     # This test's whole point is the *connected* model's own arrival-order
     # reasoning -- explicit override of the keyed_subagent default.
-    with HeadlessSession(save_dir, responder="host") as session:
-        print(f"HeadlessSession trace: {session.trace_path}")
+    with McpClientSession(save_dir, responder="host") as session:
+        print(f"McpClientSession trace: {session.trace_path}")
         narration = session.send_turn(
             f"Use start_world with save_dir={save_dir} and scenario_dir={RACE_SCENARIO_DIR} "
             f"to open a story-simulator world. Then {_RUN_TO_DONE_RACE_INSTRUCTION}"

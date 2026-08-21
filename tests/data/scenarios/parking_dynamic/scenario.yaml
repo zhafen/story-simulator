@@ -1,0 +1,113 @@
+file_info:
+    - description: >
+        Fixture for tests/test_human_validated/test_car_parking_dynamic_live.py
+        and its deterministic sibling
+        (test_car_parking_dynamic_deterministic.py), following on from
+        tests/data/scenarios/parking_split/scenario.yaml (task #65) --
+        see docs/manifest/history.yaml: project_history.
+        combined_parking_test_removed's own follow-up note, and issue #57's
+        "Planning-events testing" scope. parking_split pre-plans both each
+        car's driving leg *and* its parking decision as two separate
+        events from turn zero. This scenario only pre-plans the driving
+        leg -- car_a_drive/car_b_drive/car_c_drive, same start_time/
+        duration facts as parking_split so arrival order is identical
+        (car_b arrives at 1020, car_c at 1080, car_a at 1800) -- with no
+        car_X_park event anywhere in the seed. Each car's own parking
+        event has to be created live, during that car's driving event's
+        own plan step (story_simulator.core.plan_events), exercising the
+        event-planning framework thread (splitting a compound decision
+        into separate events dynamically, not just hand-authored into a
+        scenario) rather than the mechanism generically (already covered,
+        with synthetic gizmo/domino events, by tests/test_event_loop.py).
+
+restaurant:
+    - object:
+        type: restaurant
+    - description:
+        value: >
+            A small restaurant with exactly two dedicated parking spots,
+            parking_spot_1 and parking_spot_2; anyone who misses both has
+            to park on the street instead. First-come, first-served:
+            whoever actually arrives first takes parking_spot_1, the next
+            takes parking_spot_2.
+
+parking_spot_1:
+    - object:
+        type: parking_spot
+    - description:
+        value: The first of the restaurant's two dedicated parking spots.
+
+parking_spot_2:
+    - object:
+        type: parking_spot
+    - description:
+        value: The second of the restaurant's two dedicated parking spots.
+
+street:
+    - object:
+        type: street
+    - description:
+        value: Ordinary street parking near the restaurant.
+
+car_a:
+    - object:
+        type: car
+    - description:
+        value: The car for friend A.
+
+car_a_drive:
+    - event:
+        start_time: 0
+        duration: 1800
+    - event_state:
+        value: planned
+    - involved_entity:
+        - value: car_a
+        - value: restaurant
+    - description:
+        value: >
+            car_a's drive to the restaurant. Once it arrives, whether and
+            where it actually parks is a separate decision that isn't
+            scheduled yet -- plan it as its own event once this one resolves.
+
+car_b:
+    - object:
+        type: car
+    - description:
+        value: The car for friend B.
+
+car_b_drive:
+    - event:
+        start_time: 300
+        duration: 720
+    - event_state:
+        value: planned
+    - involved_entity:
+        - value: car_b
+        - value: restaurant
+    - description:
+        value: >
+            car_b's drive to the restaurant. Once it arrives, whether and
+            where it actually parks is a separate decision that isn't
+            scheduled yet -- plan it as its own event once this one resolves.
+
+car_c:
+    - object:
+        type: car
+    - description:
+        value: The car for friend C.
+
+car_c_drive:
+    - event:
+        start_time: 480
+        duration: 600
+    - event_state:
+        value: planned
+    - involved_entity:
+        - value: car_c
+        - value: restaurant
+    - description:
+        value: >
+            car_c's drive to the restaurant. Once it arrives, whether and
+            where it actually parks is a separate decision that isn't
+            scheduled yet -- plan it as its own event once this one resolves.

@@ -583,3 +583,35 @@ project_history:
               entirely -- a genuine simplification the "no backward
               compatibility to preserve yet" mandate made possible to
               reach for instead of a workaround.
+    dynamic_parking_event_planning_test_added:
+        - description: >
+              New tests for #57's "Planning-events testing" scope, and the
+              event-planning-framework follow-up noted in this same file's
+              own combined_parking_test_removed entry ("events dynamically
+              scheduled during real gameplay's own plan step"). Every
+              existing parking scenario (parking/scenario.yaml,
+              parking_split/scenario.yaml) pre-plans every event from turn
+              zero; tests/test_event_loop.py already exercises plan_events
+              creating a follow-up event generically, but only with
+              synthetic gizmo/domino events, not a real domain decision.
+
+              tests/data/scenarios/parking_dynamic/scenario.yaml seeds only
+              each car's driving leg (car_a_drive/car_b_drive/car_c_drive,
+              the same start_time/duration facts as parking_split) -- no
+              car_X_park event exists until a driving event's own plan step
+              creates one. tests/test_human_validated/
+              test_car_parking_dynamic_deterministic.py is the no-LLM
+              system-correctness sibling (confirms the mechanism itself:
+              nothing pre-plans the parking events, a dynamically-created
+              one is exactly as poppable as anything seeded, and the full
+              walkthrough's prompts/registry state match exactly);
+              test_car_parking_dynamic_live.py is the live counterpart,
+              instructing the connected model to notice the follow-up is
+              needed and schedule it itself via update_registry (a fixed
+              10-second parking-event duration, matching parking_split's
+              own convention, so write-time ordering stays checkable the
+              same way). Not yet run live to a stable pass rate -- set up
+              alongside the deterministic sibling (which does pass) as
+              this thread's own regression fixture, following the same
+              deterministic-first pattern test_car_parking_deterministic.py
+              established.

@@ -1,0 +1,37 @@
+file_info:
+    - description: >
+          A running journal of zhafen's own thinking-out-loud about
+          prioritization and solution architecture -- prompted directly by
+          this session's live_testing_framework work (requirement/solution/
+          impact/cost, then consideration/consideration_rating scoring,
+          then the effect field) in story-simulator.yaml. Purely a record
+          of the monologue as it happens, not itself a requirement/solution
+          entity and not yet analysis or conclusions -- kept separate from
+          story-simulator.yaml the same way history.yaml is, so it isn't
+          scanned into audit.traceability/audit.requirement_coverage.
+    - file_info
+
+prioritization_reflections:
+    data:
+        - description: >
+              Entries are dated installments of one ongoing monologue, not
+              separate topics -- read in order.
+    2026-08-22_why_is_prioritization_hard:
+        - description: >
+              Opening question: why is it so hard to prioritize things, and
+              why is it so hard to have a setup that lets us quantify it?
+
+              Noticed pattern, called out explicitly as a pattern "by now":
+              repeatedly tries to build a methodical structure meant to
+              capture and process arbitrarily complex data (this session's
+              own requirement/impact/cost -> consideration/
+              consideration_rating -> effect-field progression in
+              live_testing_framework is the latest instance), and it just
+              fizzles -- doesn't feel like it's getting anywhere.
+
+              Two threads proposed to revisit, not yet answered:
+              (1) why things are too complex to capture easily, and
+              (2) when quantification actually *is* useful.
+
+              Said more is coming ("More in a bit") -- this entry is the
+              opening installment, not the full thought.

@@ -35,3 +35,52 @@ prioritization_reflections:
 
               Said more is coming ("More in a bit") -- this entry is the
               opening installment, not the full thought.
+    2026-08-22_when_does_discretization_work:
+        - description: >
+              Second installment, picking the "quantification" thread back
+              up. Reframes it: the more precise word is probably
+              "discretization" (there's likely an even better term for the
+              general move -- structural/model design, not just numeric
+              quantification -- but discretization is the working word for
+              now). Before judging whether discretization works, first need
+              to define what "it" actually is, and why it would or wouldn't
+              work -- so this entry is example-gathering toward that
+              definition, not an answer yet.
+
+              Examples considered:
+
+              Projectile motion under gravity -- a classic case, accurate to
+              a good approximation with a few relatively simple ingredients.
+
+              Electron shells in atoms -- a discrete structure, even though
+              atoms themselves are arguably continuous, and so are the
+              shells, since both are defined by wavefunctions that collapse.
+              Quantum mechanics has a very blurry line between continuous
+              and discrete built into it from the start, so it's plausible
+              that blurriness carries into everything built on top of QM
+              (not necessarily, but there's probably some relation). The
+              notable thing, though: despite that blurry discrete/continuous
+              line, QM is extremely well quantified -- simple problems can
+              be predicted very thoroughly and very easily. So the
+              discrete/continuous distinction itself doesn't seem to be
+              what determines whether quantification works.
+
+              Web3 -- named as a failed project: a graph-based knowledge
+              system meant to describe everything on the web. Contrasted
+              with natural language, which, given enough of it, can
+              arguably describe anything. This raises the actual question:
+              what do quantified/structured representations have that
+              other representations (like language) don't?
+
+              Working answer forming: it's about representation. There are
+              objects out there that need to be represented, for various
+              purposes. For living and getting around, language has been
+              very helpful; before language, sensory organs and behavior
+              served that role, transferring a large amount of information
+              that an animal's nervous system responds to.
+
+              Landing point for this installment: the real subject here is
+              modeling -- simplified representations, data models,
+              predictive models. That's the frame the next installment
+              should build on: when do simplified representations (models)
+              come into play, and when do they work.

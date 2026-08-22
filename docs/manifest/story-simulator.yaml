@@ -937,6 +937,62 @@ story_simulator_mission:
                       - type: developer_experience
                         value: 0.2
                 - work_state: in progress
+        considerations:
+            data:
+                - description: >
+                      Reusable pro/con axes candidate_solutions below rate
+                      themselves against -- iacs's own existing
+                      consideration/consideration_rating types (not a new
+                      component type), used exactly as their schema already
+                      supports: a consideration entity here defines one named
+                      axis's own description/weight (0-1, how much this axis
+                      matters), and each solution attaches one
+                      consideration_rating per individual pro or con,
+                      `value` matching one of these axis keys, `rating`
+                      -1 (con) to 1 (pro), `note` the specific point.
+            already_implemented:
+                - consideration:
+                      value: already_implemented
+                      description: >
+                          Whether this solution is already built and proven
+                          in the codebase today, not just designed on paper.
+                      weight: 0.6
+            reuse_and_generality:
+                - consideration:
+                      value: reuse_and_generality
+                      description: >
+                          Whether this solution's machinery is reusable/
+                          shared (benefits iacs/emc2p/story-simulator alike,
+                          or future scenarios) rather than bespoke to one
+                          case.
+                      weight: 0.6
+            human_authoring_experience:
+                - consideration:
+                      value: human_authoring_experience
+                      description: >
+                          How directly this solution serves
+                          centralized_scenario_authoring -- a human laying
+                          out a scenario, its expected values, and its test
+                          parameters together, in one place.
+                      weight: 1.0
+            coverage_completeness:
+                - consideration:
+                      value: coverage_completeness
+                      description: >
+                          How fully this solution actually solves the
+                          requirement(s) it's rated against, versus solving
+                          them only partially.
+                      weight: 0.5
+            engineering_risk:
+                - consideration:
+                      value: engineering_risk
+                      description: >
+                          New engineering effort and regression risk this
+                          solution would add -- rated so LOWER risk scores
+                          as a pro (positive) and HIGHER risk as a con
+                          (negative), same sign convention as every other
+                          consideration here.
+                      weight: 0.5
         candidate_solutions:
             data:
                 - description: >
@@ -945,11 +1001,13 @@ story_simulator_mission:
                       still-possible ones, scored with the same cost
                       vocabulary as everywhere else in this manifest (no
                       impact here -- see live_testing_framework's own
-                      description for why). Every entry stays work_state:
-                      new, same convention as scd_time_data.candidate_solutions
-                      above: "new" marks a candidate not yet formally settled
-                      on, independent of whether it happens to already be
-                      implemented.
+                      description for why) plus consideration_rating entries
+                      against the considerations above (one per pro/con
+                      point, replacing free-text PROS/CONS prose). Every
+                      entry stays work_state: new, same convention as
+                      scd_time_data.candidate_solutions above: "new" marks a
+                      candidate not yet formally settled on, independent of
+                      whether it happens to already be implemented.
             mcp_client_session_live_driver:
                 - description: >
                       HeadlessSession (a real `claude -p` subprocess) and
@@ -958,25 +1016,34 @@ story_simulator_mission:
                       drivers, with McpClientSession's own `responder`
                       construction-time argument picking
                       host/subagent/keyed_subagent.
-
-                      PROS: already implemented and exercised by every
-                      current live test; works with any litellm-supported
-                      model, not just Claude; satisfies
-                      switchable_test_agent's "static parameters" framing
-                      exactly (responder is fixed for the session's whole
-                      lifetime).
-
-                      CONS: two separate session classes to choose between
-                      rather than one; "subagent"-labeled answers aren't
-                      verified to have actually come from an isolated call
-                      (open TODO in resolve.py); switching responder mid-run
-                      isn't possible (a real limitation if a future
-                      requirement ever wants that).
                 - solution of: story_simulator_mission.live_testing_framework.requirements.live_agent_behavior_check
                 - solution of: story_simulator_mission.live_testing_framework.requirements.switchable_test_agent
                 - cost:
                       type: engineering_hours
                       value: 0
+                - consideration_rating:
+                      - value: already_implemented
+                        note: Already implemented and exercised by every current live test.
+                        rating: 0.9
+                      - value: reuse_and_generality
+                        note: >
+                            Works with any litellm-supported model, not just
+                            Claude; responder is a clean static per-session
+                            parameter, matching switchable_test_agent's
+                            "static parameters" framing exactly.
+                        rating: 0.6
+                      - value: engineering_risk
+                        note: >
+                            "subagent"-labeled answers aren't verified to
+                            have actually come from an isolated call (open
+                            TODO in resolve.py).
+                        rating: -0.3
+                      - value: coverage_completeness
+                        note: >
+                            Two separate session classes to choose between
+                            rather than one; switching responder mid-run
+                            isn't possible.
+                        rating: -0.2
                 - work_state: new
             expected_fixtures_manifest_framework:
                 - description: >
@@ -984,27 +1051,27 @@ story_simulator_mission:
                       assert_subset, ExpectedValueChecker) plus the
                       scenario_dir/expected.py directory-pairing convention,
                       shared by iacs, emc2p, and story-simulator.
-
-                      PROS: base comparison machinery genuinely lives in
-                      emc2p (satisfies machinery_lives_in_emc2p for the
-                      comparison half); a scenario_dir is a plain manifest,
-                      so adding one is just new data (scenario_variety);
-                      expected.py sits in a directory named after the
-                      scenario it describes, a partial step toward
-                      centralized_scenario_authoring.
-
-                      CONS: for story-simulator specifically, "paired" still
-                      means two separate files/directories a human opens
-                      one after the other, not one place; test parameters
-                      (responder, timeouts, turn instructions) live in a
-                      third location (Python), so
-                      centralized_scenario_authoring is only partly met.
                 - solution of: story_simulator_mission.live_testing_framework.requirements.scenario_variety
                 - solution of: story_simulator_mission.live_testing_framework.requirements.machinery_lives_in_emc2p
                 - solution of: story_simulator_mission.live_testing_framework.requirements.centralized_scenario_authoring
                 - cost:
                       type: engineering_hours
                       value: 0
+                - consideration_rating:
+                      - value: already_implemented
+                        note: Already implemented and exercised by the current scenario_variety/machinery_lives_in_emc2p solutions.
+                        rating: 0.8
+                      - value: reuse_and_generality
+                        note: Base comparison machinery genuinely lives in emc2p, not just story-simulator.
+                        rating: 0.7
+                      - value: human_authoring_experience
+                        note: >
+                            For story-simulator specifically, "paired" still
+                            means two separate files/directories a human
+                            opens one after the other, not one place; test
+                            parameters (responder, timeouts, turn
+                            instructions) live in a third location (Python).
+                        rating: -0.4
                 - work_state: new
             deterministic_hand_scripted_harness:
                 - description: >
@@ -1012,46 +1079,59 @@ story_simulator_mission:
                       advance_simulation/update_registry directly, in-process,
                       with hand-written "perfect" answers -- no LLM, no MCP
                       round-trip, no cost.
-
-                      PROS: fully deterministic and fast; isolates mechanism
-                      bugs from model-reasoning failures exactly as
-                      deterministic_machinery_check asks; checks exact prompt
-                      text and resume_token bookkeeping a live test can't
-                      easily assert on.
-
-                      CONS: one bespoke test function per scenario today, not
-                      wired into the shared Case/expected.py framework --
-                      adding a new deterministic scenario means writing new
-                      test code, not just new data, cutting against
-                      scenario_variety's "just add data" goal.
                 - solution of: story_simulator_mission.live_testing_framework.requirements.deterministic_machinery_check
                 - cost:
                       type: engineering_hours
                       value: 0
+                - consideration_rating:
+                      - value: already_implemented
+                        note: Already implemented and exercised today.
+                        rating: 0.7
+                      - value: coverage_completeness
+                        note: >
+                            Fully deterministic and fast; isolates mechanism
+                            bugs from model-reasoning failures exactly as
+                            deterministic_machinery_check asks; checks exact
+                            prompt text and resume_token bookkeeping a live
+                            test can't easily assert on.
+                        rating: 0.5
+                      - value: reuse_and_generality
+                        note: >
+                            One bespoke test function per scenario today, not
+                            wired into the shared Case/expected.py framework.
+                        rating: -0.5
                 - work_state: new
             case_dataclass_parametrization:
                 - description: >
                       test_scenario_resolution.py's own Case dataclass +
                       CASES list: one @pytest.mark.parametrize test function,
                       each case a scenario_dir/instruction/checks tuple.
-
-                      PROS: adding a run-to-completion scenario is a few
-                      lines, not a new file (proven with the race/
-                      parking_split consolidation); reuses
-                      expected_fixtures_manifest_framework's comparison
-                      machinery directly.
-
-                      CONS: only covers run-to-completion, not turn-by-turn
-                      (stepwise_or_completion_execution is still open);
-                      Case fields (responder, timeouts, instruction text) are
-                      Python, not data a non-engineer could edit --
-                      centralized_scenario_authoring's "human creators...
-                      easily" bar isn't met by this shape alone.
                 - solution of: story_simulator_mission.live_testing_framework.requirements.scenario_variety
                 - solution of: story_simulator_mission.live_testing_framework.requirements.stepwise_or_completion_execution
                 - cost:
                       type: engineering_hours
                       value: 0
+                - consideration_rating:
+                      - value: already_implemented
+                        note: >
+                            Already implemented; adding a run-to-completion
+                            scenario is a few lines, not a new file (proven
+                            with the race/parking_split consolidation).
+                        rating: 0.8
+                      - value: reuse_and_generality
+                        note: Reuses expected_fixtures_manifest_framework's comparison machinery directly.
+                        rating: 0.5
+                      - value: coverage_completeness
+                        note: Only covers run-to-completion, not turn-by-turn (stepwise_or_completion_execution is still open).
+                        rating: -0.4
+                      - value: human_authoring_experience
+                        note: >
+                            Case fields (responder, timeouts, instruction
+                            text) are Python, not data a non-engineer could
+                            edit -- centralized_scenario_authoring's "human
+                            creators... easily" bar isn't met by this shape
+                            alone.
+                        rating: -0.5
                 - work_state: new
             turn_list_case_extension:
                 - description: >
@@ -1060,22 +1140,33 @@ story_simulator_mission:
                       checks) pair, with expected.py growing named
                       checkpoint attributes (e.g. event_state_after_drive)
                       for whichever turns want a check.
-
-                      PROS: smallest change that actually enables
-                      stepwise_or_completion_execution; reuses every existing
-                      helper (assert_subset, _assert_write_order) unchanged;
-                      a single-turn Case degrades to today's exact behavior.
-
-                      CONS: doesn't touch centralized_scenario_authoring --
-                      turns/checks still live in test_scenario_resolution.py,
-                      not a human-editable central file; a scenario needing
-                      many checkpoints means many hand-written per-turn
-                      lambdas, the same duplication risk the original
-                      consolidation removed.
                 - solution of: story_simulator_mission.live_testing_framework.requirements.stepwise_or_completion_execution
                 - cost:
                       type: engineering_hours
                       value: 3
+                - consideration_rating:
+                      - value: engineering_risk
+                        note: >
+                            Smallest change that actually enables
+                            stepwise_or_completion_execution; reuses every
+                            existing helper (assert_subset,
+                            _assert_write_order) unchanged; a single-turn
+                            Case degrades to today's exact behavior.
+                        rating: 0.7
+                      - value: human_authoring_experience
+                        note: >
+                            Doesn't touch centralized_scenario_authoring --
+                            turns/checks still live in
+                            test_scenario_resolution.py, not a human-editable
+                            central file.
+                        rating: -0.6
+                      - value: reuse_and_generality
+                        note: >
+                            A scenario needing many checkpoints means many
+                            hand-written per-turn lambdas, the same
+                            duplication risk the original consolidation
+                            removed.
+                        rating: -0.3
                 - work_state: new
             data_driven_step_script:
                 - description: >
@@ -1085,22 +1176,6 @@ story_simulator_mission:
                       (in emc2p.testing, ideally) zips through it, dispatching
                       each named field to the right reader/leniency rule via
                       a lookup table.
-
-                      PROS: maximizes reuse -- a new step-by-step scenario
-                      becomes "write expected.py data", not "write test
-                      code"; pushes the step-runner itself into emc2p,
-                      strengthening machinery_lives_in_emc2p; closest fit to
-                      centralized_scenario_authoring of anything here short
-                      of single_scenario_yaml_file.
-
-                      CONS: needs a var-name -> reader/leniency-rule
-                      dispatch table, which just relocates
-                      case_dataclass_parametrization's per-field special-
-                      casing rather than removing it; putting instructions
-                      in expected.py blurs its job (today: pure expected
-                      values) into also being the test script; flat data
-                      instructions lose room for the scenario-specific
-                      narrative framing this codebase's prompts rely on.
                 - solution of: story_simulator_mission.live_testing_framework.requirements.stepwise_or_completion_execution
                 - solution of: story_simulator_mission.live_testing_framework.requirements.centralized_scenario_authoring
                 - cost:
@@ -1108,6 +1183,32 @@ story_simulator_mission:
                         value: 5
                       - type: regression_risk
                         value: 0.2
+                - consideration_rating:
+                      - value: reuse_and_generality
+                        note: >
+                            Maximizes reuse -- a new step-by-step scenario
+                            becomes "write expected.py data", not "write test
+                            code"; pushes the step-runner itself into emc2p,
+                            strengthening machinery_lives_in_emc2p.
+                        rating: 0.8
+                      - value: human_authoring_experience
+                        note: Closest fit to centralized_scenario_authoring of anything here short of single_scenario_yaml_file.
+                        rating: 0.5
+                      - value: engineering_risk
+                        note: >
+                            Needs a var-name -> reader/leniency-rule dispatch
+                            table, which just relocates
+                            case_dataclass_parametrization's per-field
+                            special-casing rather than removing it.
+                        rating: -0.4
+                      - value: coverage_completeness
+                        note: >
+                            Blurs expected.py's job (today: pure expected
+                            values) into also being the test script; flat
+                            data instructions lose room for the
+                            scenario-specific narrative framing this
+                            codebase's prompts rely on.
+                        rating: -0.2
                 - work_state: new
             single_scenario_yaml_file:
                 - description: >
@@ -1119,23 +1220,6 @@ story_simulator_mission:
                       timeouts, model) together -- a small generic
                       loader/runner living in emc2p.testing, story-simulator
                       supplying only the data file.
-
-                      PROS: closest realization of
-                      centralized_scenario_authoring's literal ask (one
-                      place, side by side); generalizes naturally to
-                      stepwise_or_completion_execution (a `steps:` list) and
-                      scenario_variety (variety = new directories); keeps
-                      machinery_lives_in_emc2p by construction (the loader is
-                      the only code, and it's upstream).
-
-                      CONS: real new engineering -- a small schema/DSL to
-                      design, parse, and validate, not a refactor of
-                      existing code; instruction text authored as flat data
-                      loses Python's f-string templating (save_dir/
-                      scenario_dir substitution needs its own mechanism,
-                      e.g. str.format or Jinja); the "which reader/leniency
-                      rule applies to which field" question doesn't go away,
-                      it just moves into the new loader's own vocabulary.
                 - solution of: story_simulator_mission.live_testing_framework.requirements.centralized_scenario_authoring
                 - solution of: story_simulator_mission.live_testing_framework.requirements.stepwise_or_completion_execution
                 - solution of: story_simulator_mission.live_testing_framework.requirements.machinery_lives_in_emc2p
@@ -1144,6 +1228,33 @@ story_simulator_mission:
                         value: 8
                       - type: regression_risk
                         value: 0.3
+                - consideration_rating:
+                      - value: human_authoring_experience
+                        note: Closest realization of centralized_scenario_authoring's literal ask (one place, side by side).
+                        rating: 0.9
+                      - value: reuse_and_generality
+                        note: >
+                            Generalizes naturally to
+                            stepwise_or_completion_execution (a `steps:`
+                            list) and scenario_variety (variety = new
+                            directories); keeps machinery_lives_in_emc2p by
+                            construction (the loader is the only code, and
+                            it's upstream).
+                        rating: 0.6
+                      - value: engineering_risk
+                        note: >
+                            Real new engineering -- a small schema/DSL to
+                            design, parse, and validate, not a refactor of
+                            existing code.
+                        rating: -0.6
+                      - value: coverage_completeness
+                        note: >
+                            Instruction text authored as flat data loses
+                            Python's f-string templating; the "which
+                            reader/leniency rule applies to which field"
+                            question doesn't go away, it just moves into the
+                            new loader's own vocabulary.
+                        rating: -0.3
                 - work_state: new
             human_review_doc_generator:
                 - description: >
@@ -1153,23 +1264,30 @@ story_simulator_mission:
                       Markdown) laying out the scenario input, instructions,
                       and expected values side by side, regenerated from the
                       existing sources so it can't drift.
-
-                      PROS: directly and cheaply satisfies the "review side
-                      by side" half of centralized_scenario_authoring
-                      without touching any test mechanics -- zero regression
-                      risk, machinery_lives_in_emc2p entirely untouched.
-
-                      CONS: doesn't change how a human authors a scenario --
-                      still edits three files/formats even if they can
-                      review one generated doc; needs its own small
-                      generator to keep the doc in sync, new tooling for a
-                      docs-only deliverable that doesn't move
-                      stepwise_or_completion_execution or scenario_variety
-                      forward at all.
                 - solution of: story_simulator_mission.live_testing_framework.requirements.centralized_scenario_authoring
                 - cost:
                       type: engineering_hours
                       value: 2
+                - consideration_rating:
+                      - value: engineering_risk
+                        note: Zero regression risk, machinery_lives_in_emc2p entirely untouched.
+                        rating: 0.8
+                      - value: human_authoring_experience
+                        note: Directly and cheaply satisfies the "review side by side" half of centralized_scenario_authoring.
+                        rating: 0.3
+                      - value: human_authoring_experience
+                        note: >
+                            Doesn't change how a human authors a scenario --
+                            still edits three files/formats even if they can
+                            review one generated doc.
+                        rating: -0.5
+                      - value: coverage_completeness
+                        note: >
+                            Needs its own small generator to keep the doc in
+                            sync; doesn't move
+                            stepwise_or_completion_execution or
+                            scenario_variety forward at all.
+                        rating: -0.3
                 - work_state: new
 
 # What satisfies each done (or partially done) requirement. Most solutions

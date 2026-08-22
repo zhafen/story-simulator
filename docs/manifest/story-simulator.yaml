@@ -786,40 +786,45 @@ story_simulator_mission:
     live_testing_framework:
         data:
             - description: >
-                  What the live-testing solution (tests/test_human_validated/
-                  in this repo, emc2p.testing/emc2p.testing.expected_fixtures
-                  upstream) must actually guarantee, sharpened into seven
-                  concrete requirements after this session's work
-                  consolidating test_scenario_resolution.py and dropping the
-                  emc2p submodule. Sibling to live_model_test_coverage (a
-                  still-open, more general "have real-model coverage at all"
-                  requirement) -- this subtree is about the shape of the
-                  testing solution itself, not just whether coverage exists.
+                  Seven concrete requirements for what the live-testing
+                  solution (tests/test_human_validated/ in this repo,
+                  emc2p.testing/emc2p.testing.expected_fixtures upstream) must
+                  actually guarantee.
+
+                  Sharpened after this session's work consolidating
+                  test_scenario_resolution.py and dropping the emc2p submodule.
+                  Sibling to live_model_test_coverage (a still-open, more
+                  general "have real-model coverage at all" requirement) --
+                  this subtree is about the shape of the testing solution
+                  itself, not just whether coverage exists.
 
                   requirements/ and candidate_solutions/ are kept at the same
                   nesting depth deliberately -- a requirement only carries
-                  impact (what it's worth once satisfied), never cost: we
-                  don't know what satisfying an abstract requirement costs in
-                  the abstract, only what a specific solution costs. A
-                  solution only carries cost (what it costs to build/adopt),
-                  never impact: a solution's impact IS the impact of
-                  whichever requirement(s) it satisfies (its own `solution
-                  of` links), not a separate number to invent per solution.
+                  impact (what it's worth once satisfied), never cost: we don't
+                  know what satisfying an abstract requirement costs in the
+                  abstract, only what a specific solution costs. A solution
+                  only carries cost (what it costs to build/adopt), never
+                  impact: a solution's impact IS the impact of whichever
+                  requirement(s) it satisfies (its own `solution of` links),
+                  not a separate number to invent per solution.
         requirements:
             data:
                 - description: >
-                      The seven requirements themselves -- see the impact/
-                      cost split explained on live_testing_framework's own
-                      description above.
+                      The seven requirements themselves.
+
+                      See the impact/cost split explained on
+                      live_testing_framework's own description above.
             scenario_variety:
                 - description: >
                       Must enable testing a variety of scenarios -- adding a
-                      new scenario (a new manifest-style scenario_dir plus
-                      its own expected.py) shouldn't require new test-harness
-                      code, just new data. Mostly true today: iacs's own
-                      example_dirs() parametrization and this repo's Case
-                      list (test_scenario_resolution.py) both add a scenario
-                      as a few lines, not a new file.
+                      new scenario shouldn't require new test-harness code,
+                      just new data.
+
+                      Mostly true today: a new scenario is just a new
+                      manifest-style scenario_dir plus its own expected.py;
+                      iacs's own example_dirs() parametrization and this repo's
+                      Case list (test_scenario_resolution.py) both add a
+                      scenario as a few lines, not a new file.
                 - requirement
                 - impact:
                       type: reliability
@@ -829,11 +834,13 @@ story_simulator_mission:
                 - description: >
                       Must enable testing how an agent performs live for a
                       given scenario -- a real model, over a real MCP
-                      round-trip, reasoning about the scenario itself (not a
-                      mocked LLM). Live today via McpClientSession/
-                      HeadlessSession (emc2p.testing) and @pytest.mark.live
-                      tests, but responder="subagent" isolation is unverified
-                      (see the TODO in story_simulator/resolve.py's
+                      round-trip, reasoning about the scenario itself, not a
+                      mocked LLM.
+
+                      Live today via McpClientSession/HeadlessSession
+                      (emc2p.testing) and @pytest.mark.live tests, but
+                      responder="subagent" isolation is unverified (see the
+                      TODO in story_simulator/resolve.py's
                       _frame_for_responder).
                 - requirement
                 - impact:
@@ -844,11 +851,12 @@ story_simulator_mission:
                 - description: >
                       Must enable testing how the simulation machinery itself
                       works for a given scenario by accepting pre-determined
-                      static input -- isolating "does the mechanism work"
-                      from "does the model reason correctly", with no LLM and
-                      no cost. Done for one scenario
-                      (test_car_parking_deterministic.py, hand-scripted
-                      answers driven directly through
+                      static input -- isolating "does the mechanism work" from
+                      "does the model reason correctly", with no LLM and no
+                      cost.
+
+                      Done for one scenario (test_car_parking_deterministic.py,
+                      hand-scripted answers driven directly through
                       advance_simulation/update_registry), but not yet folded
                       into the same Case/expected.py framework
                       scenario_variety's other solutions use.
@@ -859,14 +867,15 @@ story_simulator_mission:
                 - work_state: in progress
             switchable_test_agent:
                 - description: >
-                      Must allow the agent executing the process to be
-                      switched to and from a CLI from the host (e.g. claude)
-                      or a keyed subagent, for now depending on static
-                      parameters -- no requirement yet that this be chosen
-                      dynamically mid-run. Done via HeadlessSession (spawns
-                      `claude -p` as a real subprocess) versus
-                      McpClientSession's own `responder` construction-time
-                      argument ("host"/"subagent"/"keyed_subagent", see
+                      Must allow the agent executing the process to be switched
+                      to and from a CLI from the host (e.g. claude) or a keyed
+                      subagent, for now depending on static parameters.
+
+                      No requirement yet that this be chosen dynamically
+                      mid-run. Done via HeadlessSession (spawns `claude -p` as
+                      a real subprocess) versus McpClientSession's own
+                      `responder` construction-time argument
+                      ("host"/"subagent"/"keyed_subagent", see
                       story_simulator.keyed_subagent) -- both a static,
                       per-session choice, matching what's asked for here.
                 - requirement
@@ -878,19 +887,20 @@ story_simulator_mission:
                 - work_state: in progress
             centralized_scenario_authoring:
                 - description: >
-                      HIGHEST PRIORITY. Must allow the human creators to
-                      easily lay out a scenario, the expected values, and
-                      test parameters side by side in one centralized
-                      location -- humans need to look at what the scenario is
-                      and what they expect to come of it together, not
-                      reconstruct that pairing by reading several files. Not
-                      done today: a scenario's manifest
-                      (tests/data/scenarios/<name>/), its expected.py
-                      (tests/test_human_validated/expected/<name>.py), and
-                      its test parameters (responder, timeouts, turn
-                      instructions -- test_scenario_resolution.py's Case
-                      list) are three separate locations in two different
-                      formats (YAML data, Python data/code).
+                      HIGHEST PRIORITY. Must allow the human creators to easily
+                      lay out a scenario, the expected values, and test
+                      parameters side by side in one centralized location.
+
+                      Humans need to look at what the scenario is and what they
+                      expect to come of it together, not reconstruct that
+                      pairing by reading several files. Not done today: a
+                      scenario's manifest (tests/data/scenarios/<name>/), its
+                      expected.py
+                      (tests/test_human_validated/expected/<name>.py), and its
+                      test parameters (responder, timeouts, turn instructions
+                      -- test_scenario_resolution.py's Case list) are three
+                      separate locations in two different formats (YAML data,
+                      Python data/code).
                 - requirement
                 - impact:
                       - type: developer_experience
@@ -902,14 +912,15 @@ story_simulator_mission:
                 - description: >
                       Must allow running to completion or turn by turn, for a
                       given scenario -- derived from
-                      centralized_scenario_authoring: if humans lay out a
-                      scenario/expected-values/parameters together, one of
-                      those parameters should be able to say "stop and check
-                      after each turn" instead of only "run everything, check
-                      the end state". Run-to-completion is done (every
-                      current live test sends one open-ended instruction);
-                      turn-by-turn against this same framework is not
-                      implemented yet.
+                      centralized_scenario_authoring.
+
+                      If humans lay out a scenario/expected-values/parameters
+                      together, one of those parameters should be able to say
+                      "stop and check after each turn" instead of only "run
+                      everything, check the end state". Run-to-completion is
+                      done (every current live test sends one open-ended
+                      instruction); turn-by-turn against this same framework is
+                      not implemented yet.
                 - requirement
                 - impact:
                       - type: reliability
@@ -919,17 +930,18 @@ story_simulator_mission:
                 - work_state: in progress
             machinery_lives_in_emc2p:
                 - description: >
-                      Base machinery must live in emc2p; story-simulator
-                      should contain minimal additions built on top, or no
-                      additions at all, just scenario definitions. Partially
-                      true today: emc2p.testing.expected_fixtures/
-                      headless_session/mcp_client_session/registry_checks are
-                      all generic upstream infrastructure, but
-                      story_simulator.keyed_subagent (the actual
-                      keyed-subagent tool-calling dispatch) and every
-                      Case/instruction/checks definition in
-                      test_scenario_resolution.py are story-simulator-local
-                      Python, not just scenario data.
+                      Base machinery must live in emc2p; story-simulator should
+                      contain minimal additions built on top, or no additions
+                      at all, just scenario definitions.
+
+                      Partially true today: emc2p.testing's own
+                      expected_fixtures, headless_session, mcp_client_session,
+                      and registry_checks modules are all generic upstream
+                      infrastructure, but
+                      story_simulator.keyed_subagent (the actual keyed-subagent
+                      tool-calling dispatch) and every Case/instruction/checks
+                      definition in test_scenario_resolution.py are
+                      story-simulator-local Python, not just scenario data.
                 - requirement
                 - impact:
                       - type: architecture_clarity
@@ -941,50 +953,54 @@ story_simulator_mission:
             data:
                 - description: >
                       Reusable pro/con axes candidate_solutions below rate
-                      themselves against -- iacs's own existing
+                      themselves against, using iacs's own existing
                       consideration/consideration_rating types (not a new
-                      component type), used exactly as their schema already
-                      supports, with the sign/direction and the magnitude
-                      split across the two: a consideration entity here
-                      defines one named axis's own description and `weight`
-                      (-1 to 1 -- the sign says whether MORE of this axis's
-                      quality is good (positive) or bad (negative) for a
-                      solution, the magnitude says how much this axis
-                      matters overall), while each solution's own
-                      consideration_rating instances say `rating` (0 to 1,
-                      unsigned -- how much of this axis's quality this
-                      specific point shows this solution has, regardless of
-                      whether that's good or bad news) plus `note` (the
-                      specific point) and `value` (which axis key). A
-                      solution's actual weighted contribution on one axis is
-                      `weight * rating`, so the sign only ever comes from
-                      the axis, never from an individual rating.
+                      component type).
+
+                      Used exactly as their schema already supports, with the
+                      sign/direction and the magnitude split across the two: a
+                      consideration entity here defines one named axis's own
+                      description and `weight` (-1 to 1 -- the sign says
+                      whether MORE of this axis's quality is good (positive) or
+                      bad (negative) for a solution, the magnitude says how
+                      much this axis matters overall), while each solution's
+                      own consideration_rating instances say `rating` (0 to 1,
+                      unsigned -- how much of this axis's quality this specific
+                      point shows this solution has, regardless of whether
+                      that's good or bad news) plus `note` (the specific point)
+                      and `value` (which axis key). A solution's actual
+                      weighted contribution on one axis is `weight * rating`,
+                      so the sign only ever comes from the axis, never from an
+                      individual rating.
             already_implemented:
                 - consideration:
                       value: already_implemented
                       description: >
-                          Whether this solution is already built and proven
-                          in the codebase today, not just designed on paper
-                          -- more is better, so positive weight.
+                          Whether this solution is already built and proven in
+                          the codebase today, not just designed on paper.
+
+                          More is better, so positive weight.
                       weight: 0.6
             reuse_and_generality:
                 - consideration:
                       value: reuse_and_generality
                       description: >
-                          Whether this solution's machinery is reusable/
-                          shared (benefits iacs/emc2p/story-simulator alike,
-                          or future scenarios) rather than bespoke to one
-                          case -- more is better, so positive weight.
+                          Whether this solution's machinery is reusable/shared
+                          (benefits iacs/emc2p/story-simulator alike, or future
+                          scenarios) rather than bespoke to one case.
+
+                          More is better, so positive weight.
                       weight: 0.6
             human_authoring_experience:
                 - consideration:
                       value: human_authoring_experience
                       description: >
                           How directly this solution serves
-                          centralized_scenario_authoring -- a human laying
-                          out a scenario, its expected values, and its test
-                          parameters together, in one place -- more is
-                          better, so positive weight (the highest here,
+                          centralized_scenario_authoring -- a human laying out
+                          a scenario, its expected values, and its test
+                          parameters together, in one place.
+
+                          More is better, so positive weight (the highest here,
                           matching that requirement's own top priority).
                       weight: 1.0
             coverage_completeness:
@@ -993,42 +1009,47 @@ story_simulator_mission:
                       description: >
                           How fully this solution actually solves the
                           requirement(s) it's rated against, versus solving
-                          them only partially -- more is better, so positive
-                          weight.
+                          them only partially.
+
+                          More is better, so positive weight.
                       weight: 0.5
             engineering_risk:
                 - consideration:
                       value: engineering_risk
                       description: >
-                          How much new engineering effort/regression risk
-                          this solution would add -- unlike the other axes
-                          here, MORE of this is worse, so this is the one
-                          negative weight: a rating close to 1 (high risk)
-                          pulls a solution's total down, a rating close to 0
-                          (low risk) leaves it roughly untouched.
+                          How much new engineering effort/regression risk this
+                          solution would add.
+
+                          Unlike the other axes here, MORE of this is worse, so
+                          this is the one negative weight: a rating close to 1
+                          (high risk) pulls a solution's total down, a rating
+                          close to 0 (low risk) leaves it roughly untouched.
                       weight: -0.5
         candidate_solutions:
             data:
                 - description: >
                       Design options against the seven requirements above --
                       both already-implemented (this session's own work) and
-                      still-possible ones, scored with the same cost
-                      vocabulary as everywhere else in this manifest (no
-                      impact here -- see live_testing_framework's own
-                      description for why) plus consideration_rating entries
-                      against the considerations above (one per pro/con
-                      point, replacing free-text PROS/CONS prose). Every
-                      entry stays work_state: new, same convention as
-                      scd_time_data.candidate_solutions above: "new" marks a
-                      candidate not yet formally settled on, independent of
-                      whether it happens to already be implemented.
+                      still-possible ones.
+
+                      Scored with the same cost vocabulary as everywhere else
+                      in this manifest (no impact here -- see
+                      live_testing_framework's own description for why) plus
+                      consideration_rating entries against the considerations
+                      above (one per pro/con point, replacing free-text
+                      PROS/CONS prose). Every entry stays work_state: new, same
+                      convention as scd_time_data.candidate_solutions above:
+                      "new" marks a candidate not yet formally settled on,
+                      independent of whether it happens to already be
+                      implemented.
             mcp_client_session_live_driver:
                 - description: >
                       HeadlessSession (a real `claude -p` subprocess) and
-                      McpClientSession (any litellm model, via
-                      emc2p.agents.tool_calling_loop) as the two live-agent
-                      drivers, with McpClientSession's own `responder`
-                      construction-time argument picking
+                      McpClientSession (any litellm model) as the two
+                      live-agent drivers.
+
+                      McpClientSession's own `responder` construction-time
+                      argument (via emc2p.agents.tool_calling_loop) picks
                       host/subagent/keyed_subagent.
                 - solution of: story_simulator_mission.live_testing_framework.requirements.live_agent_behavior_check
                 - solution of: story_simulator_mission.live_testing_framework.requirements.switchable_test_agent
@@ -1061,10 +1082,12 @@ story_simulator_mission:
                 - work_state: new
             expected_fixtures_manifest_framework:
                 - description: >
-                      emc2p.testing.expected_fixtures (example_dirs,
-                      assert_subset, ExpectedValueChecker) plus the
+                      emc2p.testing.expected_fixtures plus the
                       scenario_dir/expected.py directory-pairing convention,
                       shared by iacs, emc2p, and story-simulator.
+
+                      Provides example_dirs, assert_subset, and
+                      ExpectedValueChecker as the actual comparison machinery.
                 - solution of: story_simulator_mission.live_testing_framework.requirements.scenario_variety
                 - solution of: story_simulator_mission.live_testing_framework.requirements.machinery_lives_in_emc2p
                 - solution of: story_simulator_mission.live_testing_framework.requirements.centralized_scenario_authoring
@@ -1091,8 +1114,9 @@ story_simulator_mission:
                 - description: >
                       test_car_parking_deterministic.py's own approach: drive
                       advance_simulation/update_registry directly, in-process,
-                      with hand-written "perfect" answers -- no LLM, no MCP
-                      round-trip, no cost.
+                      with hand-written "perfect" answers.
+
+                      No LLM, no MCP round-trip, no cost.
                 - solution of: story_simulator_mission.live_testing_framework.requirements.deterministic_machinery_check
                 - cost:
                       type: engineering_hours
@@ -1117,9 +1141,11 @@ story_simulator_mission:
                 - work_state: new
             case_dataclass_parametrization:
                 - description: >
-                      test_scenario_resolution.py's own Case dataclass +
-                      CASES list: one @pytest.mark.parametrize test function,
-                      each case a scenario_dir/instruction/checks tuple.
+                      test_scenario_resolution.py's own Case dataclass + CASES
+                      list.
+
+                      One @pytest.mark.parametrize test function, each case a
+                      scenario_dir/instruction/checks tuple.
                 - solution of: story_simulator_mission.live_testing_framework.requirements.scenario_variety
                 - solution of: story_simulator_mission.live_testing_framework.requirements.stepwise_or_completion_execution
                 - cost:
@@ -1150,10 +1176,12 @@ story_simulator_mission:
             turn_list_case_extension:
                 - description: >
                       Possible, not yet built: change Case.instruction: str to
-                      Case.turns: list[Turn], each Turn a (instruction,
-                      checks) pair, with expected.py growing named
-                      checkpoint attributes (e.g. event_state_after_drive)
-                      for whichever turns want a check.
+                      Case.turns: list[Turn], each Turn a (instruction, checks)
+                      pair.
+
+                      expected.py would grow named checkpoint attributes (e.g.
+                      event_state_after_drive) for whichever turns want a
+                      check.
                 - solution of: story_simulator_mission.live_testing_framework.requirements.stepwise_or_completion_execution
                 - cost:
                       type: engineering_hours
@@ -1184,12 +1212,13 @@ story_simulator_mission:
                 - work_state: new
             data_driven_step_script:
                 - description: >
-                      Possible, not yet built: expected.py grows a `steps`
-                      list (each step a dict of instruction + named-field
-                      expected values), and one fully generic step-runner
-                      (in emc2p.testing, ideally) zips through it, dispatching
-                      each named field to the right reader/leniency rule via
-                      a lookup table.
+                      Possible, not yet built: expected.py grows a `steps` list
+                      (each step a dict of instruction + named-field expected
+                      values).
+
+                      One fully generic step-runner (in emc2p.testing, ideally)
+                      zips through it, dispatching each named field to the
+                      right reader/leniency rule via a lookup table.
                 - solution of: story_simulator_mission.live_testing_framework.requirements.stepwise_or_completion_execution
                 - solution of: story_simulator_mission.live_testing_framework.requirements.centralized_scenario_authoring
                 - cost:
@@ -1226,14 +1255,14 @@ story_simulator_mission:
                 - work_state: new
             single_scenario_yaml_file:
                 - description: >
-                      Possible, not yet built: one data file per scenario
-                      (e.g. tests/scenarios/<name>/test_case.yaml) holding the
-                      scenario manifest (or a reference to it), the ordered
-                      turn instructions, the expected values at each
-                      checkpoint, AND the test parameters (responder,
-                      timeouts, model) together -- a small generic
-                      loader/runner living in emc2p.testing, story-simulator
-                      supplying only the data file.
+                      Possible, not yet built: one data file per scenario (e.g.
+                      tests/scenarios/<name>/test_case.yaml) holding the
+                      scenario manifest, ordered turn instructions, expected
+                      values, and test parameters all together.
+
+                      A small generic loader/runner would live in
+                      emc2p.testing, with story-simulator supplying only the
+                      data file.
                 - solution of: story_simulator_mission.live_testing_framework.requirements.centralized_scenario_authoring
                 - solution of: story_simulator_mission.live_testing_framework.requirements.stepwise_or_completion_execution
                 - solution of: story_simulator_mission.live_testing_framework.requirements.machinery_lives_in_emc2p
@@ -1272,12 +1301,13 @@ story_simulator_mission:
                 - work_state: new
             human_review_doc_generator:
                 - description: >
-                      Possible, not yet built: keep scenario/expected/
-                      parameters as separate files exactly as today, but
-                      auto-generate one per-scenario human-facing doc (e.g.
-                      Markdown) laying out the scenario input, instructions,
-                      and expected values side by side, regenerated from the
-                      existing sources so it can't drift.
+                      Possible, not yet built: keep
+                      scenario/expected/parameters as separate files exactly as
+                      today, but auto-generate one per-scenario human-facing
+                      doc (e.g. Markdown) laying out the scenario input,
+                      instructions, and expected values side by side.
+
+                      Regenerated from the existing sources so it can't drift.
                 - solution of: story_simulator_mission.live_testing_framework.requirements.centralized_scenario_authoring
                 - cost:
                       type: engineering_hours

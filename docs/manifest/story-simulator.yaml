@@ -1060,6 +1060,7 @@ story_simulator_mission:
                       - value: already_implemented
                         note: Already implemented and exercised by every current live test.
                         rating: 0.95
+                        effect: major pro
                       - value: reuse_and_generality
                         note: >
                             Works with any litellm-supported model, not just
@@ -1067,18 +1068,21 @@ story_simulator_mission:
                             parameter, matching switchable_test_agent's
                             "static parameters" framing exactly.
                         rating: 0.8
+                        effect: major pro
                       - value: engineering_risk
                         note: >
                             "subagent"-labeled answers aren't verified to
                             have actually come from an isolated call (open
                             TODO in resolve.py).
                         rating: 0.65
+                        effect: minor con
                       - value: coverage_completeness
                         note: >
                             Two separate session classes to choose between
                             rather than one; switching responder mid-run
                             isn't possible.
                         rating: 0.4
+                        effect: minor pro
                 - work_state: new
             expected_fixtures_manifest_framework:
                 - description: >
@@ -1098,9 +1102,11 @@ story_simulator_mission:
                       - value: already_implemented
                         note: Already implemented and exercised by the current scenario_variety/machinery_lives_in_emc2p solutions.
                         rating: 0.9
+                        effect: major pro
                       - value: reuse_and_generality
                         note: Base comparison machinery genuinely lives in emc2p, not just story-simulator.
                         rating: 0.85
+                        effect: major pro
                       - value: human_authoring_experience
                         note: >
                             For story-simulator specifically, "paired" still
@@ -1109,6 +1115,7 @@ story_simulator_mission:
                             parameters (responder, timeouts, turn
                             instructions) live in a third location (Python).
                         rating: 0.3
+                        effect: minor pro
                 - work_state: new
             deterministic_hand_scripted_harness:
                 - description: >
@@ -1125,6 +1132,7 @@ story_simulator_mission:
                       - value: already_implemented
                         note: Already implemented and exercised today.
                         rating: 0.85
+                        effect: major pro
                       - value: coverage_completeness
                         note: >
                             Fully deterministic and fast; isolates mechanism
@@ -1133,11 +1141,13 @@ story_simulator_mission:
                             prompt text and resume_token bookkeeping a live
                             test can't easily assert on.
                         rating: 0.75
+                        effect: minor pro
                       - value: reuse_and_generality
                         note: >
                             One bespoke test function per scenario today, not
                             wired into the shared Case/expected.py framework.
                         rating: 0.25
+                        effect: minor pro
                 - work_state: new
             case_dataclass_parametrization:
                 - description: >
@@ -1158,12 +1168,15 @@ story_simulator_mission:
                             scenario is a few lines, not a new file (proven
                             with the race/parking_split consolidation).
                         rating: 0.9
+                        effect: major pro
                       - value: reuse_and_generality
                         note: Reuses expected_fixtures_manifest_framework's comparison machinery directly.
                         rating: 0.75
+                        effect: major pro
                       - value: coverage_completeness
                         note: Only covers run-to-completion, not turn-by-turn (stepwise_or_completion_execution is still open).
                         rating: 0.3
+                        effect: minor pro
                       - value: human_authoring_experience
                         note: >
                             Case fields (responder, timeouts, instruction
@@ -1172,6 +1185,7 @@ story_simulator_mission:
                             creators... easily" bar isn't met by this shape
                             alone.
                         rating: 0.25
+                        effect: minor pro
                 - work_state: new
             turn_list_case_extension:
                 - description: >
@@ -1195,6 +1209,7 @@ story_simulator_mission:
                             _assert_write_order) unchanged; a single-turn
                             Case degrades to today's exact behavior.
                         rating: 0.15
+                        effect: no effect
                       - value: human_authoring_experience
                         note: >
                             Doesn't touch centralized_scenario_authoring --
@@ -1202,6 +1217,7 @@ story_simulator_mission:
                             test_scenario_resolution.py, not a human-editable
                             central file.
                         rating: 0.2
+                        effect: minor pro
                       - value: reuse_and_generality
                         note: >
                             A scenario needing many checkpoints means many
@@ -1209,6 +1225,7 @@ story_simulator_mission:
                             duplication risk the original consolidation
                             removed.
                         rating: 0.35
+                        effect: minor pro
                 - work_state: new
             data_driven_step_script:
                 - description: >
@@ -1234,9 +1251,11 @@ story_simulator_mission:
                             code"; pushes the step-runner itself into emc2p,
                             strengthening machinery_lives_in_emc2p.
                         rating: 0.9
+                        effect: major pro
                       - value: human_authoring_experience
                         note: Closest fit to centralized_scenario_authoring of anything here short of single_scenario_yaml_file.
                         rating: 0.75
+                        effect: major pro
                       - value: engineering_risk
                         note: >
                             Needs a var-name -> reader/leniency-rule dispatch
@@ -1244,6 +1263,7 @@ story_simulator_mission:
                             case_dataclass_parametrization's per-field
                             special-casing rather than removing it.
                         rating: 0.7
+                        effect: minor con
                       - value: coverage_completeness
                         note: >
                             Blurs expected.py's job (today: pure expected
@@ -1252,6 +1272,7 @@ story_simulator_mission:
                             scenario-specific narrative framing this
                             codebase's prompts rely on.
                         rating: 0.4
+                        effect: minor pro
                 - work_state: new
             single_scenario_yaml_file:
                 - description: >
@@ -1275,6 +1296,7 @@ story_simulator_mission:
                       - value: human_authoring_experience
                         note: Closest realization of centralized_scenario_authoring's literal ask (one place, side by side).
                         rating: 0.95
+                        effect: major pro
                       - value: reuse_and_generality
                         note: >
                             Generalizes naturally to
@@ -1284,12 +1306,14 @@ story_simulator_mission:
                             construction (the loader is the only code, and
                             it's upstream).
                         rating: 0.8
+                        effect: major pro
                       - value: engineering_risk
                         note: >
                             Real new engineering -- a small schema/DSL to
                             design, parse, and validate, not a refactor of
                             existing code.
                         rating: 0.8
+                        effect: major con
                       - value: coverage_completeness
                         note: >
                             Instruction text authored as flat data loses
@@ -1298,6 +1322,7 @@ story_simulator_mission:
                             question doesn't go away, it just moves into the
                             new loader's own vocabulary.
                         rating: 0.35
+                        effect: minor pro
                 - work_state: new
             human_review_doc_generator:
                 - description: >
@@ -1316,15 +1341,18 @@ story_simulator_mission:
                       - value: engineering_risk
                         note: Zero regression risk, machinery_lives_in_emc2p entirely untouched.
                         rating: 0.1
+                        effect: no effect
                       - value: human_authoring_experience
                         note: Directly and cheaply satisfies the "review side by side" half of centralized_scenario_authoring.
                         rating: 0.65
+                        effect: major pro
                       - value: human_authoring_experience
                         note: >
                             Doesn't change how a human authors a scenario --
                             still edits three files/formats even if they can
                             review one generated doc.
                         rating: 0.25
+                        effect: minor pro
                       - value: coverage_completeness
                         note: >
                             Needs its own small generator to keep the doc in
@@ -1332,6 +1360,7 @@ story_simulator_mission:
                             stepwise_or_completion_execution or
                             scenario_variety forward at all.
                         rating: 0.35
+                        effect: minor pro
                 - work_state: new
 
 # What satisfies each done (or partially done) requirement. Most solutions

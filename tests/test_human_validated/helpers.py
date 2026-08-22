@@ -7,8 +7,9 @@ sibling test module in this tests/test_human_validated/ package. Carries
 no live test of its own: the original combined driving+parking scenario
 this file used to test (test_car_parking_core_sim) was removed once it
 became clear that combined event resolves unreliably in a way the
-split-events structure (test_parking_split_live.py) doesn't -- see
-docs/manifest/history.yaml: project_history.combined_parking_test_removed.
+split-events structure (test_scenario_resolution.py's "parking_split"
+case) doesn't -- see docs/manifest/history.yaml:
+project_history.combined_parking_test_removed.
 
 There is no in-process narrator to call directly (see docs/manifest/
 history.yaml: project_history.turn_pipeline_removed), so a live test
@@ -58,11 +59,13 @@ import os
 from pathlib import Path
 from types import ModuleType
 
+import pytest
+
 from emc2p.registrar import Registrar
 from emc2p.testing.expected_fixtures import load_expected_module
 from emc2p.testing.headless_session import HeadlessSession as _Emc2pHeadlessSession
 from emc2p.testing.mcp_client_session import McpClientSession as _Emc2pMcpClientSession
-from emc2p.testing.registry_checks import schema_exists
+from emc2p.testing.registry_checks import schema_exists, write_time
 from story_simulator.config import registry_schema_name, registry_url, resolve_database_dsn
 from story_simulator.core import safe_view_current
 
@@ -308,5 +311,26 @@ def _event_states(registrar: Registrar) -> dict[str, str]:
     if df is None:
         return {}
     return dict(zip(df["entity_id.alias"], df["event_state.value"]))
+
+
+def _assert_write_order(registrar: Registrar, expected: ModuleType) -> None:
+    """Order evidence, generic across scenarios: each alias in
+    `expected.write_order["times"]` should have its own
+    `expected.write_order["component_type"]` value time-stamped with the
+    given world time (see `core._next_time_stamp`), confirming it was
+    recorded while its own event resolved -- not retroactively, and not
+    out of turn relative to the other aliases checked alongside it.
+
+    What varies between scenarios is only the data (which component type,
+    which alias->time map) -- the check itself doesn't, so this is shared
+    rather than reimplemented per scenario/test module.
+    """
+    component_type = expected.write_order["component_type"]
+    expected_times = expected.write_order["times"]
+    times = {alias: write_time(registrar, component_type, alias) for alias in expected_times}
+    for alias, expected_time in expected_times.items():
+        assert times[alias] == pytest.approx(expected_time), (
+            f"{alias}'s {component_type} should be recorded at {expected_time} -- got {times}"
+        )
 
 

@@ -22,3 +22,11 @@ event_state = {
     "car_c_drive": "complete",
     "car_c_park": "complete",
 }
+
+# Order evidence: each car's location write should be time-stamped with its
+# own *parking* event's end_time (not its driving event's), confirming the
+# spot was assigned once that car's own parking event resolved.
+write_order = {
+    "component_type": "location",
+    "times": {"car_b": 1030, "car_c": 1090, "car_a": 1810},
+}

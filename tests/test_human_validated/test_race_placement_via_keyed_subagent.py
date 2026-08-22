@@ -3,10 +3,10 @@ when a responder other than the connected model does the resolve/plan
 reasoning and the update_registry writes.
 
 Reuses tests/data/scenarios/race (the same fixture
-tests/test_race_placement_live.py exercises against the *connected*
-model), since its expected finishing order is already known-good -- car_b
-first, car_c second, car_a third -- see that test's own docstring for
-why. The difference here is who answers each event's resolve/plan
+test_scenario_resolution.py's "race" case exercises against the
+*connected* model), since its expected finishing order is already
+known-good -- car_b first, car_c second, car_a third -- see that
+module's own docstring for why. The difference here is who answers each event's resolve/plan
 judgment call: McpClientSession defaults to responder="keyed_subagent"
 (see its own docstring), so the connected model's own job narrows to just
 driving advance_simulation to "done" -- keyed_subagent (DeepSeek by
@@ -26,9 +26,15 @@ from pathlib import Path
 
 import pytest
 
-from test_human_validated.helpers import McpClientSession, _event_states, _load_registrar, _placement, load_expected
+from test_human_validated.helpers import (
+    McpClientSession,
+    _assert_write_order,
+    _event_states,
+    _load_registrar,
+    _placement,
+    load_expected,
+)
 from emc2p.testing.expected_fixtures import assert_subset
-from emc2p.testing.registry_checks import write_time
 
 REPO_ROOT = Path(__file__).parent.parent.parent
 RACE_SCENARIO_DIR = REPO_ROOT / "tests" / "data" / "scenarios" / "race"
@@ -74,22 +80,9 @@ def test_race_placement_resolves_and_persists_via_keyed_subagent(tmp_path):
         try:
             assert_subset("race_placement", expected.race_placement, placements)
             assert_subset("event_state", expected.event_state, _event_states(r))
+            _assert_write_order(r, expected)
         except AssertionError as exc:
             raise AssertionError(f"{exc} -- narration: {narration!r}") from exc
-
-        times = {alias: write_time(r, "race_placement", alias) for alias in ("car_b", "car_c", "car_a")}
-        assert times["car_b"] == pytest.approx(1020), (
-            f"car_b's race_placement should be recorded at car_b_trip's own end_time -- "
-            f"{times}, narration: {narration!r}"
-        )
-        assert times["car_c"] == pytest.approx(1080), (
-            f"car_c's race_placement should be recorded at car_c_trip's own end_time -- "
-            f"{times}, narration: {narration!r}"
-        )
-        assert times["car_a"] == pytest.approx(1800), (
-            f"car_a's race_placement should be recorded at car_a_trip's own end_time -- "
-            f"{times}, narration: {narration!r}"
-        )
 
         world_dir = save_dir / "world"
         assert world_dir.is_dir(), (

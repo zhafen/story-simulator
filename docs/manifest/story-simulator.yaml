@@ -783,6 +783,425 @@ story_simulator_mission:
                         value: 0.1
                 - work_state: new
 
+    live_testing_framework:
+        data:
+            - description: >
+                  What the live-testing solution (tests/test_human_validated/
+                  in this repo, emc2p.testing/emc2p.testing.expected_fixtures
+                  upstream) must actually guarantee, sharpened into seven
+                  concrete requirements after this session's work
+                  consolidating test_scenario_resolution.py and dropping the
+                  emc2p submodule. Sibling to live_model_test_coverage (a
+                  still-open, more general "have real-model coverage at all"
+                  requirement) -- this subtree is about the shape of the
+                  testing solution itself, not just whether coverage exists.
+        scenario_variety:
+            - description: >
+                  Must enable testing a variety of scenarios -- adding a new
+                  scenario (a new manifest-style scenario_dir plus its own
+                  expected.py) shouldn't require new test-harness code, just
+                  new data. Mostly true today: iacs's own example_dirs()
+                  parametrization and this repo's Case list
+                  (test_scenario_resolution.py) both add a scenario as a few
+                  lines, not a new file.
+            - requirement
+            - impact:
+                  type: reliability
+                  value: 0.4
+            - cost:
+                  type: engineering_hours
+                  value: 1
+            - work_state: in progress
+        live_agent_behavior_check:
+            - description: >
+                  Must enable testing how an agent performs live for a given
+                  scenario -- a real model, over a real MCP round-trip,
+                  reasoning about the scenario itself (not a mocked LLM).
+                  Live today via McpClientSession/HeadlessSession
+                  (emc2p.testing) and @pytest.mark.live tests, but
+                  responder="subagent" isolation is unverified (see the TODO
+                  in story_simulator/resolve.py's _frame_for_responder).
+            - requirement
+            - impact:
+                  type: reliability
+                  value: 0.6
+            - cost:
+                  type: engineering_hours
+                  value: 2
+            - work_state: in progress
+        deterministic_machinery_check:
+            - description: >
+                  Must enable testing how the simulation machinery itself
+                  works for a given scenario by accepting pre-determined
+                  static input -- isolating "does the mechanism work" from
+                  "does the model reason correctly", with no LLM and no cost.
+                  Done for one scenario (test_car_parking_deterministic.py,
+                  hand-scripted answers driven directly through
+                  advance_simulation/update_registry), but not yet folded
+                  into the same Case/expected.py framework
+                  scenario_variety's other solutions use.
+            - requirement
+            - impact:
+                  type: reliability
+                  value: 0.5
+            - cost:
+                  type: engineering_hours
+                  value: 2
+            - work_state: in progress
+        switchable_test_agent:
+            - description: >
+                  Must allow the agent executing the process to be switched
+                  to and from a CLI from the host (e.g. claude) or a keyed
+                  subagent, for now depending on static parameters -- no
+                  requirement yet that this be chosen dynamically mid-run.
+                  Done via HeadlessSession (spawns `claude -p` as a real
+                  subprocess) versus McpClientSession's own `responder`
+                  construction-time argument ("host"/"subagent"/
+                  "keyed_subagent", see story_simulator.keyed_subagent) --
+                  both a static, per-session choice, matching what's asked
+                  for here.
+            - requirement
+            - impact:
+                  - type: reliability
+                    value: 0.3
+                  - type: developer_experience
+                    value: 0.2
+            - cost:
+                  type: engineering_hours
+                  value: 2
+            - work_state: in progress
+        centralized_scenario_authoring:
+            - description: >
+                  HIGHEST PRIORITY. Must allow the human creators to easily
+                  lay out a scenario, the expected values, and test
+                  parameters side by side in one centralized location --
+                  humans need to look at what the scenario is and what they
+                  expect to come of it together, not reconstruct that
+                  pairing by reading several files. Not done today: a
+                  scenario's manifest (tests/data/scenarios/<name>/), its
+                  expected.py (tests/test_human_validated/expected/<name>.py),
+                  and its test parameters (responder, timeouts, turn
+                  instructions -- test_scenario_resolution.py's Case list)
+                  are three separate locations in two different formats
+                  (YAML data, Python data/code).
+            - requirement
+            - impact:
+                  - type: developer_experience
+                    value: 0.9
+                  - type: architecture_clarity
+                    value: 0.4
+            - cost:
+                  type: engineering_hours
+                  value: 6
+            - work_state: new
+        stepwise_or_completion_execution:
+            - description: >
+                  Must allow running to completion or turn by turn, for a
+                  given scenario -- derived from centralized_scenario_authoring:
+                  if humans lay out a scenario/expected-values/parameters
+                  together, one of those parameters should be able to say
+                  "stop and check after each turn" instead of only "run
+                  everything, check the end state". Run-to-completion is
+                  done (every current live test sends one open-ended
+                  instruction); turn-by-turn against this same framework
+                  is not implemented yet.
+            - requirement
+            - impact:
+                  - type: reliability
+                    value: 0.3
+                  - type: gameplay_richness
+                    value: 0.2
+            - cost:
+                  type: engineering_hours
+                  value: 4
+            - work_state: in progress
+        machinery_lives_in_emc2p:
+            - description: >
+                  Base machinery must live in emc2p; story-simulator should
+                  contain minimal additions built on top, or no additions at
+                  all, just scenario definitions. Partially true today:
+                  emc2p.testing.expected_fixtures/headless_session/
+                  mcp_client_session/registry_checks are all generic
+                  upstream infrastructure, but story_simulator.keyed_subagent
+                  (the actual keyed-subagent tool-calling dispatch) and every
+                  Case/instruction/checks definition in
+                  test_scenario_resolution.py are story-simulator-local
+                  Python, not just scenario data.
+            - requirement
+            - impact:
+                  - type: architecture_clarity
+                    value: 0.5
+                  - type: developer_experience
+                    value: 0.2
+            - cost:
+                  - type: engineering_hours
+                    value: 3
+                  - type: regression_risk
+                    value: 0.2
+            - work_state: in progress
+        candidate_solutions:
+            data:
+                - description: >
+                      Design options against the seven requirements above --
+                      both already-implemented (this session's own work) and
+                      still-possible ones, scored with the same impact/cost
+                      vocabulary as everywhere else in this manifest. Every
+                      entry stays work_state: new, same convention as
+                      scd_time_data.candidate_solutions above: "new" marks a
+                      candidate not yet formally settled on, independent of
+                      whether it happens to already be implemented.
+            mcp_client_session_live_driver:
+                - description: >
+                      HeadlessSession (a real `claude -p` subprocess) and
+                      McpClientSession (any litellm model, via
+                      emc2p.agents.tool_calling_loop) as the two live-agent
+                      drivers, with McpClientSession's own `responder`
+                      construction-time argument picking
+                      host/subagent/keyed_subagent.
+
+                      PROS: already implemented and exercised by every
+                      current live test; works with any litellm-supported
+                      model, not just Claude; satisfies
+                      switchable_test_agent's "static parameters" framing
+                      exactly (responder is fixed for the session's whole
+                      lifetime).
+
+                      CONS: two separate session classes to choose between
+                      rather than one; "subagent"-labeled answers aren't
+                      verified to have actually come from an isolated call
+                      (open TODO in resolve.py); switching responder mid-run
+                      isn't possible (a real limitation if a future
+                      requirement ever wants that).
+                - solution of: story_simulator_mission.live_testing_framework.live_agent_behavior_check
+                - solution of: story_simulator_mission.live_testing_framework.switchable_test_agent
+                - impact:
+                      type: reliability
+                      value: 0.5
+                - cost:
+                      type: engineering_hours
+                      value: 0
+                - work_state: new
+            expected_fixtures_manifest_framework:
+                - description: >
+                      emc2p.testing.expected_fixtures (example_dirs,
+                      assert_subset, ExpectedValueChecker) plus the
+                      scenario_dir/expected.py directory-pairing convention,
+                      shared by iacs, emc2p, and story-simulator.
+
+                      PROS: base comparison machinery genuinely lives in
+                      emc2p (satisfies machinery_lives_in_emc2p for the
+                      comparison half); a scenario_dir is a plain manifest,
+                      so adding one is just new data (scenario_variety);
+                      expected.py sits in a directory named after the
+                      scenario it describes, a partial step toward
+                      centralized_scenario_authoring.
+
+                      CONS: for story-simulator specifically, "paired" still
+                      means two separate files/directories a human opens
+                      one after the other, not one place; test parameters
+                      (responder, timeouts, turn instructions) live in a
+                      third location (Python), so
+                      centralized_scenario_authoring is only partly met.
+                - solution of: story_simulator_mission.live_testing_framework.scenario_variety
+                - solution of: story_simulator_mission.live_testing_framework.machinery_lives_in_emc2p
+                - solution of: story_simulator_mission.live_testing_framework.centralized_scenario_authoring
+                - impact:
+                      - type: architecture_clarity
+                        value: 0.6
+                      - type: developer_experience
+                        value: 0.3
+                - cost:
+                      type: engineering_hours
+                      value: 0
+                - work_state: new
+            deterministic_hand_scripted_harness:
+                - description: >
+                      test_car_parking_deterministic.py's own approach: drive
+                      advance_simulation/update_registry directly, in-process,
+                      with hand-written "perfect" answers -- no LLM, no MCP
+                      round-trip, no cost.
+
+                      PROS: fully deterministic and fast; isolates mechanism
+                      bugs from model-reasoning failures exactly as
+                      deterministic_machinery_check asks; checks exact prompt
+                      text and resume_token bookkeeping a live test can't
+                      easily assert on.
+
+                      CONS: one bespoke test function per scenario today, not
+                      wired into the shared Case/expected.py framework --
+                      adding a new deterministic scenario means writing new
+                      test code, not just new data, cutting against
+                      scenario_variety's "just add data" goal.
+                - solution of: story_simulator_mission.live_testing_framework.deterministic_machinery_check
+                - impact:
+                      type: reliability
+                      value: 0.3
+                - cost:
+                      type: engineering_hours
+                      value: 0
+                - work_state: new
+            case_dataclass_parametrization:
+                - description: >
+                      test_scenario_resolution.py's own Case dataclass +
+                      CASES list: one @pytest.mark.parametrize test function,
+                      each case a scenario_dir/instruction/checks tuple.
+
+                      PROS: adding a run-to-completion scenario is a few
+                      lines, not a new file (proven with the race/
+                      parking_split consolidation); reuses
+                      expected_fixtures_manifest_framework's comparison
+                      machinery directly.
+
+                      CONS: only covers run-to-completion, not turn-by-turn
+                      (stepwise_or_completion_execution is still open);
+                      Case fields (responder, timeouts, instruction text) are
+                      Python, not data a non-engineer could edit --
+                      centralized_scenario_authoring's "human creators...
+                      easily" bar isn't met by this shape alone.
+                - solution of: story_simulator_mission.live_testing_framework.scenario_variety
+                - solution of: story_simulator_mission.live_testing_framework.stepwise_or_completion_execution
+                - impact:
+                      type: developer_experience
+                      value: 0.3
+                - cost:
+                      type: engineering_hours
+                      value: 0
+                - work_state: new
+            turn_list_case_extension:
+                - description: >
+                      Possible, not yet built: change Case.instruction: str to
+                      Case.turns: list[Turn], each Turn a (instruction,
+                      checks) pair, with expected.py growing named
+                      checkpoint attributes (e.g. event_state_after_drive)
+                      for whichever turns want a check.
+
+                      PROS: smallest change that actually enables
+                      stepwise_or_completion_execution; reuses every existing
+                      helper (assert_subset, _assert_write_order) unchanged;
+                      a single-turn Case degrades to today's exact behavior.
+
+                      CONS: doesn't touch centralized_scenario_authoring --
+                      turns/checks still live in test_scenario_resolution.py,
+                      not a human-editable central file; a scenario needing
+                      many checkpoints means many hand-written per-turn
+                      lambdas, the same duplication risk the original
+                      consolidation removed.
+                - solution of: story_simulator_mission.live_testing_framework.stepwise_or_completion_execution
+                - impact:
+                      type: reliability
+                      value: 0.3
+                - cost:
+                      type: engineering_hours
+                      value: 3
+                - work_state: new
+            data_driven_step_script:
+                - description: >
+                      Possible, not yet built: expected.py grows a `steps`
+                      list (each step a dict of instruction + named-field
+                      expected values), and one fully generic step-runner
+                      (in emc2p.testing, ideally) zips through it, dispatching
+                      each named field to the right reader/leniency rule via
+                      a lookup table.
+
+                      PROS: maximizes reuse -- a new step-by-step scenario
+                      becomes "write expected.py data", not "write test
+                      code"; pushes the step-runner itself into emc2p,
+                      strengthening machinery_lives_in_emc2p; closest fit to
+                      centralized_scenario_authoring of anything here short
+                      of single_scenario_yaml_file.
+
+                      CONS: needs a var-name -> reader/leniency-rule
+                      dispatch table, which just relocates
+                      case_dataclass_parametrization's per-field special-
+                      casing rather than removing it; putting instructions
+                      in expected.py blurs its job (today: pure expected
+                      values) into also being the test script; flat data
+                      instructions lose room for the scenario-specific
+                      narrative framing this codebase's prompts rely on.
+                - solution of: story_simulator_mission.live_testing_framework.stepwise_or_completion_execution
+                - solution of: story_simulator_mission.live_testing_framework.centralized_scenario_authoring
+                - impact:
+                      - type: architecture_clarity
+                        value: 0.5
+                      - type: developer_experience
+                        value: 0.4
+                - cost:
+                      - type: engineering_hours
+                        value: 5
+                      - type: regression_risk
+                        value: 0.2
+                - work_state: new
+            single_scenario_yaml_file:
+                - description: >
+                      Possible, not yet built: one data file per scenario
+                      (e.g. tests/scenarios/<name>/test_case.yaml) holding the
+                      scenario manifest (or a reference to it), the ordered
+                      turn instructions, the expected values at each
+                      checkpoint, AND the test parameters (responder,
+                      timeouts, model) together -- a small generic
+                      loader/runner living in emc2p.testing, story-simulator
+                      supplying only the data file.
+
+                      PROS: closest realization of
+                      centralized_scenario_authoring's literal ask (one
+                      place, side by side); generalizes naturally to
+                      stepwise_or_completion_execution (a `steps:` list) and
+                      scenario_variety (variety = new directories); keeps
+                      machinery_lives_in_emc2p by construction (the loader is
+                      the only code, and it's upstream).
+
+                      CONS: real new engineering -- a small schema/DSL to
+                      design, parse, and validate, not a refactor of
+                      existing code; instruction text authored as flat data
+                      loses Python's f-string templating (save_dir/
+                      scenario_dir substitution needs its own mechanism,
+                      e.g. str.format or Jinja); the "which reader/leniency
+                      rule applies to which field" question doesn't go away,
+                      it just moves into the new loader's own vocabulary.
+                - solution of: story_simulator_mission.live_testing_framework.centralized_scenario_authoring
+                - solution of: story_simulator_mission.live_testing_framework.stepwise_or_completion_execution
+                - solution of: story_simulator_mission.live_testing_framework.machinery_lives_in_emc2p
+                - impact:
+                      - type: developer_experience
+                        value: 0.7
+                      - type: architecture_clarity
+                        value: 0.4
+                - cost:
+                      - type: engineering_hours
+                        value: 8
+                      - type: regression_risk
+                        value: 0.3
+                - work_state: new
+            human_review_doc_generator:
+                - description: >
+                      Possible, not yet built: keep scenario/expected/
+                      parameters as separate files exactly as today, but
+                      auto-generate one per-scenario human-facing doc (e.g.
+                      Markdown) laying out the scenario input, instructions,
+                      and expected values side by side, regenerated from the
+                      existing sources so it can't drift.
+
+                      PROS: directly and cheaply satisfies the "review side
+                      by side" half of centralized_scenario_authoring
+                      without touching any test mechanics -- zero regression
+                      risk, machinery_lives_in_emc2p entirely untouched.
+
+                      CONS: doesn't change how a human authors a scenario --
+                      still edits three files/formats even if they can
+                      review one generated doc; needs its own small
+                      generator to keep the doc in sync, new tooling for a
+                      docs-only deliverable that doesn't move
+                      stepwise_or_completion_execution or scenario_variety
+                      forward at all.
+                - solution of: story_simulator_mission.live_testing_framework.centralized_scenario_authoring
+                - impact:
+                      type: developer_experience
+                      value: 0.3
+                - cost:
+                      type: engineering_hours
+                      value: 2
+                - work_state: new
+
 # What satisfies each done (or partially done) requirement. Most solutions
 # now live as `__iacs__ = {"solution of": ...}` metadata in Python docstrings.
 

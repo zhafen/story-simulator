@@ -957,21 +957,29 @@ story_simulator_mission:
                       consideration/consideration_rating types (not a new
                       component type).
 
-                      Used exactly as their schema already supports, with the
-                      sign/direction and the magnitude split across the two: a
-                      consideration entity here defines one named axis's own
-                      description and `weight` (-1 to 1 -- the sign says
-                      whether MORE of this axis's quality is good (positive) or
-                      bad (negative) for a solution, the magnitude says how
-                      much this axis matters overall), while each solution's
-                      own consideration_rating instances say `rating` (0 to 1,
-                      unsigned -- how much of this axis's quality this specific
-                      point shows this solution has, regardless of whether
-                      that's good or bad news) plus `note` (the specific point)
-                      and `value` (which axis key). A solution's actual
-                      weighted contribution on one axis is `weight * rating`,
-                      so the sign only ever comes from the axis, never from an
-                      individual rating.
+                      A consideration entity here defines one named axis's
+                      own description and `weight` -- the sign says whether
+                      MORE of this axis's quality is good (positive) or bad
+                      (negative) for a solution, the magnitude says how much
+                      this axis matters relative to the others. `weight` is
+                      unbound, not capped to -1..1: 1 is the baseline for
+                      "normal" importance, and an axis that matters more
+                      should get a proportionally larger magnitude (twice as
+                      important -> roughly 2, ten times as important ->
+                      roughly 10) rather than being squeezed into a fixed
+                      range -- comparative and at least multiplicative
+                      between axes, not an absolute scale.
+
+                      Each solution's own consideration_rating instances say
+                      `rating` (-1 to 1, signed -- how this specific point
+                      affects the solution on this axis, and in which
+                      direction, independent of the axis's own sign) plus
+                      `note` (the specific point) and `value` (which axis
+                      key). A solution's actual weighted contribution on one
+                      axis is `weight * rating`: a negative rating on a
+                      negative-weight axis (e.g. a low-risk point on the
+                      risk axis) nets out positive, the same as two
+                      negatives multiplying to a positive anywhere else.
             already_implemented:
                 - consideration:
                       value: already_implemented

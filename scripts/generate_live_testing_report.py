@@ -9,11 +9,13 @@ docs/manifest/prioritization_reflections.yaml's fourth installment
 ("2026-08-22_retrospective_on_the_scoring_approach"): checking "does this
 requirement have a good solution" is the direction that's actually useful,
 not "what does this solution cover." Each pro/con is shown as its own
-consideration_rating note, sign (positive rating = pro, negative = con),
-with the qualitative `effect` field (major pro / minor pro / no effect /
-minor con / major con) as a small badge alongside it rather than as the
-main event -- the earlier attempt to lead with that categorical field on
-its own caused confusion, not clarity.
+consideration_rating note, labeled Pro/Con by the sign of its own
+consideration's `weight` times its `rating` (not by rating's sign alone --
+a negative rating on a negative-weight axis nets positive), with the raw
+weight and rating values shown alongside rather than the qualitative
+`effect` field -- the earlier attempt to lead with that categorical field
+on its own caused confusion, not clarity, so it's set aside here (still
+recorded on each consideration_rating, just not surfaced by this report).
 
 Reuses find_live_testing_solution_covers.py's own requirement/solution
 loading (same registrar tables, same prefixes, same `_leaf` helper) so
@@ -77,22 +79,28 @@ def load_report_data(registrar: Registrar) -> dict:
             costs.setdefault(name, []).append((str(row["type"]), float(row["value"])))
 
     consideration_descriptions: dict[str, str] = {}
+    consideration_weights: dict[str, float] = {}
     for _, row in registrar.get("consideration").execute().iterrows():
-        consideration_descriptions[str(row["value"])] = str(row["description"])
+        axis = str(row["value"])
+        consideration_descriptions[axis] = str(row["description"])
+        consideration_weights[axis] = float(row["weight"])
 
     ratings: dict[str, list[dict]] = {}
     for _, row in registrar.get("consideration_rating").execute().iterrows():
         name = name_of(row["entity_id"], SOLUTIONS_PREFIX)
         if name is None:
             continue
-        effect = row["effect"]
+        axis = str(row["value"])
+        weight = consideration_weights.get(axis, 0.0)
+        rating = float(row["rating"])
         ratings.setdefault(name, []).append(
             {
-                "axis": str(row["value"]),
-                "axis_description": consideration_descriptions.get(str(row["value"]), ""),
+                "axis": axis,
+                "axis_description": consideration_descriptions.get(axis, ""),
                 "note": str(row["note"]),
-                "rating": float(row["rating"]),
-                "effect": None if effect is None else str(effect),
+                "weight": weight,
+                "rating": rating,
+                "contribution": weight * rating,
             }
         )
 
@@ -111,36 +119,26 @@ def load_report_data(registrar: Registrar) -> dict:
     }
 
 
-_EFFECT_CLASS = {
-    "major pro": "effect-major-pro",
-    "minor pro": "effect-minor-pro",
-    "no effect": "effect-neutral",
-    "minor con": "effect-minor-con",
-    "major con": "effect-major-con",
-}
-
-
 def _label(name: str) -> str:
     return name.replace("_", " ")
 
 
 def _render_rating(rating: dict) -> str:
-    sign_label = "Pro" if rating["rating"] > 0 else "Con" if rating["rating"] < 0 else "Neutral"
-    effect = rating["effect"]
-    effect_html = (
-        f'<span class="effect-badge {_EFFECT_CLASS.get(effect, "effect-neutral")}">{html.escape(effect)}</span>'
-        if effect
-        else ""
-    )
+    contribution = rating["contribution"]
+    sign_label = "Pro" if contribution > 0 else "Con" if contribution < 0 else "Neutral"
     axis_title = html.escape(_label(rating["axis"]))
     axis_desc = html.escape(rating["axis_description"])
     note = html.escape(rating["note"])
+    values = (
+        f'weight {rating["weight"]:+.2g} &times; rating {rating["rating"]:+.2g} '
+        f'= <strong>{contribution:+.2g}</strong>'
+    )
     return f"""
         <li class="rating rating-{sign_label.lower()}">
           <div class="rating-head">
             <span class="sign-badge sign-{sign_label.lower()}">{sign_label}</span>
             <span class="axis-name" title="{axis_desc}">{axis_title}</span>
-            {effect_html}
+            <span class="values">{values}</span>
           </div>
           <p class="rating-note">{note}</p>
         </li>"""
@@ -153,9 +151,9 @@ def _render_solution(name: str, data: dict) -> str:
     cost_html = (
         ", ".join(f"{value:g} {ctype}" for ctype, value in cost_items) if cost_items else "none"
     )
-    ratings = sorted(data["ratings"].get(name, []), key=lambda r: -r["rating"])
-    pros = [r for r in ratings if r["rating"] > 0]
-    cons = [r for r in ratings if r["rating"] <= 0]
+    ratings = sorted(data["ratings"].get(name, []), key=lambda r: -r["contribution"])
+    pros = [r for r in ratings if r["contribution"] > 0]
+    cons = [r for r in ratings if r["contribution"] <= 0]
     ratings_html = "".join(_render_rating(r) for r in pros + cons)
     return f"""
       <details class="solution">
@@ -249,15 +247,8 @@ _PAGE_TEMPLATE = """<!doctype html>
   .sign-con {{ background: var(--con-bg); color: var(--con); }}
   .sign-neutral {{ background: var(--neutral-bg); color: var(--neutral-fg); }}
   .axis-name {{ font-weight: 600; }}
-  .effect-badge {{
-    font-size: 0.68rem; padding: 0.05rem 0.4rem; border-radius: 999px; font-weight: 500;
-    margin-left: auto;
-  }}
-  .effect-major-pro {{ background: var(--pro-bg); color: var(--pro); }}
-  .effect-minor-pro {{ background: var(--pro-bg); color: var(--pro); opacity: 0.75; }}
-  .effect-neutral {{ background: var(--neutral-bg); color: var(--neutral-fg); }}
-  .effect-minor-con {{ background: var(--con-bg); color: var(--con); opacity: 0.75; }}
-  .effect-major-con {{ background: var(--con-bg); color: var(--con); }}
+  .values {{ font-size: 0.75rem; color: var(--muted); margin-left: auto; white-space: nowrap; }}
+  .values strong {{ color: var(--fg); }}
   .rating-note {{ margin: 0.3rem 0 0; color: var(--muted); font-size: 0.92rem; }}
 </style>
 </head>

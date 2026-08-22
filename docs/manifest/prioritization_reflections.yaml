@@ -84,3 +84,62 @@ prioritization_reflections:
               predictive models. That's the frame the next installment
               should build on: when do simplified representations (models)
               come into play, and when do they work.
+    2026-08-22_models_solutions_and_the_cost_of_generalizing:
+        - description: >
+              Third installment. What are models for? Among other things:
+              capturing data sufficiently to be able to do something useful
+              with it, for that particular problem.
+
+              How solutions relate to models: a solution includes a few
+              things. Often a model -- a quantified description of how the
+              world is working, or at least a capture of the necessary data,
+              information, and relationships. But a solution also requires
+              implementation on top of that model. (Noted in passing: could
+              ask Claude for more on what else a solution includes.)
+
+              Turns to the actual procedure being used to design solutions,
+              which has been hard because the solutions themselves are so
+              varied, the challenges are so varied, and there's a lot of
+              factors to track. The current approach: lay things out bit by
+              bit, compare bit by bit, then summarize -- which is exactly
+              what this session's requirement/consideration/consideration_rating
+              machinery has been doing. So where does that approach go
+              wrong? Four candidate failure modes: (1) not enough candidate
+              solutions offered, (2) the ratings are inaccurate, (3) the
+              rating categories (the considerations themselves) are
+              inaccurate, (4) the weights are inaccurate.
+
+              Applied that to the live_testing_framework scenario directly:
+              wanted to make sure the central requirement -- human
+              usability -- is definitely accounted for. Checked, and
+              confirmed it already is one of the existing consideration
+              ratings being tracked, so that part of the setup is fine as
+              is. Tentative conclusion: the gap might just be (1) -- not
+              enough candidate solutions -- and the plan is to go try
+              generating more solutions and see.
+
+              Summary of what was learned here, called out as the most
+              important part of this installment:
+
+              First, that "model" is the specific thing meant whenever this
+              monologue has been saying "quantifying."
+
+              Second: the more focused something is on a particular
+              problem, the more likely it is to succeed.
+
+              Third, a correction to a long-held assumption: generalization
+              does not make things simpler. It's tempting to think of
+              generalizing as simplifying, but by definition it isn't --
+              there's a real, non-zero cost. If scenario A has a model that
+              fits it perfectly, and scenario B needs a different model, the
+              two can sometimes both be framed as subclasses of one more
+              general model -- but doing that still requires adding more
+              information, not less, to cover both. What generalizing
+              across them like that does buy: an easier way to think about
+              them together, and an easier time finding the common threads
+              between different problems, which is what makes it possible
+              to build out faster in the future.
+
+              Net conclusion: generalization is good for future work and
+              for understanding. It is bad for getting things done
+              immediately.

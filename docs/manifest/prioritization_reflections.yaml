@@ -143,3 +143,41 @@ prioritization_reflections:
               Net conclusion: generalization is good for future work and
               for understanding. It is bad for getting things done
               immediately.
+    2026-08-22_retrospective_on_the_scoring_approach:
+        - description: >
+              Fourth installment -- a direct retrospective on this
+              session's own live_testing_framework scoring setup, prompted
+              by being asked what's going well versus not.
+
+              Reconfirms: need more candidate solutions (already flagged
+              last installment). New this time: not confident the current
+              rating system itself is actually helpful.
+
+              Proposed correction: start over from exactly what a human
+              reviewer would naturally do -- lay out the pros and cons of
+              each and every solution, for the roughly five minimal sets
+              that recover the requirements. Started doing that, but
+              thinks it was quantified too early. The major-pro/minor-pro/
+              no-effect/minor-con/major-con "effect" field in particular
+              didn't work -- it just added confusion. Decision: keep the
+              qualitative pro/con description itself, but drop that
+              categorical field as a big structural axis and instead show
+              it as just a small value sitting next to each pro/con, not
+              the main event.
+
+              Also thinks presentation is part of the problem: expects
+              that making it prettier -- an HTML report -- will help on
+              its own.
+
+              Last point: the direction of the lookup has been backwards.
+              Been looking at each solution and asking what it covers; the
+              more useful direction is to go the other way -- look through
+              the requirements one at a time and see which solutions
+              satisfy each one, and how good those solutions actually are.
+
+              End of monologue for this installment. Immediately followed
+              by two concrete asks arising from it: view the requirements
+              with their satisfying solutions requirement-first, and build
+              that as an expandable HTML report (solutions expand to show
+              their pros/cons) -- not yet analysis on its own, but the
+              direct output of this retrospective.

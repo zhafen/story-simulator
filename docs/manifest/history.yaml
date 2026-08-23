@@ -583,3 +583,92 @@ project_history:
               entirely -- a genuine simplification the "no backward
               compatibility to preserve yet" mandate made possible to
               reach for instead of a workaround.
+    test_human_validated_migrated_to_emc2p_shared_framework:
+        - description: >
+              test_race_placement_live.py and test_parking_split_live.py
+              were two near-identical live test modules, one per scenario.
+              Consolidated into tests/test_human_validated/
+              test_scenario_resolution.py: a Case dataclass (scenario_dir,
+              instruction, checks callable, timeouts) and a CASES list, one
+              parametrized test function -- this project's own
+              "transformation" step is headless-session turns against a
+              live MCP server, not an in-process function call, so it
+              couldn't reuse emc2p's expected_fixtures wholesale the way
+              iacs did, but load_expected()/_assert_write_order() were
+              factored into helpers.py against the same expected.py
+              convention. test_race_placement_via_keyed_subagent.py (a
+              third variant -- keyed_subagent, not the connected model,
+              doing the resolve/plan reasoning) was updated to reuse
+              _assert_write_order rather than duplicating it a third time.
+    emc2p_submodule_dropped_for_pinned_git_dependency:
+        - description: >
+              emc2p was vendored as a git submodule at ./emc2p purely so a
+              single-repo-attached Claude Code session could reach its
+              source for editable local dev -- no longer needed once
+              multiple repos could be attached to one session directly.
+              Replaced with a plain pinned dependency in pyproject.toml's
+              [tool.uv.sources] (commit SHA, not branch, bumped explicitly
+              the same way the submodule pointer used to be); CONTRIBUTING.md
+              documents a gitignored, uncommitted uv.toml override to a
+              local editable path for fast co-development iteration.
+              check-submodule-pointers.sh and its pre-commit hook, both
+              submodule-specific, were deleted rather than adapted.
+    live_testing_framework_solution_architecture_modeled:
+        - description: >
+              docs/manifest/story-simulator.yaml gained a
+              story_simulator_mission.live_testing_framework subtree
+              modeling the live-testing solution decision itself as a
+              requirement/solution architecture: 7 numbered requirements
+              (scenario variety, live agent behavior checking,
+              deterministic machinery checking, a switchable test agent,
+              centralized scenario authoring -- called out as highest
+              priority, stepwise-or-completion execution, machinery living
+              in emc2p), 5 consideration axes (already_implemented,
+              reuse_and_generality, human_authoring_experience,
+              coverage_completeness, engineering_risk -- the only
+              negative-weight one), and 8 candidate solutions (4 already
+              implemented, 4 possible), each rated per axis via
+              consideration_rating.
+
+              scripts/find_live_testing_solution_covers.py reads this data
+              straight from the registry (no hand-maintained list) to find
+              every solution combination covering all 7 requirements, the
+              minimal ones among them, and each minimal combination's total
+              cost/weighted consideration value.
+              scripts/generate_live_testing_report.py renders a
+              requirement-first HTML view of the same data (which
+              solutions satisfy each requirement, expandable to show
+              pros/cons) -- requirement-first rather than solution-first
+              on purpose, see prioritization_reflections.yaml's fourth
+              installment. Iterated twice on what to show for each pro/con:
+              first a major-pro/minor-pro/.../major-con categorical
+              "effect" field, dropped after proving confusing rather than
+              clarifying in practice; landed on showing the raw
+              weight/rating/contribution numbers instead, Pro/Con labeled
+              by the contribution's sign. Later given a real visual
+              identity (IBM Plex Mono/Sans, a warm-neutral palette with
+              teal as the sole accent) and a --fragment output mode for
+              publishing directly as a Claude Artifact.
+    prioritization_reflections_journal_started:
+        - description: >
+              docs/manifest/prioritization_reflections.yaml: a running
+              journal of zhafen's own thinking-out-loud about
+              prioritization and solution architecture, prompted directly
+              by the live_testing_framework work above. Dated installments
+              of one ongoing monologue -- kept separate from
+              story-simulator.yaml the same way this file is, so it isn't
+              scanned into audit.traceability/audit.requirement_coverage.
+    requirement_renamed_to_requirement_priority:
+        - description: >
+              Followed emc2p's own rename (see emc2p's history.yaml):
+              requirement became the inverse relation of solution there,
+              so this project's own "- requirement" tags (all 37 of them,
+              docs/manifest/story-simulator.yaml) and
+              find_live_testing_solution_covers.py's matching
+              registrar.get() call were renamed to requirement_priority to
+              follow. Also the first time this project's own manifest
+              usage of consideration/consideration_rating/
+              requirement_priority/solution got a real, validated emc2p
+              schema instead of relying on emc2p's schema-optional
+              duck-typing -- the pinned emc2p rev long predated all four
+              types moving there.

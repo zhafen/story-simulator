@@ -21,11 +21,16 @@ Reuses find_live_testing_solution_covers.py's own requirement/solution
 loading (same registrar tables, same prefixes, same `_leaf` helper) so
 this can't silently drift out of sync with the coverage script. Prints
 nothing to stdout; writes a single self-contained HTML file (no external
-requests) to --output, defaulting to a scratch path outside the repo,
-matching find_live_testing_solution_covers.py's own precedent of not
-committing generated output, only the generator.
+requests except the Google Fonts stylesheet) to --output, defaulting to a
+scratch path outside the repo, matching find_live_testing_solution_covers.py's
+own precedent of not committing generated output, only the generator.
 
-Run: uv run python scripts/generate_live_testing_report.py [--output PATH]
+--fragment writes just the title/style/body content, without the
+surrounding <!doctype>/<html>/<head>/<body> tags -- for publishing as a
+Claude Artifact, which wraps that skeleton on its own and rejects one of
+its own. Omit --fragment for a normal, directly-openable standalone page.
+
+Run: uv run python scripts/generate_live_testing_report.py [--output PATH] [--fragment]
 """
 
 from __future__ import annotations
@@ -178,106 +183,205 @@ def _render_requirement(name: str, data: dict) -> str:
         solutions_html = '<p class="no-solutions">No candidate solution currently solves this requirement.</p>'
     return f"""
     <section class="requirement">
+      <p class="eyebrow">Requirement</p>
       <h2>{html.escape(_label(name))}</h2>
       <p class="requirement-description">{description}</p>
       {solutions_html}
     </section>"""
 
 
-_PAGE_TEMPLATE = """<!doctype html>
+_FONTS_LINK = (
+    '<link rel="stylesheet" '
+    'href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;600'
+    '&family=IBM+Plex+Sans:wght@400;500;600&display=swap">'
+)
+
+_STYLE = """
+  :root {
+    color-scheme: light dark;
+    --bg: #f7f6f2; --surface: #ffffff; --border: #e2ded2;
+    --fg: #1e211d; --muted: #6b6f63; --muted-2: #8a8d80;
+    --accent: #0f6e67; --accent-fg: #ffffff;
+    --pro: #2e6b45; --pro-bg: #e4f1e7;
+    --con: #a3392c; --con-bg: #f8e9e5;
+    --chip-bg: #ece9dd; --chip-fg: #55584c;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #161816; --surface: #1e211d; --border: #33362e;
+      --fg: #eae8de; --muted: #a3a695; --muted-2: #7d8071;
+      --accent: #4fb8ae; --accent-fg: #0d1513;
+      --pro: #7bc794; --pro-bg: #1c2e21;
+      --con: #e08b7c; --con-bg: #34211d;
+      --chip-bg: #2a2d26; --chip-fg: #b9bcae;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #161816; --surface: #1e211d; --border: #33362e;
+    --fg: #eae8de; --muted: #a3a695; --muted-2: #7d8071;
+    --accent: #4fb8ae; --accent-fg: #0d1513;
+    --pro: #7bc794; --pro-bg: #1c2e21;
+    --con: #e08b7c; --con-bg: #34211d;
+    --chip-bg: #2a2d26; --chip-fg: #b9bcae;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    background: var(--bg); color: var(--fg);
+    font-family: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    max-width: 760px; margin: 0 auto; padding: 3rem 1.5rem 5rem;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .masthead { margin-bottom: 2.75rem; }
+  .kicker {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 0.72rem; font-weight: 600; letter-spacing: 0.12em;
+    text-transform: uppercase; color: var(--accent); margin: 0 0 0.6rem;
+  }
+  h1 {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 1.7rem; font-weight: 600; margin: 0 0 0.6rem;
+    text-wrap: balance; letter-spacing: -0.01em;
+  }
+  .subtitle { color: var(--muted); margin: 0; font-size: 0.95rem; max-width: 62ch; }
+
+  .requirement { margin-bottom: 2.25rem; padding-bottom: 2.25rem; border-bottom: 1px solid var(--border); }
+  .requirement:last-child { border-bottom: none; }
+  .eyebrow {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 0.68rem; font-weight: 600; letter-spacing: 0.1em;
+    text-transform: uppercase; color: var(--muted-2); margin: 0 0 0.35rem;
+  }
+  .requirement h2 {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 1.15rem; font-weight: 600; margin: 0; text-wrap: balance;
+  }
+  .requirement-description { color: var(--muted); margin: 0.5rem 0 1.1rem; max-width: 62ch; }
+  .no-solutions { color: var(--con); font-style: italic; }
+
+  details.solution {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+    margin: 0.7rem 0; padding: 0 1.1rem;
+  }
+  details.solution summary {
+    cursor: pointer; padding: 0.85rem 0; display: flex; align-items: center;
+    gap: 0.7rem; list-style: none; font-weight: 600;
+  }
+  details.solution summary::-webkit-details-marker { display: none; }
+  details.solution summary::before {
+    content: "▸"; color: var(--muted-2); font-weight: normal; flex-shrink: 0;
+    transition: transform 0.15s ease;
+  }
+  details.solution[open] summary::before { transform: rotate(90deg); }
+  .solution-name { flex: 1; font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 0.95rem; }
+  .work-state {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-weight: 500; font-size: 0.68rem; letter-spacing: 0.03em;
+    padding: 0.2rem 0.55rem; border-radius: 999px;
+    background: var(--chip-bg); color: var(--chip-fg); white-space: nowrap;
+  }
+  .cost {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-variant-numeric: tabular-nums;
+    font-size: 0.78rem; color: var(--muted); white-space: nowrap; font-weight: 400;
+  }
+  .solution-body { padding: 0 0 1.1rem 1.5rem; }
+  .solution-description { color: var(--fg); margin-top: 0; }
+  ul.ratings { list-style: none; margin: 0.6rem 0 0; padding: 0; }
+  li.rating { padding: 0.6rem 0; border-top: 1px solid var(--border); }
+  li.rating:first-child { border-top: none; }
+  .rating-head { display: flex; align-items: center; gap: 0.55rem; flex-wrap: wrap; }
+  .sign-badge {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 0.66rem; font-weight: 600; letter-spacing: 0.04em;
+    padding: 0.12rem 0.5rem; border-radius: 5px;
+  }
+  .sign-pro { background: var(--pro-bg); color: var(--pro); }
+  .sign-con { background: var(--con-bg); color: var(--con); }
+  .sign-neutral { background: var(--chip-bg); color: var(--chip-fg); }
+  .axis-name { font-weight: 600; }
+  .values {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-variant-numeric: tabular-nums;
+    font-size: 0.74rem; color: var(--muted); margin-left: auto; white-space: nowrap;
+  }
+  .values strong { color: var(--fg); }
+  .rating-note { margin: 0.35rem 0 0; color: var(--muted); font-size: 0.92rem; max-width: 62ch; }
+
+  @media (max-width: 480px) {
+    .values { margin-left: 0; }
+  }
+"""
+
+_TITLE = "Live Testing Framework"
+
+_BODY_TEMPLATE = """<title>{title}</title>
+{fonts_link}
+<style>{style}</style>
+  <div class="masthead">
+    <p class="kicker">live_testing_framework &middot; requirement coverage</p>
+    <h1>Requirements &amp; candidate solutions</h1>
+    <p class="subtitle">
+      One section per requirement, listing every candidate solution that
+      satisfies it. Expand a solution to see its pros and cons.
+    </p>
+  </div>
+  {requirements_html}
+"""
+
+
+def render_content(data: dict) -> str:
+    """Title + fonts link + style + body content, no surrounding document
+    tags -- for publishing as a Claude Artifact (which wraps its own
+    <!doctype>/<html>/<head>/<body> and rejects one of its own)."""
+    requirements_html = "".join(_render_requirement(r, data) for r in data["requirements"])
+    return _BODY_TEMPLATE.format(
+        title=html.escape(_TITLE), fonts_link=_FONTS_LINK, style=_STYLE, requirements_html=requirements_html
+    )
+
+
+def render_report(data: dict) -> str:
+    """A full, directly-openable standalone HTML document."""
+    requirements_html = "".join(_render_requirement(r, data) for r in data["requirements"])
+    return f"""<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>live_testing_framework: requirements &amp; solutions</title>
-<style>
-  :root {{
-    color-scheme: light dark;
-    --bg: #ffffff; --fg: #1a1a1a; --muted: #6b7280;
-    --card-bg: #f8f9fb; --border: #e2e4e9;
-    --pro: #1a7f37; --pro-bg: #e6f6ea;
-    --con: #b42318; --con-bg: #fdecea;
-    --neutral-bg: #eef0f3; --neutral-fg: #4b5563;
-  }}
-  @media (prefers-color-scheme: dark) {{
-    :root {{
-      --bg: #16181d; --fg: #e6e8eb;
-      --card-bg: #1e2128; --border: #2c303a;
-      --pro: #4fd67a; --pro-bg: #103a1c;
-      --con: #ff8a80; --con-bg: #3a1310;
-      --neutral-bg: #2a2d35; --neutral-fg: #9aa1ac;
-    }}
-  }}
-  body {{
-    background: var(--bg); color: var(--fg);
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
-    max-width: 860px; margin: 0 auto; padding: 2rem 1.25rem 4rem;
-    line-height: 1.5;
-  }}
-  h1 {{ font-size: 1.5rem; margin-bottom: 0.25rem; }}
-  .subtitle {{ color: var(--muted); margin-top: 0; margin-bottom: 2.5rem; font-size: 0.95rem; }}
-  .requirement {{ margin-bottom: 2.5rem; }}
-  .requirement h2 {{ font-size: 1.15rem; border-bottom: 1px solid var(--border); padding-bottom: 0.4rem; }}
-  .requirement-description {{ color: var(--muted); margin-top: 0.4rem; }}
-  .no-solutions {{ color: var(--con); font-style: italic; }}
-  details.solution {{
-    background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px;
-    margin: 0.6rem 0; padding: 0.1rem 1rem;
-  }}
-  details.solution summary {{
-    cursor: pointer; padding: 0.7rem 0; display: flex; align-items: center;
-    gap: 0.6rem; list-style: none; font-weight: 600;
-  }}
-  details.solution summary::-webkit-details-marker {{ display: none; }}
-  details.solution summary::before {{ content: "▸"; color: var(--muted); font-weight: normal; }}
-  details.solution[open] summary::before {{ content: "▾"; }}
-  .solution-name {{ flex: 1; }}
-  .work-state {{
-    font-weight: 500; font-size: 0.75rem; padding: 0.15rem 0.5rem; border-radius: 999px;
-    background: var(--neutral-bg); color: var(--neutral-fg); white-space: nowrap;
-  }}
-  .cost {{ font-size: 0.8rem; color: var(--muted); white-space: nowrap; font-weight: 400; }}
-  .solution-body {{ padding: 0 0 1rem 1.4rem; }}
-  .solution-description {{ color: var(--fg); margin-top: 0; }}
-  ul.ratings {{ list-style: none; margin: 0.5rem 0 0; padding: 0; }}
-  li.rating {{ padding: 0.5rem 0; border-top: 1px solid var(--border); }}
-  li.rating:first-child {{ border-top: none; }}
-  .rating-head {{ display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }}
-  .sign-badge {{ font-size: 0.7rem; font-weight: 700; padding: 0.1rem 0.45rem; border-radius: 4px; }}
-  .sign-pro {{ background: var(--pro-bg); color: var(--pro); }}
-  .sign-con {{ background: var(--con-bg); color: var(--con); }}
-  .sign-neutral {{ background: var(--neutral-bg); color: var(--neutral-fg); }}
-  .axis-name {{ font-weight: 600; }}
-  .values {{ font-size: 0.75rem; color: var(--muted); margin-left: auto; white-space: nowrap; }}
-  .values strong {{ color: var(--fg); }}
-  .rating-note {{ margin: 0.3rem 0 0; color: var(--muted); font-size: 0.92rem; }}
-</style>
+<title>{html.escape(_TITLE)}</title>
+{_FONTS_LINK}
+<style>{_STYLE}</style>
 </head>
 <body>
-  <h1>live_testing_framework: requirements &amp; solutions</h1>
-  <p class="subtitle">
-    Generated by scripts/generate_live_testing_report.py from
-    docs/manifest/story-simulator.yaml. One section per requirement;
-    click a solution to expand its pros and cons.
-  </p>
+  <div class="masthead">
+    <p class="kicker">live_testing_framework &middot; requirement coverage</p>
+    <h1>Requirements &amp; candidate solutions</h1>
+    <p class="subtitle">
+      One section per requirement, listing every candidate solution that
+      satisfies it. Expand a solution to see its pros and cons.
+    </p>
+  </div>
   {requirements_html}
 </body>
 </html>
 """
 
 
-def render_report(data: dict) -> str:
-    requirements_html = "".join(_render_requirement(r, data) for r in data["requirements"])
-    return _PAGE_TEMPLATE.format(requirements_html=requirements_html)
-
-
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
+    parser.add_argument(
+        "--fragment", action="store_true",
+        help="Write title/style/body content only, for publishing as a Claude Artifact.",
+    )
     args = parser.parse_args()
 
     registrar = Registrar.from_manifest(["docs/manifest", "story_simulator"])
     data = load_report_data(registrar)
-    args.output.write_text(render_report(data))
+    content = render_content(data) if args.fragment else render_report(data)
+    args.output.write_text(content)
     print(f"Wrote {args.output}")
 
 

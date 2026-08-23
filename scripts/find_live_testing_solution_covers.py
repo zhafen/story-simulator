@@ -43,7 +43,7 @@ def load_solution_map(registrar: Registrar) -> tuple[set[str], dict[str, set[str
     eids = registrar.get("entity_id").execute()
     path_of = dict(zip(eids["value"].astype(str), eids["path"].astype(str)))
 
-    req_df = registrar.get("requirement").execute()
+    req_df = registrar.get("requirement_priority").execute()
     requirements = {
         leaf
         for eid in req_df["entity_id"]

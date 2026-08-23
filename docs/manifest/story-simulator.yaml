@@ -72,13 +72,13 @@ cost_budgets:
 story_simulator_mission:
     data:
         - description: To enable players to create and experience self-consistent stories with simulation mechanics handled by AI.
-        - requirement
+        - requirement_priority
     stateless_client:
         - description: >
               Any MCP-aware client can open the same save_dir and see identical
               world state — nothing narratively load-bearing lives only in one
               client's conversation context.
-        - requirement
+        - requirement_priority
         - impact:
               type: reliability
               value: 1
@@ -92,7 +92,7 @@ story_simulator_mission:
               two call sites would hash to two different entity_ids and
               silently fork a duplicate entity instead of updating the
               original.
-        - requirement
+        - requirement_priority
         - impact:
               type: reliability
               value: 0.9
@@ -104,7 +104,7 @@ story_simulator_mission:
               read or write concurrently — rules out a single-file embedded
               database (e.g. DuckDB), which locks out every other connection
               while one process holds it open.
-        - requirement
+        - requirement_priority
         - impact:
               type: reliability
               value: 0.8
@@ -115,7 +115,7 @@ story_simulator_mission:
               localhost-only Postgres that isn't running yet rather than
               failing outright — a deliberately remote or already-configured
               server must never be touched.
-        - requirement
+        - requirement_priority
         - impact:
               type: developer_experience
               value: 0.4
@@ -136,7 +136,7 @@ story_simulator_mission:
               "nothing with an earlier end_time is still unresolved"
               language is the model to follow: a general rule any scenario
               benefits from, not one keyed to a particular entity or story.
-        - requirement
+        - requirement_priority
         - impact:
               type: architecture_clarity
               value: 0.5
@@ -150,7 +150,7 @@ story_simulator_mission:
                   Must seed only an empty save from scenario_dir/DEFAULT_WORLD_DIR
                   once — a resumed save's accumulated registry state must never
                   be re-merged with the starting scenario on reconnect.
-            - requirement
+            - requirement_priority
             - impact:
                   type: reliability
                   value: 0.9
@@ -164,7 +164,7 @@ story_simulator_mission:
                   story_simulator_view_tools_reinstated_as_iacs_delegates for
                   why this is a thin wrapper rather than routed through a
                   separate iacs-mcp call.
-            - requirement
+            - requirement_priority
             - impact:
                   type: reliability
                   value: 0.6
@@ -177,14 +177,14 @@ story_simulator_mission:
                   reimplementing the traversal -- see docs/manifest/
                   history.yaml: project_history.
                   story_simulator_view_tools_reinstated_as_iacs_delegates.
-            - requirement
+            - requirement_priority
             - impact:
                   type: reliability
                   value: 0.6
             - work_state: done
         update_registry:
             - description: Merges entity-first YAML into the registry through the same ETL as save files.
-            - requirement
+            - requirement_priority
             - impact:
                   type: reliability
                   value: 0.9
@@ -199,7 +199,7 @@ story_simulator_mission:
                   reason view_registry/view_entity are thin wrappers (see
                   docs/manifest/history.yaml: project_history.
                   story_simulator_view_tools_reinstated_as_iacs_delegates).
-            - requirement
+            - requirement_priority
             - impact:
                   type: reliability
                   value: 0.6
@@ -222,21 +222,21 @@ story_simulator_mission:
                   loop over rows. Fixes a playtesting bug (see
                   project_history.door_visibility_bug_found_playtesting) where
                   a 2m door was narrated as visible from ~2km away.
-            - requirement
+            - requirement_priority
             - impact:
                   type: reliability
                   value: 0.8
             - work_state: done
         generate_terrain:
             - description: One LiteLLM call inventing terrain for a location with none established, consistent with what's already known.
-            - requirement
+            - requirement_priority
             - impact:
                   type: gameplay_richness
                   value: 0.6
             - work_state: done
         resolve_physics:
             - description: One LiteLLM call judging the plausible physical outcome of an action not obviously safe to decide directly.
-            - requirement
+            - requirement_priority
             - impact:
                   type: gameplay_richness
                   value: 0.6
@@ -247,7 +247,7 @@ story_simulator_mission:
                   case with nobody chatting to drive it — via a nested
                   decide-then-(generate_terrain/resolve_physics/update_registry)*
                   loop.
-            - requirement
+            - requirement_priority
             - impact:
                   type: gameplay_richness
                   value: 0.7
@@ -267,7 +267,7 @@ story_simulator_mission:
               grepping the frozen seed specifically instead of the live
               world.yaml, or not know world.yaml exists — see
               mcp_instructions_mention_world_yaml.
-        - requirement
+        - requirement_priority
         - impact:
               type: reliability
               value: 0.6
@@ -287,7 +287,7 @@ story_simulator_mission:
               reaches any connected MCP client. Needs a periodic pass, not a
               one-time fix, since CLAUDE.md keeps accumulating this kind of
               knowledge.
-        - requirement
+        - requirement_priority
         - impact:
               type: reliability
               value: 0.3
@@ -305,7 +305,7 @@ story_simulator_mission:
               loader that turns an `agent` entity into an AgentSpec, and an MCP
               tool that dispatches to it. Reserved in manifest/builtins.yaml;
               not read by any code yet.
-        - requirement
+        - requirement_priority
         - impact:
               - type: gameplay_richness
                 value: 0.6
@@ -349,7 +349,7 @@ story_simulator_mission:
               state already does. What remains open here is the day/night
               cycle/calendar/elapsed-time-surfacing scope only, not this
               persistence gap.
-        - requirement
+        - requirement_priority
         - impact:
               type: gameplay_richness
               value: 0.2
@@ -365,7 +365,7 @@ story_simulator_mission:
               behavior, and a realistic multi-tool-call play session, should
               have real-model (@pytest.mark.live) coverage, not just
               tool-level tests against a mocked LLM.
-        - requirement
+        - requirement_priority
         - impact:
               type: reliability
               value: 0.6
@@ -393,7 +393,7 @@ story_simulator_mission:
               D's "no secrets committed" / "auth/session-isolation
               documented" release-checklist bullets and Epic E's
               auth-token-to-save_dir design either way.
-        - requirement
+        - requirement_priority
         - impact:
               - type: gameplay_richness
                 value: 0.2
@@ -408,7 +408,7 @@ story_simulator_mission:
               The pre-rebuild VisualizerSystem's SVG position plot has no
               equivalent MCP tool today — a connected agent can't currently get
               a rendered top-down view of the world, only text.
-        - requirement
+        - requirement_priority
         - impact:
               type: gameplay_richness
               value: 0.5
@@ -425,7 +425,7 @@ story_simulator_mission:
               run_dataflow("audit.requirement_coverage")/("audit.traceability")
               can check the project's own design and resolved_impact_cost can
               rank open work instead of re-deriving priorities from memory.
-        - requirement
+        - requirement_priority
         - impact:
               type: architecture_clarity
               value: 0.8
@@ -440,7 +440,7 @@ story_simulator_mission:
               removal (acb2956) deleted the Archivist that used it. Either
               delete it or repurpose it for ec_defined_agents (an EC-defined
               agent could plausibly need to talk to iacs-mcp the same way).
-        - requirement
+        - requirement_priority
         - impact:
               type: architecture_clarity
               value: 0.4
@@ -460,7 +460,7 @@ story_simulator_mission:
               `__iacs__ = {"todo": ...}` marker in config.py itself, so this
               backlog note isn't split across code docstrings and the
               manifest.
-        - requirement
+        - requirement_priority
         - impact:
               type: developer_experience
               value: 0.2
@@ -484,7 +484,7 @@ story_simulator_mission:
               in the code, only the todo note moved here). Function names
               updated 2026-08-16 to match the event-entity rework
               (predict_next_event/push_event no longer exist).
-        - requirement
+        - requirement_priority
         - impact:
               type: architecture_clarity
               value: 0.3
@@ -550,7 +550,7 @@ story_simulator_mission:
                   truly persisting write order across a session boundary --
                   good enough for the concrete bug (a tie within one
                   continuous session), not a complete fix.
-            - requirement
+            - requirement_priority
             - impact:
                   type: reliability
                   value: 0.3
@@ -573,7 +573,7 @@ story_simulator_mission:
                   complexity for a small saving, and inaccurate (hardcoded
                   int, but time is legitimately float here). The three
                   blocks still repeat the boilerplate by hand.
-            - requirement
+            - requirement_priority
             - impact:
                   type: architecture_clarity
                   value: 0.2
@@ -589,7 +589,7 @@ story_simulator_mission:
                   _METADATA_COLS. Both needed the same _seq addition by hand
                   this session -- exactly the kind of drift risk a single
                   source of truth would prevent.
-            - requirement
+            - requirement_priority
             - impact:
                   type: architecture_clarity
                   value: 0.2
@@ -607,7 +607,7 @@ story_simulator_mission:
                   entity under a name that only advertises reading -- a
                   caller checking "what does this function do" from its
                   name alone would miss the write.
-            - requirement
+            - requirement_priority
             - impact:
                   type: architecture_clarity
                   value: 0.15
@@ -825,7 +825,7 @@ story_simulator_mission:
                       iacs's own example_dirs() parametrization and this repo's
                       Case list (test_scenario_resolution.py) both add a
                       scenario as a few lines, not a new file.
-                - requirement
+                - requirement_priority
                 - impact:
                       type: reliability
                       value: 0.4
@@ -842,7 +842,7 @@ story_simulator_mission:
                       responder="subagent" isolation is unverified (see the
                       TODO in story_simulator/resolve.py's
                       _frame_for_responder).
-                - requirement
+                - requirement_priority
                 - impact:
                       type: reliability
                       value: 0.6
@@ -860,7 +860,7 @@ story_simulator_mission:
                       advance_simulation/update_registry), but not yet folded
                       into the same Case/expected.py framework
                       scenario_variety's other solutions use.
-                - requirement
+                - requirement_priority
                 - impact:
                       type: reliability
                       value: 0.5
@@ -878,7 +878,7 @@ story_simulator_mission:
                       ("host"/"subagent"/"keyed_subagent", see
                       story_simulator.keyed_subagent) -- both a static,
                       per-session choice, matching what's asked for here.
-                - requirement
+                - requirement_priority
                 - impact:
                       - type: reliability
                         value: 0.3
@@ -901,7 +901,7 @@ story_simulator_mission:
                       -- test_scenario_resolution.py's Case list) are three
                       separate locations in two different formats (YAML data,
                       Python data/code).
-                - requirement
+                - requirement_priority
                 - impact:
                       - type: developer_experience
                         value: 0.9
@@ -921,7 +921,7 @@ story_simulator_mission:
                       done (every current live test sends one open-ended
                       instruction); turn-by-turn against this same framework is
                       not implemented yet.
-                - requirement
+                - requirement_priority
                 - impact:
                       - type: reliability
                         value: 0.3
@@ -942,7 +942,7 @@ story_simulator_mission:
                       tool-calling dispatch) and every Case/instruction/checks
                       definition in test_scenario_resolution.py are
                       story-simulator-local Python, not just scenario data.
-                - requirement
+                - requirement_priority
                 - impact:
                       - type: architecture_clarity
                         value: 0.5

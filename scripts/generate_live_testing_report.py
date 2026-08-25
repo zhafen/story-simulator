@@ -243,10 +243,17 @@ def load_dependencies_data(registrar: Registrar) -> dict:
         if eid in entity_keys:
             work_states[entity_keys[eid]] = str(row["value"])
 
+    locations: dict[str, str] = {}
+    for _, row in registrar.get("location").execute().iterrows():
+        eid = str(row["entity_id"])
+        if eid in entity_keys:
+            locations[entity_keys[eid]] = str(row["value"])
+
     entities = {
         key: {
             "description": descriptions.get(key, ""),
             "work_state": work_states.get(key, "unknown"),
+            "location": locations.get(key, key),
         }
         for key in entity_keys.values()
     }
@@ -510,6 +517,7 @@ def _render_dependency(key: str, dependencies_data: dict) -> str:
     entity = dependencies_data["entities"][key]
     description = html.escape(entity["description"])
     work_state = entity["work_state"]
+    location = entity["location"]
     solution_names = dependencies_data["dependency_to_solutions"].get(key, [])
     chips = "".join(
         f'<span class="req-chip">{html.escape(_label(s))}</span>' for s in solution_names
@@ -517,7 +525,7 @@ def _render_dependency(key: str, dependencies_data: dict) -> str:
     return f"""
       <details class="solution">
         <summary>
-          <span class="solution-name">{html.escape(_label(key))}</span>
+          <span class="solution-name dependency-location">{html.escape(location)}</span>
           <span class="work-state work-state-{html.escape(work_state.replace(' ', '-'))}">{html.escape(work_state)}</span>
         </summary>
         <div class="solution-body">
@@ -660,6 +668,7 @@ _STYLE = """
     font-size: 1.05rem; font-weight: 600; margin: 1.8rem 0 0;
   }
   .solution-name { flex: 1; font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 0.95rem; }
+  .dependency-location { font-size: 0.85rem; overflow-wrap: anywhere; }
   .work-state {
     font-family: "IBM Plex Mono", ui-monospace, monospace;
     font-weight: 500; font-size: 0.68rem; letter-spacing: 0.03em;

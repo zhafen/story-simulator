@@ -120,46 +120,234 @@ NEW_TREE_ENTITY_KEY = "human_validated_test_framework"
 NEW_TREE_MANIFEST_PATH = Path("docs/manifest/story-simulator.yaml")
 
 
-def load_new_tree_yaml_snippet() -> str:
-    """Raw YAML source of the human_validated_test_framework subtree --
+def load_new_tree_graph_data(registrar: Registrar) -> dict:
+    """Node/edge data for the human_validated_test_framework subtree --
     zhafen's own alternating-tree redesign (each solution nests the
     requirement(s) it needs; each requirement nests its own candidate
-    solutions), sketched inline in story-simulator.yaml but not yet
-    reflected in this report's own rendering (which still only understands
-    the older mirrored requirements:/candidate_solutions: shape). Embedded
-    verbatim rather than rendered while the redesign is still being
-    narrated, so nothing about it is silently reinterpreted.
-
-    Extracted textually: from the line declaring the entity key (at its
-    known 8-space indent) up to the first following non-blank line
-    indented 4 spaces or less, i.e. wherever the subtree ends and a
-    sibling/comment at a shallower nesting level begins.
+    solutions) -- for the inline-SVG graph visualization. Built from the
+    same resolved requirement/solution relations emc2p's own dataflow
+    computes (parent_from_hierarchy + components_with_resolved_paths), not
+    just raw YAML text, so a cross-link (e.g. one solution serving two
+    requirements) shows up as a real edge.
     """
-    lines = NEW_TREE_MANIFEST_PATH.read_text().splitlines()
-    key_line = f"        {NEW_TREE_ENTITY_KEY}:"
-    start = next((i for i, line in enumerate(lines) if line == key_line), None)
-    if start is None:
+    from emc2p.dataflows.derive.resolve_paths import (
+        components_with_resolved_paths,
+        fields_of_type_entity_ref,
+        parent_from_hierarchy,
+    )
+
+    entity_id = registrar.get("entity_id")
+    field = registrar.get("field")
+    components = registrar._registry._components
+    hierarchy = parent_from_hierarchy(entity_id)
+    resolved = components_with_resolved_paths(
+        entity_id=entity_id,
+        components=components,
+        fields_of_type_entity_ref=fields_of_type_entity_ref(entity_id, field),
+        parent_from_hierarchy=hierarchy,
+    )
+
+    eids = entity_id.execute()
+    path_of = dict(zip(eids["value"].astype(str), eids["path"].astype(str)))
+
+    def clean(path: str) -> str:
+        return path.split(":", 1)[1]
+
+    marker = f".{NEW_TREE_ENTITY_KEY}"
+    subtree_path_of = {
+        eid: clean(p)
+        for eid, p in path_of.items()
+        if marker in clean(p) or clean(p).endswith(NEW_TREE_ENTITY_KEY)
+    }
+    path_to_eid = {p: eid for eid, p in subtree_path_of.items()}
+
+    descriptions: dict[str, str] = {}
+    for _, row in registrar.get("description").execute().iterrows():
+        eid = str(row["entity_id"])
+        if eid in subtree_path_of:
+            descriptions[eid] = str(row["value"])
+
+    work_states: dict[str, str] = {}
+    for _, row in registrar.get("work_state").execute().iterrows():
+        eid = str(row["entity_id"])
+        if eid in subtree_path_of:
+            work_states[eid] = str(row["value"])
+
+    types: dict[str, str] = {}
+    for ctype in ("requirement", "solution"):
+        for _, row in registrar.get(ctype).execute().iterrows():
+            eid = str(row["entity_id"])
+            if eid in subtree_path_of:
+                types[eid] = ctype
+
+    nodes = []
+    parent_of: dict[str, str | None] = {}
+    for eid, path in subtree_path_of.items():
+        parent_path = path.rsplit(".", 1)[0] if "." in path else None
+        parent_id = path_to_eid.get(parent_path) if parent_path else None
+        parent_of[eid] = parent_id
+        key = path.rsplit(".", 1)[-1]
+        nodes.append({
+            "id": eid,
+            "key": key,
+            "label": _label(key),
+            "type": types.get(eid, "solution" if parent_id is None else "requirement"),
+            "description": descriptions.get(eid, ""),
+            "work_state": work_states.get(eid),
+            "parent_id": parent_id,
+        })
+
+    cross_edges: list[tuple[str, str]] = []
+    seen_cross = set()
+    for ctype in ("requirement", "solution"):
+        df = resolved[ctype].to_pandas()
+        for _, row in df.iterrows():
+            eid = str(row["entity_id"])
+            if eid not in subtree_path_of:
+                continue
+            target = row.get("value_eid")
+            if target is None or (isinstance(target, float) and target != target):
+                continue
+            target = str(target)
+            if target not in subtree_path_of or target == parent_of.get(eid):
+                continue
+            pair = (eid, target)
+            if pair not in seen_cross:
+                seen_cross.add(pair)
+                cross_edges.append(pair)
+
+    return {"nodes": nodes, "cross_edges": cross_edges}
+
+
+_GRAPH_NODE_W = 200
+_GRAPH_NODE_H = 56
+_GRAPH_H_GAP = 24
+_GRAPH_V_GAP = 70
+
+
+def _layout_tree(nodes: list[dict]) -> dict:
+    """Simple top-down tidy-tree layout: each leaf gets one column's worth
+    of width, a parent's width is the sum of its children's, deterministic
+    left-to-right ordering by node key (not narration order -- pandas/emc2p
+    row order isn't guaranteed, alphabetical is at least stable)."""
+    by_id = {n["id"]: n for n in nodes}
+    children: dict[str, list[str]] = {}
+    roots = []
+    for n in nodes:
+        pid = n["parent_id"]
+        if pid is None:
+            roots.append(n["id"])
+        else:
+            children.setdefault(pid, []).append(n["id"])
+    for pid in children:
+        children[pid].sort(key=lambda nid: by_id[nid]["key"])
+    roots.sort(key=lambda nid: by_id[nid]["key"])
+
+    positions: dict[str, tuple[float, int]] = {}
+    next_col = [0]
+
+    def visit(node_id: str, depth: int) -> float:
+        kids = children.get(node_id, [])
+        if not kids:
+            col = next_col[0]
+            next_col[0] += 1
+            x = col + 0.5
+        else:
+            xs = [visit(k, depth + 1) for k in kids]
+            x = sum(xs) / len(xs)
+        positions[node_id] = (x, depth)
+        return x
+
+    for r in roots:
+        visit(r, 0)
+
+    max_col = next_col[0] or 1
+    max_depth = max((d for _, d in positions.values()), default=0)
+    width = max_col * (_GRAPH_NODE_W + _GRAPH_H_GAP)
+    height = (max_depth + 1) * (_GRAPH_NODE_H + _GRAPH_V_GAP)
+    pixel_positions = {
+        nid: (
+            x * (_GRAPH_NODE_W + _GRAPH_H_GAP) + _GRAPH_H_GAP / 2,
+            depth * (_GRAPH_NODE_H + _GRAPH_V_GAP) + _GRAPH_V_GAP / 2,
+        )
+        for nid, (x, depth) in positions.items()
+    }
+    return {"positions": pixel_positions, "width": width, "height": height}
+
+
+def _render_new_tree_graph_section(graph_data: dict) -> str:
+    nodes = graph_data["nodes"]
+    if not nodes:
         return ""
-    end = len(lines)
-    for i in range(start + 1, len(lines)):
-        line = lines[i]
-        if not line.strip():
+    layout = _layout_tree(nodes)
+    positions = layout["positions"]
+    by_id = {n["id"]: n for n in nodes}
+
+    svg_parts = []
+    # Tree edges (solid) drawn first, under the nodes.
+    for n in nodes:
+        pid = n["parent_id"]
+        if pid is None or pid not in positions:
             continue
-        if len(line) - len(line.lstrip(" ")) <= 4:
-            end = i
-            break
-    return "\n".join(lines[start:end]).rstrip("\n")
+        x1, y1 = positions[pid]
+        x2, y2 = positions[n["id"]]
+        svg_parts.append(
+            f'<path class="graph-edge" d="M {x1 + _GRAPH_NODE_W / 2} {y1 + _GRAPH_NODE_H} '
+            f'C {x1 + _GRAPH_NODE_W / 2} {y1 + _GRAPH_NODE_H + _GRAPH_V_GAP / 2}, '
+            f'{x2 + _GRAPH_NODE_W / 2} {y2 - _GRAPH_V_GAP / 2}, '
+            f'{x2 + _GRAPH_NODE_W / 2} {y2}"/>'
+        )
+    # Cross edges (dashed) -- e.g. one solution also solving a second requirement.
+    for from_id, to_id in graph_data["cross_edges"]:
+        if from_id not in positions or to_id not in positions:
+            continue
+        x1, y1 = positions[from_id]
+        x2, y2 = positions[to_id]
+        svg_parts.append(
+            f'<path class="graph-edge graph-edge-cross" d="M {x1 + _GRAPH_NODE_W / 2} {y1} '
+            f'Q {(x1 + x2) / 2 + _GRAPH_NODE_W / 2} {min(y1, y2) - 30}, '
+            f'{x2 + _GRAPH_NODE_W / 2} {y2}" marker-end="url(#graph-arrow)"/>'
+        )
+    # Nodes on top.
+    for n in nodes:
+        x, y = positions[n["id"]]
+        node_type = n["type"]
+        work_badge = ""
+        if n["work_state"]:
+            ws = html.escape(n["work_state"])
+            work_badge = f'<text class="graph-node-badge" x="10" y="42">{ws}</text>'
+        desc_attr = html.escape(n["description"].strip().replace("\n\n", " ").replace("\n", " "))
+        svg_parts.append(f"""
+      <g class="graph-node graph-node-{node_type}" transform="translate({x},{y})" data-desc="{desc_attr}">
+        <title>{html.escape(n["label"])}&#10;&#10;{desc_attr}</title>
+        <rect width="{_GRAPH_NODE_W}" height="{_GRAPH_NODE_H}" rx="{10 if node_type == "requirement" else _GRAPH_NODE_H / 2}"/>
+        <text class="graph-node-label" x="10" y="24">{html.escape(n["label"])}</text>
+        {work_badge}
+      </g>""")
 
+    svg = f"""
+    <svg class="graph-svg" viewBox="0 0 {layout['width']} {layout['height']}" width="{layout['width']}" height="{layout['height']}">
+      <defs>
+        <marker id="graph-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <path d="M 0 0 L 10 5 L 0 10 z" class="graph-arrowhead"/>
+        </marker>
+      </defs>
+      {"".join(svg_parts)}
+    </svg>"""
 
-def _render_new_tree_yaml_section(yaml_text: str) -> str:
-    if not yaml_text:
-        return ""
     return f"""
-  <details class="yaml-preview">
+  <details class="yaml-preview" open>
     <summary>
-      <span class="yaml-preview-title">Alternating-tree redesign (raw YAML, still being narrated)</span>
+      <span class="yaml-preview-title">Alternating-tree redesign -- graph view (still being narrated)</span>
     </summary>
-    <pre class="yaml-preview-body"><code>{html.escape(yaml_text)}</code></pre>
+    <p class="graph-legend">
+      <span class="graph-legend-item"><span class="graph-swatch graph-swatch-requirement"></span>requirement</span>
+      <span class="graph-legend-item"><span class="graph-swatch graph-swatch-solution"></span>solution</span>
+      <span class="graph-legend-item"><span class="graph-edge-sample"></span>nested (implied) relation</span>
+      <span class="graph-legend-item"><span class="graph-edge-sample graph-edge-sample-cross"></span>additional solution of: link</span>
+    </p>
+    <div class="graph-scroll">{svg}</div>
+    <p class="graph-hint">Hover a node for its full description.</p>
   </details>
   <hr class="section-divider">"""
 
@@ -413,14 +601,44 @@ _STYLE = """
   .yaml-preview-title {
     font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 0.9rem;
   }
-  .yaml-preview-body {
-    background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
-    padding: 0.85rem 1rem; overflow-x: auto; margin: 0 0 1.1rem;
+
+  .graph-legend {
+    display: flex; flex-wrap: wrap; gap: 1.1rem; margin: 0 0 0.9rem;
+    font-size: 0.78rem; color: var(--muted);
   }
-  .yaml-preview-body code {
-    font-family: "IBM Plex Mono", ui-monospace, monospace;
-    font-size: 0.78rem; line-height: 1.5; color: var(--fg); white-space: pre;
+  .graph-legend-item { display: inline-flex; align-items: center; gap: 0.4rem; }
+  .graph-swatch {
+    width: 0.85rem; height: 0.85rem; border-radius: 3px; display: inline-block;
+    border: 1.5px solid var(--border);
   }
+  .graph-swatch-requirement { background: var(--chip-bg); }
+  .graph-swatch-solution { background: var(--surface); border-color: var(--accent); }
+  .graph-edge-sample {
+    width: 1.6rem; height: 0; border-top: 1.5px solid var(--muted-2); display: inline-block;
+  }
+  .graph-edge-sample-cross { border-top-style: dashed; border-top-color: var(--accent); }
+
+  .graph-scroll { overflow-x: auto; padding-bottom: 0.5rem; }
+  .graph-svg { display: block; }
+  .graph-edge {
+    fill: none; stroke: var(--muted-2); stroke-width: 1.5;
+  }
+  .graph-edge-cross { stroke: var(--accent); stroke-dasharray: 5 4; }
+  .graph-arrowhead { fill: var(--accent); }
+  .graph-node rect {
+    stroke-width: 1.5; cursor: default;
+  }
+  .graph-node-requirement rect { fill: var(--chip-bg); stroke: var(--border); }
+  .graph-node-solution rect { fill: var(--surface); stroke: var(--accent); }
+  .graph-node-label {
+    font-family: "IBM Plex Sans", -apple-system, sans-serif; font-size: 12px;
+    fill: var(--fg); font-weight: 500;
+  }
+  .graph-node-badge {
+    font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 9.5px;
+    fill: var(--muted-2); letter-spacing: 0.03em;
+  }
+  .graph-hint { margin: 0.6rem 0 1.1rem; color: var(--muted-2); font-size: 0.78rem; font-style: italic; }
 """
 
 _TITLE = "Live Testing Framework"
@@ -440,11 +658,11 @@ _BODY_TEMPLATE = """<title>{title}</title>
 """
 
 
-def render_content(data: dict) -> str:
+def render_content(data: dict, graph_data: dict) -> str:
     """Title + fonts link + style + body content, no surrounding document
     tags -- for publishing as a Claude Artifact (which wraps its own
     <!doctype>/<html>/<head>/<body> and rejects one of its own)."""
-    requirements_html = _render_new_tree_yaml_section(load_new_tree_yaml_snippet())
+    requirements_html = _render_new_tree_graph_section(graph_data)
     requirements_html += "".join(_render_requirement(r, data) for r in data["requirements"])
     requirements_html += f'<hr class="section-divider">{_render_solutions_section(data)}'
     return _BODY_TEMPLATE.format(
@@ -452,9 +670,9 @@ def render_content(data: dict) -> str:
     )
 
 
-def render_report(data: dict) -> str:
+def render_report(data: dict, graph_data: dict) -> str:
     """A full, directly-openable standalone HTML document."""
-    new_tree_yaml_html = _render_new_tree_yaml_section(load_new_tree_yaml_snippet())
+    new_tree_graph_html = _render_new_tree_graph_section(graph_data)
     requirements_html = "".join(_render_requirement(r, data) for r in data["requirements"])
     solutions_section_html = _render_solutions_section(data)
     return f"""<!doctype html>
@@ -474,7 +692,7 @@ def render_report(data: dict) -> str:
       satisfies it. Expand a solution to see its pros and cons.
     </p>
   </div>
-  {new_tree_yaml_html}
+  {new_tree_graph_html}
   {requirements_html}
   <hr class="section-divider">
   {solutions_section_html}
@@ -494,7 +712,8 @@ def main() -> None:
 
     registrar = Registrar.from_manifest(["docs/manifest", "story_simulator"])
     data = load_report_data(registrar)
-    content = render_content(data) if args.fragment else render_report(data)
+    graph_data = load_new_tree_graph_data(registrar)
+    content = render_content(data, graph_data) if args.fragment else render_report(data, graph_data)
     args.output.write_text(content)
     print(f"Wrote {args.output}")
 

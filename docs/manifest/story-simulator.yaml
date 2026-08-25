@@ -1139,22 +1139,14 @@ story_simulator_mission:
                           value: 0.6
                     - work_state: in progress
                 live_agent_fixtures:
-                    data:
-                        - description: >
-                              Fixtures enabling live-agent tests to be
-                              written inline as regular Python code --
-                              McpClientSession/HeadlessSession usage wrapped
-                              up as reusable fixtures, rather than a
-                              Case/CASES parametrized list.
-                        - solution
-                    general_headless_execution:
-                        - description: >
-                              A general, reusable way to run a scenario
-                              headless -- what live_agent_fixtures itself
-                              needs in order to work, independent of any one
-                              specific test.
-                        - requirement
-                        - requirement_priority
+                    - description: >
+                          Fixtures enabling live-agent tests to be
+                          written inline as regular Python code --
+                          McpClientSession/HeadlessSession usage wrapped
+                          up as reusable fixtures, rather than a
+                          Case/CASES parametrized list.
+                    - solution
+                    - selected: true
             deterministic_machinery_check:
                 data:
                     - description: >
@@ -1184,6 +1176,7 @@ story_simulator_mission:
                           hand_scripted_harness_for_everything -- same idea,
                           scoped here specifically to the deterministic case.)
                     - solution
+                    - selected: true
             switchable_test_agent:
                 data:
                     - description: >
@@ -1213,6 +1206,7 @@ story_simulator_mission:
                           parameter, rather than something wired into a
                           Case/CASES list.
                     - solution
+                    - selected: true
             centralized_scenario_authoring:
                 data:
                     - description: >
@@ -1256,6 +1250,7 @@ story_simulator_mission:
                     - solution
                     - solution of: human_validated_test_framework.scenario_variety
                     - work_state: new
+                    - selected: true
             stepwise_or_completion_execution:
                 data:
                     - description: >
@@ -1286,6 +1281,7 @@ story_simulator_mission:
                           generic emc2p concern (self-corrected from an
                           earlier "put it in emc2p too" narration pass).
                     - solution
+                    - selected: true
             avoid_duplicated_machinery:
                 data:
                     - description: >
@@ -1329,21 +1325,34 @@ story_simulator_mission:
                           story_simulator_turn_fixtures under
                           stepwise_or_completion_execution above).
                     - solution
-            readability:
+                    - selected: true
+            intuitive_language:
                 data:
                     - description: >
-                          New requirement, surfaced only once the
-                          alternating-tree redesign started: the test code
-                          itself must be easy to read and not full of
+                          Split off from a single readability requirement,
+                          surfaced only once the alternating-tree redesign
+                          started: the syntax test code is written in must
+                          be easy to read and intuitive, not a
+                          project-specific data format someone has to learn.
+                    - requirement
+                    - requirement_priority
+                native_python_test_format:
+                    - description: Native Python standard test format.
+                    - solution
+                    - selected: true
+            concise_code:
+                data:
+                    - description: >
+                          Split off from a single readability requirement,
+                          surfaced only once the alternating-tree redesign
+                          started: test code must be concise, not full of
                           repeated boilerplate.
                     - requirement
                     - requirement_priority
                 shared_pytest_fixtures:
                     - description: Fixtures to minimize repeated code.
                     - solution
-                native_python_test_format:
-                    - description: Native Python standard test format.
-                    - solution
+                    - selected: true
 
 # What satisfies each done (or partially done) requirement. Most solutions
 # now live as `__iacs__ = {"solution of": ...}` metadata in Python docstrings.

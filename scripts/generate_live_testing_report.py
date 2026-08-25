@@ -1,17 +1,18 @@
 #!/usr/bin/env python3
 """Generate an HTML report of the human_validated_test_framework
 alternating requirement/solution tree (docs/manifest/story-simulator.yaml):
-a left-to-right collapsible graph, then a requirement-first document below
-it sourced from that exact same tree -- one section per requirement,
-listing every solution that satisfies it (both directly nested under that
-requirement and any solution of: cross-links onto it), each expandable to
-show its own pros and cons. Followed by a solution-first "Solutions"
-section -- every candidate solution listed once, with which requirement(s)
-it solves shown inside its own expandable entry, for the solutions that
-cover more than one requirement and would otherwise only show up once per
-requirement above. A solution serving multiple requirements is one node
-either way -- same name, same description, listed under each requirement
-it solves, never duplicated under a second name.
+a minimal table of contents (section headers only, linking down the page),
+then a requirement-first document sourced from that exact same tree -- one
+section per requirement, listing every solution that satisfies it (both
+directly nested under that requirement and any solution of: cross-links
+onto it), each expandable to show its own pros and cons. Followed by a
+solution-first "Solutions" section -- every candidate solution listed
+once, with which requirement(s) it solves shown inside its own expandable
+entry, for the solutions that cover more than one requirement and would
+otherwise only show up once per requirement above. A solution serving
+multiple requirements is one node either way -- same name, same
+description, listed under each requirement it solves, never duplicated
+under a second name.
 
 Requirement-first rather than solution-first on purpose -- see
 docs/manifest/prioritization_reflections.yaml's fourth installment
@@ -43,8 +44,6 @@ from __future__ import annotations
 
 import argparse
 import html
-import json
-import re
 from pathlib import Path
 
 from emc2p.registrar import Registrar
@@ -54,18 +53,17 @@ DEFAULT_OUTPUT = Path("/tmp/live_testing_framework_report.html")
 NEW_TREE_ENTITY_KEY = "human_validated_test_framework"
 NEW_TREE_MANIFEST_PATH = Path("docs/manifest/story-simulator.yaml")
 
-# On a real D3.js graph viz, if that's ever wanted instead of the
-# hand-rolled inline-SVG layout below: this report gets published as a
-# Claude Artifact, whose CSP blocks CDN script loads outright (Google
-# Fonts is the one exception) -- a normal <script src="https://d3js.org/...">
-# tag would silently fail to load there. The fix isn't to drop D3, it's to
-# vendor it: paste D3's full built bundle (e.g. https://d3js.org/d3.v7.min.js,
-# ~280KB) directly into a <script> tag with no src attribute, so nothing is
-# fetched externally -- that satisfies the Artifact's "fully self-contained"
-# rule and unlocks real D3 (animated collapse/expand, zoom/pan, force
-# layouts). Left this simpler layout in place for now since a 20-node
-# static tree doesn't really need any of that; revisit if the graph grows
-# or the interaction needs get fancier than click-to-collapse.
+# On a real D3.js graph viz, if a graph visualization of this tree is ever
+# wanted again (an earlier revision of this report rendered one, since
+# replaced by the plain table of contents below -- see git history): this
+# report gets published as a Claude Artifact, whose CSP blocks CDN script
+# loads outright (Google Fonts is the one exception) -- a normal
+# <script src="https://d3js.org/..."> tag would silently fail to load
+# there. The fix isn't to drop D3, it's to vendor it: paste D3's full
+# built bundle (e.g. https://d3js.org/d3.v7.min.js, ~280KB) directly into
+# a <script> tag with no src attribute, so nothing is fetched externally
+# -- that satisfies the Artifact's "fully self-contained" rule and unlocks
+# real D3 (animated collapse/expand, zoom/pan, force layouts).
 
 
 def load_new_tree_graph_data(registrar: Registrar) -> dict:
@@ -235,6 +233,12 @@ def build_new_tree_report_data(registrar: Registrar, graph_data: dict) -> dict:
         if eid in subtree_ids:
             code_examples[key_of[eid]] = {"language": str(row["language"]), "code": str(row["value"])}
 
+    selected: dict[str, bool] = {}
+    for _, row in registrar.get("selected").execute().iterrows():
+        eid = str(row["entity_id"])
+        if eid in subtree_ids:
+            selected[key_of[eid]] = bool(row["value"])
+
     return {
         "requirements": sorted(key_of[rid] for rid in requirement_ids),
         "req_to_solutions": req_to_solutions,
@@ -244,226 +248,12 @@ def build_new_tree_report_data(registrar: Registrar, graph_data: dict) -> dict:
         "code_examples": code_examples,
         "costs": costs,
         "pros_cons": pros_cons,
+        "selected": selected,
     }
-
-
-_GRAPH_NODE_W = 210
-_GRAPH_NODE_H = 44
-_GRAPH_H_GAP = 60
-_GRAPH_V_GAP = 14
-
-
-def _render_new_tree_graph_section(graph_data: dict) -> str:
-    """Left-to-right tree graph (root at the left, depth grows rightward,
-    siblings stack vertically). Layout runs client-side, not in Python:
-    the whole point of the -/+ collapse toggle is to make the diagram
-    genuinely smaller when a branch is hidden, which means re-computing
-    positions for whatever's currently visible and shrinking the SVG's own
-    viewBox to match -- a build-it-once-in-Python-then-hide-elements
-    approach can't do that, it just leaves blank space where the hidden
-    subtree used to be. So Python only serializes the node/edge data;
-    layoutTree()/render() below (plain JS, no framework) do the actual
-    tidy-tree math and DOM building, called once on load and again on
-    every toggle.
-    """
-    nodes = graph_data["nodes"]
-    if not nodes:
-        return ""
-
-    payload = {
-        "nodes": [
-            {
-                "id": n["id"],
-                "key": n["key"],
-                "label": n["label"],
-                "type": n["type"],
-                "description": n["description"].strip().replace("\n\n", " ").replace("\n", " "),
-                "work_state": n["work_state"],
-                "parent_id": n["parent_id"],
-            }
-            for n in nodes
-        ],
-        "cross_edges": [list(pair) for pair in graph_data["cross_edges"]],
-    }
-    # Embedded as its own application/json element rather than inlined into
-    # a JS string literal -- description text is full of apostrophes
-    # ("it's", "doesn't", ...) that would otherwise break out of whatever
-    # quote character wrapped it. This way nothing needs JS-string
-    # escaping at all, only the standard "</script" HTML-parser guard.
-    data_json = json.dumps(payload).replace("</", "<\\/")
-
-    script = f"""
-    <script type="application/json" class="graph-data">{data_json}</script>
-    <script>
-    (function() {{
-      var W = {_GRAPH_NODE_W}, H = {_GRAPH_NODE_H}, HGAP = {_GRAPH_H_GAP}, VGAP = {_GRAPH_V_GAP};
-      var SVGNS = 'http://www.w3.org/2000/svg';
-      var root = document.currentScript.closest('.yaml-preview');
-      var svg = root.querySelector('.graph-svg');
-      var data = JSON.parse(root.querySelector('.graph-data').textContent);
-      var byId = {{}};
-      data.nodes.forEach(function(n) {{ byId[n.id] = n; }});
-      var childrenOf = {{}};
-      var roots = [];
-      data.nodes.forEach(function(n) {{
-        if (n.parent_id) {{ (childrenOf[n.parent_id] = childrenOf[n.parent_id] || []).push(n.id); }}
-        else {{ roots.push(n.id); }}
-      }});
-      Object.keys(childrenOf).forEach(function(pid) {{
-        childrenOf[pid].sort(function(a, b) {{ return byId[a].key.localeCompare(byId[b].key); }});
-      }});
-      roots.sort(function(a, b) {{ return byId[a].key.localeCompare(byId[b].key); }});
-      var collapsed = new Set();
-
-      function layout() {{
-        var positions = {{}};
-        var nextRow = 0;
-        function visit(id, depth) {{
-          var kids = collapsed.has(id) ? [] : (childrenOf[id] || []);
-          var y;
-          if (kids.length === 0) {{
-            y = nextRow + 0.5; nextRow += 1;
-          }} else {{
-            var ys = kids.map(function(k) {{ return visit(k, depth + 1); }});
-            y = ys.reduce(function(a, b) {{ return a + b; }}, 0) / ys.length;
-          }}
-          positions[id] = {{x: depth * (W + HGAP) + HGAP / 2, y: y * (H + VGAP) - H / 2, depth: depth}};
-          return y;
-        }}
-        roots.forEach(function(r) {{ visit(r, 0); }});
-        var maxDepth = 0;
-        Object.keys(positions).forEach(function(id) {{ maxDepth = Math.max(maxDepth, positions[id].depth); }});
-        return {{positions: positions, width: (maxDepth + 1) * (W + HGAP), height: nextRow * (H + VGAP)}};
-      }}
-
-      function el(tag, attrs, text) {{
-        var e = document.createElementNS(SVGNS, tag);
-        for (var k in attrs) {{ e.setAttribute(k, attrs[k]); }}
-        if (text !== undefined) {{ e.textContent = text; }}
-        return e;
-      }}
-
-      function render() {{
-        var lay = layout();
-        var positions = lay.positions;
-        svg.setAttribute('viewBox', '0 0 ' + lay.width + ' ' + lay.height);
-        svg.setAttribute('width', lay.width);
-        svg.setAttribute('height', lay.height);
-        var content = svg.querySelector('.graph-content');
-        content.innerHTML = '';
-
-        data.nodes.forEach(function(n) {{
-          var p = positions[n.parent_id];
-          var here = positions[n.id];
-          if (!p || !here) return;
-          var x1 = p.x + W, y1 = p.y + H / 2, x2 = here.x, y2 = here.y + H / 2;
-          content.appendChild(el('path', {{
-            'class': 'graph-edge',
-            d: 'M ' + x1 + ' ' + y1 + ' C ' + (x1 + HGAP / 2) + ' ' + y1 + ', ' + (x2 - HGAP / 2) + ' ' + y2 + ', ' + x2 + ' ' + y2,
-          }}));
-        }});
-        data.cross_edges.forEach(function(pair) {{
-          var a = positions[pair[0]], b = positions[pair[1]];
-          if (!a || !b) return;
-          var sx = a.x + W, sy = a.y + H / 2, tx = b.x + W, ty = b.y + H / 2, bulge = 46;
-          content.appendChild(el('path', {{
-            'class': 'graph-edge graph-edge-cross',
-            d: 'M ' + sx + ' ' + sy + ' C ' + (sx + bulge) + ' ' + sy + ', ' + (tx + bulge) + ' ' + ty + ', ' + tx + ' ' + ty,
-            'marker-end': 'url(#graph-arrow)',
-          }}));
-        }});
-        data.nodes.forEach(function(n) {{
-          var pos = positions[n.id];
-          if (!pos) return;
-          var hasKids = (childrenOf[n.id] || []).length > 0;
-          var cls = 'graph-node graph-node-' + n.type + (hasKids ? ' graph-node-collapsible' : '');
-          var g = el('g', {{'class': cls, transform: 'translate(' + pos.x + ',' + pos.y + ')', 'data-id': n.id}});
-          var title = el('title', {{}}, n.label + '\\n\\n' + n.description);
-          g.appendChild(title);
-          g.appendChild(el('rect', {{width: W, height: H, rx: n.type === 'requirement' ? 8 : H / 2}}));
-          g.appendChild(el('text', {{'class': 'graph-node-label', x: 10, y: H / 2 + 4.5}}, n.label));
-          if (n.work_state) {{
-            g.appendChild(el('text', {{'class': 'graph-node-badge', x: W - 8, y: 15, 'text-anchor': 'end'}}, n.work_state));
-          }}
-          if (hasKids) {{
-            g.appendChild(el('circle', {{'class': 'graph-node-toggle', cx: W, cy: H / 2, r: 7}}));
-            g.appendChild(el('text', {{
-              'class': 'graph-node-toggle-glyph', x: W, y: H / 2 + 3.5, 'text-anchor': 'middle',
-            }}, collapsed.has(n.id) ? '+' : String.fromCharCode(8722)));
-            g.addEventListener('click', function() {{
-              if (collapsed.has(n.id)) {{ collapsed.delete(n.id); }} else {{ collapsed.add(n.id); }}
-              render();
-            }});
-          }}
-          content.appendChild(g);
-        }});
-      }}
-
-      render();
-    }})();
-    </script>"""
-
-    return f"""
-  <details class="yaml-preview" open>
-    <summary>
-      <span class="yaml-preview-title">Alternating-tree redesign -- graph view</span>
-    </summary>
-    <p class="graph-legend">
-      <span class="graph-legend-item"><span class="graph-swatch graph-swatch-requirement"></span>requirement</span>
-      <span class="graph-legend-item"><span class="graph-swatch graph-swatch-solution"></span>solution</span>
-      <span class="graph-legend-item"><span class="graph-edge-sample"></span>nested (implied) relation</span>
-      <span class="graph-legend-item"><span class="graph-edge-sample graph-edge-sample-cross"></span>additional solution of: link</span>
-    </p>
-    <div class="graph-scroll">
-      <svg class="graph-svg">
-        <defs>
-          <marker id="graph-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-            <path d="M 0 0 L 10 5 L 0 10 z" class="graph-arrowhead"/>
-          </marker>
-        </defs>
-        <g class="graph-content"></g>
-      </svg>
-    </div>
-    <p class="graph-hint">Hover a node for its full description. Click a node with a &#8722;/+ marker to collapse or expand its branch -- the diagram reflows and shrinks.</p>
-    {script}
-  </details>
-  <hr class="section-divider">"""
 
 
 def _label(name: str) -> str:
     return name.replace("_", " ")
-
-
-# Only split where sentence-ending punctuation is followed by whitespace
-# AND a capital letter/digit/quote/paren -- i.e. what a new sentence
-# actually starts with. Without the lookahead, abbreviations like "e.g."
-# get mis-split ("...from the host (e.g." | "claude) or a keyed subagent
-# ..."), cutting a sentence off mid-parenthetical.
-_SENTENCE_SPLIT_RE = re.compile(r'(?<=[.!?])\s+(?=[A-Z0-9"\'(])')
-
-
-def _sentences(text: str) -> list[str]:
-    text = text.strip()
-    return [s for s in _SENTENCE_SPLIT_RE.split(text) if s] if text else []
-
-
-def _render_description(text: str, class_name: str = "description") -> str:
-    """A description leads with its first sentence; the rest sits behind a
-    small inline expand toggle -- unless the whole description is already
-    3 sentences or fewer, in which case there's nothing meaningful to hide
-    and it's just shown in full."""
-    text = text.strip()
-    if not text:
-        return ""
-    sentences = _sentences(text)
-    if len(sentences) <= 3:
-        return f'<div class="{class_name}">{html.escape(text)}</div>'
-    summary = html.escape(sentences[0])
-    rest = html.escape(" ".join(sentences[1:]))
-    return (
-        f'<div class="{class_name}">{summary} '
-        f'<details class="description-more"><summary></summary>{rest}</details></div>'
-    )
 
 
 def _render_pro_con(item: dict) -> str:
@@ -479,7 +269,8 @@ def _render_pro_con(item: dict) -> str:
 
 
 def _render_solution(name: str, data: dict, show_requirements: bool = False) -> str:
-    description_html = _render_description(data["descriptions"].get(name, ""), "solution-description")
+    description = html.escape(data["descriptions"].get(name, ""))
+    is_selected = data["selected"].get(name, False)
     work_state = data["work_states"].get(name, "unknown")
     cost_items = data["costs"].get(name, [])
     cost_html = (
@@ -504,15 +295,18 @@ def _render_solution(name: str, data: dict, show_requirements: bool = False) -> 
         code_example_html = f"""
           <p class="section-label">Example</p>
           <pre class="code-example"><code class="language-{html.escape(example['language'])}">{html.escape(example['code'])}</code></pre>"""
+    selected_class = " solution-selected" if is_selected else ""
+    selected_badge = '<span class="selected-badge">Selected</span>' if is_selected else ""
     return f"""
-      <details class="solution">
+      <details class="solution{selected_class}">
         <summary>
+          {selected_badge}
           <span class="solution-name">{html.escape(_label(name))}</span>
           <span class="work-state work-state-{html.escape(work_state.replace(' ', '-'))}">{html.escape(work_state)}</span>
           <span class="cost">cost: {html.escape(cost_html)}</span>
         </summary>
         <div class="solution-body">
-          {description_html}
+          <p class="solution-description">{description}</p>
           {requirements_html}
           {code_example_html}
           <ul class="ratings">{ratings_html}</ul>
@@ -520,72 +314,42 @@ def _render_solution(name: str, data: dict, show_requirements: bool = False) -> 
       </details>"""
 
 
-def _render_toc_section(graph_data: dict) -> str:
-    """A table of contents: the same alternating-tree structure the graph
-    above already draws, as a plain-text outline instead -- one entry per
-    requirement/solution/sub-requirement, each with its own description
-    (leading sentence + expand for the rest). Replaces what used to be a
-    full prose section per requirement, each with its solutions rendered
-    in full: that duplicated the graph outright once the graph existed,
-    just in a slower, heavier form. Full solution detail (cost, pros/cons,
-    example code) lives one section down, in the Solutions index -- this
-    section is deliberately just an outline."""
-    nodes = graph_data["nodes"]
-    by_id = {n["id"]: n for n in nodes}
-    children: dict[str, list[str]] = {}
-    for n in nodes:
-        if n["parent_id"]:
-            children.setdefault(n["parent_id"], []).append(n["id"])
-    for pid in children:
-        children[pid].sort(key=lambda nid: by_id[nid]["key"])
+def _requirement_anchor(name: str) -> str:
+    return f"req-{name}"
 
-    also_solves: dict[str, list[str]] = {}
-    for from_id, to_id in graph_data["cross_edges"]:
-        also_solves.setdefault(from_id, []).append(to_id)
-    for k in also_solves:
-        also_solves[k].sort(key=lambda nid: by_id[nid]["key"])
 
-    root_id = next((n["id"] for n in nodes if n["parent_id"] is None), None)
-
-    def render_node(node_id: str) -> str:
-        n = by_id[node_id]
-        desc_html = _render_description(n["description"], "toc-description")
-        extra = ""
-        if node_id in also_solves:
-            names = ", ".join(html.escape(_label(by_id[t]["key"])) for t in also_solves[node_id])
-            extra = f'<p class="toc-also-solves">Also solves: {names}</p>'
-        work = ""
-        if n["work_state"]:
-            ws = html.escape(n["work_state"])
-            work = f'<span class="work-state work-state-{html.escape(n["work_state"].replace(" ", "-"))}">{ws}</span>'
-        kids_html = "".join(render_node(k) for k in children.get(node_id, []))
-        kids_wrap = f'<ul class="toc-children">{kids_html}</ul>' if kids_html else ""
-        return f"""
-      <li class="toc-item toc-item-{n["type"]}">
-        <div class="toc-item-head">
-          <span class="toc-item-badge toc-item-badge-{n["type"]}">{n["type"]}</span>
-          <span class="toc-item-label">{html.escape(n["label"])}</span>
-          {work}
-        </div>
-        {desc_html}
-        {extra}
-        {kids_wrap}
-      </li>"""
-
-    top_ids = sorted(children.get(root_id, []), key=lambda nid: by_id[nid]["key"])
-    items_html = "".join(render_node(nid) for nid in top_ids)
-
+def _render_toc_section(data: dict) -> str:
+    """A table of contents: literally just section headers, one per
+    requirement, linking down to that requirement's own section below --
+    no descriptions, no solution names, no prose. The full detail lives in
+    the requirement sections themselves (and the Solutions index), not
+    here."""
+    items_html = "".join(
+        f'<li><a href="#{_requirement_anchor(r)}">{html.escape(_label(r))}</a></li>'
+        for r in data["requirements"]
+    )
     return f"""
   <div class="masthead">
     <p class="kicker">live_testing_framework &middot; table of contents</p>
-    <h1>Requirements</h1>
-    <p class="subtitle">
-      Outline of the alternating-tree redesign shown in the graph above --
-      expand a description for the rest of it. Full solution detail
-      (cost, pros/cons, example code) is in the Solutions index below.
-    </p>
+    <h1>Contents</h1>
   </div>
-  <ul class="toc-root">{items_html}</ul>"""
+  <nav class="toc"><ul class="toc-root">{items_html}</ul></nav>"""
+
+
+def _render_requirement(name: str, data: dict) -> str:
+    description = html.escape(data["descriptions"].get(name, ""))
+    solution_names = data["req_to_solutions"].get(name, [])
+    if solution_names:
+        solutions_html = "".join(_render_solution(s, data) for s in solution_names)
+    else:
+        solutions_html = '<p class="no-solutions">No candidate solution currently solves this requirement.</p>'
+    return f"""
+  <section class="requirement" id="{_requirement_anchor(name)}">
+    <p class="eyebrow">Requirement</p>
+    <h2>{html.escape(_label(name))}</h2>
+    <p class="requirement-description">{description}</p>
+    {solutions_html}
+  </section>"""
 
 
 def _render_solutions_section(data: dict) -> str:
@@ -593,11 +357,19 @@ def _render_solutions_section(data: dict) -> str:
     which requirement(s) it solves. Requirement-first stays the primary view
     (see the module docstring for why), but a solution can solve more than
     one requirement -- this section is the place to see it listed once
-    instead of repeated under each requirement it happens to cover."""
+    instead of repeated under each requirement it happens to cover. Split
+    into Selected and Unselected -- once a requirement has a chosen
+    solution, distinguishing "the decided plan" from "the rest of the
+    candidates" matters more than a single flat list."""
     solution_names = sorted(data["solution_to_requirements"])
-    solutions_html = "".join(
-        _render_solution(s, data, show_requirements=True) for s in solution_names
-    )
+    selected_names = [s for s in solution_names if data["selected"].get(s, False)]
+    unselected_names = [s for s in solution_names if not data["selected"].get(s, False)]
+    selected_html = "".join(
+        _render_solution(s, data, show_requirements=True) for s in selected_names
+    ) or '<p class="no-solutions">None yet.</p>'
+    unselected_html = "".join(
+        _render_solution(s, data, show_requirements=True) for s in unselected_names
+    ) or '<p class="no-solutions">None -- every candidate solution has been selected.</p>'
     return f"""
   <div class="masthead">
     <p class="kicker">live_testing_framework &middot; solution index</p>
@@ -607,7 +379,10 @@ def _render_solutions_section(data: dict) -> str:
       covers. Expand a solution to see what it solves, its pros and cons.
     </p>
   </div>
-  {solutions_html}"""
+  <h2 class="solutions-subheading">Selected</h2>
+  {selected_html}
+  <h2 class="solutions-subheading">Unselected</h2>
+  {unselected_html}"""
 
 
 _FONTS_LINK = (
@@ -668,35 +443,30 @@ _STYLE = """
   }
   .subtitle { color: var(--muted); margin: 0; font-size: 0.95rem; max-width: 62ch; }
 
-  ul.toc-root, ul.toc-children { list-style: none; margin: 0; padding: 0; }
-  ul.toc-children { padding-left: 1.4rem; margin-top: 0.6rem; border-left: 1px solid var(--border); }
-  li.toc-item { margin-bottom: 1rem; }
-  li.toc-item:last-child { margin-bottom: 0; }
-  .toc-item-head { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
-  .toc-item-label {
+  nav.toc { margin-bottom: 2.75rem; }
+  ul.toc-root { list-style: none; margin: 0; padding: 0; }
+  ul.toc-root li { border-top: 1px solid var(--border); }
+  ul.toc-root li:last-child { border-bottom: 1px solid var(--border); }
+  ul.toc-root a {
+    display: block; padding: 0.65rem 0.1rem;
     font-family: "IBM Plex Mono", ui-monospace, monospace; font-weight: 600;
-    font-size: 0.95rem; text-wrap: balance;
+    font-size: 0.95rem; color: var(--fg); text-decoration: none;
   }
-  .toc-item-requirement > .toc-item-head .toc-item-label { font-size: 1.05rem; }
-  .toc-item-badge {
+  ul.toc-root a:hover { color: var(--accent); }
+
+  .requirement { margin-bottom: 2.75rem; scroll-margin-top: 1.5rem; }
+  .eyebrow {
     font-family: "IBM Plex Mono", ui-monospace, monospace;
-    font-size: 0.62rem; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase;
-    padding: 0.1rem 0.45rem; border-radius: 5px;
+    font-size: 0.72rem; font-weight: 600; letter-spacing: 0.1em;
+    text-transform: uppercase; color: var(--accent); margin: 0 0 0.3rem;
   }
-  .toc-item-badge-requirement { background: var(--chip-bg); color: var(--chip-fg); }
-  .toc-item-badge-solution { background: transparent; color: var(--accent); border: 1px solid var(--accent); }
-  .toc-description { color: var(--muted); margin: 0.3rem 0 0; max-width: 62ch; font-size: 0.92rem; }
-  .toc-also-solves { color: var(--muted-2); font-size: 0.8rem; font-style: italic; margin: 0.3rem 0 0; }
-  .description { color: var(--fg); margin: 0; max-width: 62ch; }
-  .description-more {
-    display: inline; font-size: 0.9em;
+  .requirement h2 {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 1.25rem; font-weight: 600; margin: 0 0 0.5rem;
+    text-wrap: balance; letter-spacing: -0.01em;
   }
-  .description-more summary {
-    display: inline; cursor: pointer; color: var(--accent); list-style: none;
-  }
-  .description-more summary::-webkit-details-marker { display: none; }
-  .description-more summary::before { content: "(more)"; }
-  .description-more[open] summary::before { content: "(less)"; }
+  .requirement-description { color: var(--muted); margin: 0 0 0.9rem; max-width: 62ch; }
+  .no-solutions { color: var(--muted-2); font-style: italic; margin: 0 0 0.9rem; }
 
   details.solution {
     background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
@@ -712,6 +482,18 @@ _STYLE = """
     transition: transform 0.15s ease;
   }
   details.solution[open] summary::before { transform: rotate(90deg); }
+  details.solution.solution-selected { border-color: var(--pro); background: var(--pro-bg); }
+  details.solution.solution-selected summary::before { color: var(--pro); }
+  .selected-badge {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 0.66rem; font-weight: 600; letter-spacing: 0.04em;
+    padding: 0.12rem 0.5rem; border-radius: 5px;
+    background: var(--pro); color: var(--accent-fg); white-space: nowrap;
+  }
+  .solutions-subheading {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 1.05rem; font-weight: 600; margin: 1.8rem 0 0;
+  }
   .solution-name { flex: 1; font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 0.95rem; }
   .work-state {
     font-family: "IBM Plex Mono", ui-monospace, monospace;
@@ -761,69 +543,6 @@ _STYLE = """
   }
 
   .section-divider { border: none; border-top: 1px solid var(--border); margin: 3rem 0 2.75rem; }
-
-  details.yaml-preview {
-    background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
-    padding: 0 1.1rem; margin-bottom: 2.75rem;
-  }
-  details.yaml-preview summary {
-    cursor: pointer; padding: 0.85rem 0; display: flex; align-items: center;
-    gap: 0.7rem; list-style: none; font-weight: 600;
-  }
-  details.yaml-preview summary::-webkit-details-marker { display: none; }
-  details.yaml-preview summary::before {
-    content: "▸"; color: var(--muted-2); font-weight: normal; flex-shrink: 0;
-    transition: transform 0.15s ease;
-  }
-  details.yaml-preview[open] summary::before { transform: rotate(90deg); }
-  .yaml-preview-title {
-    font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 0.9rem;
-  }
-
-  .graph-legend {
-    display: flex; flex-wrap: wrap; gap: 1.1rem; margin: 0 0 0.9rem;
-    font-size: 0.78rem; color: var(--muted);
-  }
-  .graph-legend-item { display: inline-flex; align-items: center; gap: 0.4rem; }
-  .graph-swatch {
-    width: 0.85rem; height: 0.85rem; border-radius: 3px; display: inline-block;
-    border: 1.5px solid var(--border);
-  }
-  .graph-swatch-requirement { background: var(--chip-bg); }
-  .graph-swatch-solution { background: var(--surface); border-color: var(--accent); }
-  .graph-edge-sample {
-    width: 1.6rem; height: 0; border-top: 1.5px solid var(--muted-2); display: inline-block;
-  }
-  .graph-edge-sample-cross { border-top-style: dashed; border-top-color: var(--accent); }
-
-  .graph-scroll { overflow-x: auto; padding-bottom: 0.5rem; }
-  .graph-svg { display: block; }
-  .graph-edge {
-    fill: none; stroke: var(--muted-2); stroke-width: 1.5;
-  }
-  .graph-edge-cross { stroke: var(--accent); stroke-dasharray: 5 4; }
-  .graph-arrowhead { fill: var(--accent); }
-  .graph-node rect {
-    stroke-width: 1.5; cursor: default;
-  }
-  .graph-node-requirement rect { fill: var(--chip-bg); stroke: var(--border); }
-  .graph-node-solution rect { fill: var(--surface); stroke: var(--accent); }
-  .graph-node-label {
-    font-family: "IBM Plex Sans", -apple-system, sans-serif; font-size: 12px;
-    fill: var(--fg); font-weight: 500;
-  }
-  .graph-node-badge {
-    font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 9.5px;
-    fill: var(--muted-2); letter-spacing: 0.03em;
-  }
-  .graph-node-collapsible { cursor: pointer; }
-  .graph-node-collapsible rect { cursor: pointer; }
-  .graph-node-toggle { fill: var(--accent); stroke: var(--surface); stroke-width: 2; }
-  .graph-node-toggle-glyph {
-    font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 11px; font-weight: 600;
-    fill: var(--accent-fg); dominant-baseline: middle; pointer-events: none;
-  }
-  .graph-hint { margin: 0.6rem 0 1.1rem; color: var(--muted-2); font-size: 0.78rem; font-style: italic; }
 """
 
 _TITLE = "Live Testing Framework"
@@ -835,14 +554,14 @@ _BODY_TEMPLATE = """<title>{title}</title>
 """
 
 
-def _render_body_sections(data: dict, graph_data: dict) -> str:
-    graph_html = _render_new_tree_graph_section(graph_data)
-    toc_html = _render_toc_section(graph_data)
+def _render_body_sections(data: dict) -> str:
+    toc_html = _render_toc_section(data)
+    requirements_html = "".join(_render_requirement(r, data) for r in data["requirements"])
     solutions_html = _render_solutions_section(data)
-    return f'{graph_html}{toc_html}<hr class="section-divider">{solutions_html}'
+    return f'{toc_html}{requirements_html}<hr class="section-divider">{solutions_html}'
 
 
-def render_content(data: dict, graph_data: dict) -> str:
+def render_content(data: dict) -> str:
     """Title + fonts link + style + body content, no surrounding document
     tags -- for publishing as a Claude Artifact (which wraps its own
     <!doctype>/<html>/<head>/<body> and rejects one of its own)."""
@@ -850,11 +569,11 @@ def render_content(data: dict, graph_data: dict) -> str:
         title=html.escape(_TITLE),
         fonts_link=_FONTS_LINK,
         style=_STYLE,
-        requirements_html=_render_body_sections(data, graph_data),
+        requirements_html=_render_body_sections(data),
     )
 
 
-def render_report(data: dict, graph_data: dict) -> str:
+def render_report(data: dict) -> str:
     """A full, directly-openable standalone HTML document."""
     return f"""<!doctype html>
 <html lang="en">
@@ -865,7 +584,7 @@ def render_report(data: dict, graph_data: dict) -> str:
 <style>{_STYLE}</style>
 </head>
 <body>
-  {_render_body_sections(data, graph_data)}
+  {_render_body_sections(data)}
 </body>
 </html>
 """
@@ -883,7 +602,7 @@ def main() -> None:
     registrar = Registrar.from_manifest(["docs/manifest", "story_simulator"])
     graph_data = load_new_tree_graph_data(registrar)
     data = build_new_tree_report_data(registrar, graph_data)
-    content = render_content(data, graph_data) if args.fragment else render_report(data, graph_data)
+    content = render_content(data) if args.fragment else render_report(data)
     args.output.write_text(content)
     print(f"Wrote {args.output}")
 

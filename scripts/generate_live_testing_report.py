@@ -2,7 +2,11 @@
 """Generate a requirement-first HTML report of live_testing_framework's
 candidate_solutions (docs/manifest/story-simulator.yaml): one section per
 requirement, listing every solution that satisfies it, each expandable to
-show its own pros and cons.
+show its own pros and cons. Followed by a solution-first "Solutions"
+section -- every candidate solution listed once, with which requirement(s)
+it solves shown inside its own expandable entry, for the solutions that
+cover more than one requirement and would otherwise only show up once per
+requirement above.
 
 Requirement-first rather than solution-first on purpose -- see
 docs/manifest/prioritization_reflections.yaml's fourth installment
@@ -117,6 +121,7 @@ def load_report_data(registrar: Registrar) -> dict:
     return {
         "requirements": sorted(requirements),
         "req_to_solutions": {r: sorted(s) for r, s in req_to_solutions.items()},
+        "solution_to_requirements": {s: sorted(r) for s, r in solves.items()},
         "descriptions": descriptions,
         "work_states": work_states,
         "costs": costs,
@@ -149,7 +154,7 @@ def _render_rating(rating: dict) -> str:
         </li>"""
 
 
-def _render_solution(name: str, data: dict) -> str:
+def _render_solution(name: str, data: dict, show_requirements: bool = False) -> str:
     description = html.escape(data["descriptions"].get(name, ""))
     work_state = data["work_states"].get(name, "unknown")
     cost_items = data["costs"].get(name, [])
@@ -160,6 +165,15 @@ def _render_solution(name: str, data: dict) -> str:
     pros = [r for r in ratings if r["contribution"] > 0]
     cons = [r for r in ratings if r["contribution"] <= 0]
     ratings_html = "".join(_render_rating(r) for r in pros + cons)
+    requirements_html = ""
+    if show_requirements:
+        req_names = data["solution_to_requirements"].get(name, [])
+        chips = "".join(
+            f'<span class="req-chip">{html.escape(_label(r))}</span>' for r in req_names
+        ) or '<span class="req-chip req-chip-none">none currently</span>'
+        requirements_html = f"""
+          <p class="solves-label">Solves</p>
+          <div class="req-chips">{chips}</div>"""
     return f"""
       <details class="solution">
         <summary>
@@ -169,6 +183,7 @@ def _render_solution(name: str, data: dict) -> str:
         </summary>
         <div class="solution-body">
           <p class="solution-description">{description}</p>
+          {requirements_html}
           <ul class="ratings">{ratings_html}</ul>
         </div>
       </details>"""
@@ -188,6 +203,28 @@ def _render_requirement(name: str, data: dict) -> str:
       <p class="requirement-description">{description}</p>
       {solutions_html}
     </section>"""
+
+
+def _render_solutions_section(data: dict) -> str:
+    """A solution-first section: every candidate solution once, each showing
+    which requirement(s) it solves. Requirement-first stays the primary view
+    (see the module docstring for why), but a solution can solve more than
+    one requirement -- this section is the place to see it listed once
+    instead of repeated under each requirement it happens to cover."""
+    solution_names = sorted(data["solution_to_requirements"])
+    solutions_html = "".join(
+        _render_solution(s, data, show_requirements=True) for s in solution_names
+    )
+    return f"""
+  <div class="masthead">
+    <p class="kicker">live_testing_framework &middot; solution index</p>
+    <h1>Solutions</h1>
+    <p class="subtitle">
+      Every candidate solution once, regardless of how many requirements it
+      covers. Expand a solution to see what it solves, its pros and cons.
+    </p>
+  </div>
+  {solutions_html}"""
 
 
 _FONTS_LINK = (
@@ -311,6 +348,20 @@ _STYLE = """
   .values strong { color: var(--fg); }
   .rating-note { margin: 0.35rem 0 0; color: var(--muted); font-size: 0.92rem; max-width: 62ch; }
 
+  .solves-label {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 0.68rem; font-weight: 600; letter-spacing: 0.1em;
+    text-transform: uppercase; color: var(--muted-2); margin: 0.9rem 0 0.4rem;
+  }
+  .req-chips { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+  .req-chip {
+    font-size: 0.8rem; padding: 0.2rem 0.6rem; border-radius: 999px;
+    background: var(--chip-bg); color: var(--chip-fg);
+  }
+  .req-chip-none { font-style: italic; }
+
+  .section-divider { border: none; border-top: 1px solid var(--border); margin: 3rem 0 2.75rem; }
+
   @media (max-width: 480px) {
     .values { margin-left: 0; }
   }
@@ -338,6 +389,7 @@ def render_content(data: dict) -> str:
     tags -- for publishing as a Claude Artifact (which wraps its own
     <!doctype>/<html>/<head>/<body> and rejects one of its own)."""
     requirements_html = "".join(_render_requirement(r, data) for r in data["requirements"])
+    requirements_html += f'<hr class="section-divider">{_render_solutions_section(data)}'
     return _BODY_TEMPLATE.format(
         title=html.escape(_TITLE), fonts_link=_FONTS_LINK, style=_STYLE, requirements_html=requirements_html
     )
@@ -346,6 +398,7 @@ def render_content(data: dict) -> str:
 def render_report(data: dict) -> str:
     """A full, directly-openable standalone HTML document."""
     requirements_html = "".join(_render_requirement(r, data) for r in data["requirements"])
+    solutions_section_html = _render_solutions_section(data)
     return f"""<!doctype html>
 <html lang="en">
 <head>
@@ -364,6 +417,8 @@ def render_report(data: dict) -> str:
     </p>
   </div>
   {requirements_html}
+  <hr class="section-divider">
+  {solutions_section_html}
 </body>
 </html>
 """

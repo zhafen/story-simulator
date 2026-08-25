@@ -119,6 +119,19 @@ def load_report_data(registrar: Registrar) -> dict:
 NEW_TREE_ENTITY_KEY = "human_validated_test_framework"
 NEW_TREE_MANIFEST_PATH = Path("docs/manifest/story-simulator.yaml")
 
+# On a real D3.js graph viz, if that's ever wanted instead of the
+# hand-rolled inline-SVG layout below: this report gets published as a
+# Claude Artifact, whose CSP blocks CDN script loads outright (Google
+# Fonts is the one exception) -- a normal <script src="https://d3js.org/...">
+# tag would silently fail to load there. The fix isn't to drop D3, it's to
+# vendor it: paste D3's full built bundle (e.g. https://d3js.org/d3.v7.min.js,
+# ~280KB) directly into a <script> tag with no src attribute, so nothing is
+# fetched externally -- that satisfies the Artifact's "fully self-contained"
+# rule and unlocks real D3 (animated collapse/expand, zoom/pan, force
+# layouts). Left this simpler layout in place for now since a 20-node
+# static tree doesn't really need any of that; revisit if the graph grows
+# or the interaction needs get fancier than click-to-collapse.
+
 
 def load_new_tree_graph_data(registrar: Registrar) -> dict:
     """Node/edge data for the human_validated_test_framework subtree --
@@ -219,17 +232,21 @@ def load_new_tree_graph_data(registrar: Registrar) -> dict:
     return {"nodes": nodes, "cross_edges": cross_edges}
 
 
-_GRAPH_NODE_W = 200
-_GRAPH_NODE_H = 56
-_GRAPH_H_GAP = 24
-_GRAPH_V_GAP = 70
+_GRAPH_NODE_W = 210
+_GRAPH_NODE_H = 44
+_GRAPH_H_GAP = 60
+_GRAPH_V_GAP = 14
 
 
 def _layout_tree(nodes: list[dict]) -> dict:
-    """Simple top-down tidy-tree layout: each leaf gets one column's worth
-    of width, a parent's width is the sum of its children's, deterministic
-    left-to-right ordering by node key (not narration order -- pandas/emc2p
-    row order isn't guaranteed, alphabetical is at least stable)."""
+    """Left-to-right tidy-tree layout (root at the left, depth grows
+    rightward, siblings stack vertically) -- a tall, narrow shape scrolls
+    naturally with the page instead of needing wide horizontal scroll.
+    Each leaf gets one row's worth of height, a parent's row is the
+    average of its children's rows. Deterministic ordering by node key
+    (not narration order -- pandas/emc2p row order isn't guaranteed,
+    alphabetical is at least stable). Also returns each node's ancestor-id
+    chain, used client-side for click-to-collapse."""
     by_id = {n["id"]: n for n in nodes}
     children: dict[str, list[str]] = {}
     roots = []
@@ -244,35 +261,37 @@ def _layout_tree(nodes: list[dict]) -> dict:
     roots.sort(key=lambda nid: by_id[nid]["key"])
 
     positions: dict[str, tuple[float, int]] = {}
-    next_col = [0]
+    ancestors: dict[str, list[str]] = {}
+    next_row = [0]
 
-    def visit(node_id: str, depth: int) -> float:
+    def visit(node_id: str, depth: int, chain: list[str]) -> float:
+        ancestors[node_id] = chain
         kids = children.get(node_id, [])
         if not kids:
-            col = next_col[0]
-            next_col[0] += 1
-            x = col + 0.5
+            row = next_row[0]
+            next_row[0] += 1
+            y = row + 0.5
         else:
-            xs = [visit(k, depth + 1) for k in kids]
-            x = sum(xs) / len(xs)
-        positions[node_id] = (x, depth)
-        return x
+            ys = [visit(k, depth + 1, chain + [node_id]) for k in kids]
+            y = sum(ys) / len(ys)
+        positions[node_id] = (y, depth)
+        return y
 
     for r in roots:
-        visit(r, 0)
+        visit(r, 0, [])
 
-    max_col = next_col[0] or 1
+    max_row = next_row[0] or 1
     max_depth = max((d for _, d in positions.values()), default=0)
-    width = max_col * (_GRAPH_NODE_W + _GRAPH_H_GAP)
-    height = (max_depth + 1) * (_GRAPH_NODE_H + _GRAPH_V_GAP)
+    width = (max_depth + 1) * (_GRAPH_NODE_W + _GRAPH_H_GAP)
+    height = max_row * (_GRAPH_NODE_H + _GRAPH_V_GAP)
     pixel_positions = {
         nid: (
-            x * (_GRAPH_NODE_W + _GRAPH_H_GAP) + _GRAPH_H_GAP / 2,
-            depth * (_GRAPH_NODE_H + _GRAPH_V_GAP) + _GRAPH_V_GAP / 2,
+            depth * (_GRAPH_NODE_W + _GRAPH_H_GAP) + _GRAPH_H_GAP / 2,
+            y * (_GRAPH_NODE_H + _GRAPH_V_GAP) + _GRAPH_V_GAP / 2,
         )
-        for nid, (x, depth) in positions.items()
+        for nid, (y, depth) in positions.items()
     }
-    return {"positions": pixel_positions, "width": width, "height": height}
+    return {"positions": pixel_positions, "width": width, "height": height, "ancestors": ancestors}
 
 
 def _render_new_tree_graph_section(graph_data: dict) -> str:
@@ -281,21 +300,29 @@ def _render_new_tree_graph_section(graph_data: dict) -> str:
         return ""
     layout = _layout_tree(nodes)
     positions = layout["positions"]
+    ancestors = layout["ancestors"]
     by_id = {n["id"]: n for n in nodes}
+    has_children = {n["parent_id"] for n in nodes if n["parent_id"]}
+
+    def anc_attr(node_id: str) -> str:
+        chain = ancestors.get(node_id, [])
+        return " ".join(chain) if chain else ""
 
     svg_parts = []
-    # Tree edges (solid) drawn first, under the nodes.
+    # Tree edges (solid) drawn first, under the nodes. Belongs to its
+    # child's subtree for collapse purposes.
     for n in nodes:
         pid = n["parent_id"]
         if pid is None or pid not in positions:
             continue
         x1, y1 = positions[pid]
         x2, y2 = positions[n["id"]]
+        edge_anc = anc_attr(n["id"])
         svg_parts.append(
-            f'<path class="graph-edge" d="M {x1 + _GRAPH_NODE_W / 2} {y1 + _GRAPH_NODE_H} '
-            f'C {x1 + _GRAPH_NODE_W / 2} {y1 + _GRAPH_NODE_H + _GRAPH_V_GAP / 2}, '
-            f'{x2 + _GRAPH_NODE_W / 2} {y2 - _GRAPH_V_GAP / 2}, '
-            f'{x2 + _GRAPH_NODE_W / 2} {y2}"/>'
+            f'<path class="graph-edge" data-anc="{edge_anc}" d="M {x1 + _GRAPH_NODE_W} {y1 + _GRAPH_NODE_H / 2} '
+            f'C {x1 + _GRAPH_NODE_W + _GRAPH_H_GAP / 2} {y1 + _GRAPH_NODE_H / 2}, '
+            f'{x2 - _GRAPH_H_GAP / 2} {y2 + _GRAPH_NODE_H / 2}, '
+            f'{x2} {y2 + _GRAPH_NODE_H / 2}"/>'
         )
     # Cross edges (dashed) -- e.g. one solution also solving a second requirement.
     for from_id, to_id in graph_data["cross_edges"]:
@@ -303,26 +330,38 @@ def _render_new_tree_graph_section(graph_data: dict) -> str:
             continue
         x1, y1 = positions[from_id]
         x2, y2 = positions[to_id]
+        sx, sy = x1 + _GRAPH_NODE_W, y1 + _GRAPH_NODE_H / 2
+        tx, ty = x2 + _GRAPH_NODE_W, y2 + _GRAPH_NODE_H / 2
+        bulge = 46
+        edge_anc = " ".join({*ancestors.get(from_id, []), *ancestors.get(to_id, [])})
         svg_parts.append(
-            f'<path class="graph-edge graph-edge-cross" d="M {x1 + _GRAPH_NODE_W / 2} {y1} '
-            f'Q {(x1 + x2) / 2 + _GRAPH_NODE_W / 2} {min(y1, y2) - 30}, '
-            f'{x2 + _GRAPH_NODE_W / 2} {y2}" marker-end="url(#graph-arrow)"/>'
+            f'<path class="graph-edge graph-edge-cross" data-anc="{edge_anc}" '
+            f'd="M {sx} {sy} C {sx + bulge} {sy}, {tx + bulge} {ty}, {tx} {ty}" '
+            f'marker-end="url(#graph-arrow)"/>'
         )
     # Nodes on top.
     for n in nodes:
         x, y = positions[n["id"]]
         node_type = n["type"]
+        collapsible = n["id"] in has_children
         work_badge = ""
         if n["work_state"]:
             ws = html.escape(n["work_state"])
-            work_badge = f'<text class="graph-node-badge" x="10" y="42">{ws}</text>'
+            work_badge = f'<text class="graph-node-badge" x="{_GRAPH_NODE_W - 8}" y="15" text-anchor="end">{ws}</text>'
+        toggle = (
+            f'<circle class="graph-node-toggle" cx="{_GRAPH_NODE_W}" cy="{_GRAPH_NODE_H / 2}" r="7"/>'
+            f'<text class="graph-node-toggle-glyph" x="{_GRAPH_NODE_W}" y="{_GRAPH_NODE_H / 2 + 3.5}" text-anchor="middle">&#8722;</text>'
+            if collapsible else ""
+        )
         desc_attr = html.escape(n["description"].strip().replace("\n\n", " ").replace("\n", " "))
+        node_class = f"graph-node graph-node-{node_type}" + (" graph-node-collapsible" if collapsible else "")
         svg_parts.append(f"""
-      <g class="graph-node graph-node-{node_type}" transform="translate({x},{y})" data-desc="{desc_attr}">
+      <g class="{node_class}" transform="translate({x},{y})" data-id="{n["id"]}" data-anc="{anc_attr(n["id"])}">
         <title>{html.escape(n["label"])}&#10;&#10;{desc_attr}</title>
-        <rect width="{_GRAPH_NODE_W}" height="{_GRAPH_NODE_H}" rx="{10 if node_type == "requirement" else _GRAPH_NODE_H / 2}"/>
-        <text class="graph-node-label" x="10" y="24">{html.escape(n["label"])}</text>
+        <rect width="{_GRAPH_NODE_W}" height="{_GRAPH_NODE_H}" rx="{8 if node_type == "requirement" else _GRAPH_NODE_H / 2}"/>
+        <text class="graph-node-label" x="10" y="{_GRAPH_NODE_H / 2 + 4.5}">{html.escape(n["label"])}</text>
         {work_badge}
+        {toggle}
       </g>""")
 
     svg = f"""
@@ -334,6 +373,33 @@ def _render_new_tree_graph_section(graph_data: dict) -> str:
       </defs>
       {"".join(svg_parts)}
     </svg>"""
+
+    script = """
+    <script>
+    (function() {
+      var root = document.currentScript.closest('.yaml-preview');
+      var collapsed = new Set();
+      function apply() {
+        root.querySelectorAll('[data-anc]').forEach(function(el) {
+          var chain = (el.getAttribute('data-anc') || '').split(' ').filter(Boolean);
+          var hidden = chain.some(function(a) { return collapsed.has(a); });
+          el.style.display = hidden ? 'none' : '';
+        });
+        root.querySelectorAll('.graph-node-collapsible').forEach(function(g) {
+          var id = g.getAttribute('data-id');
+          var glyph = g.querySelector('.graph-node-toggle-glyph');
+          if (glyph) glyph.textContent = collapsed.has(id) ? '+' : String.fromCharCode(8722);
+        });
+      }
+      root.querySelectorAll('.graph-node-collapsible').forEach(function(g) {
+        g.addEventListener('click', function() {
+          var id = g.getAttribute('data-id');
+          if (collapsed.has(id)) { collapsed.delete(id); } else { collapsed.add(id); }
+          apply();
+        });
+      });
+    })();
+    </script>"""
 
     return f"""
   <details class="yaml-preview" open>
@@ -347,7 +413,8 @@ def _render_new_tree_graph_section(graph_data: dict) -> str:
       <span class="graph-legend-item"><span class="graph-edge-sample graph-edge-sample-cross"></span>additional solution of: link</span>
     </p>
     <div class="graph-scroll">{svg}</div>
-    <p class="graph-hint">Hover a node for its full description.</p>
+    <p class="graph-hint">Hover a node for its full description. Click a node with a &#8722;/+ marker to collapse or expand its branch.</p>
+    {script}
   </details>
   <hr class="section-divider">"""
 
@@ -637,6 +704,13 @@ _STYLE = """
   .graph-node-badge {
     font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 9.5px;
     fill: var(--muted-2); letter-spacing: 0.03em;
+  }
+  .graph-node-collapsible { cursor: pointer; }
+  .graph-node-collapsible rect { cursor: pointer; }
+  .graph-node-toggle { fill: var(--accent); stroke: var(--surface); stroke-width: 2; }
+  .graph-node-toggle-glyph {
+    font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 11px; font-weight: 600;
+    fill: var(--accent-fg); dominant-baseline: middle; pointer-events: none;
   }
   .graph-hint { margin: 0.6rem 0 1.1rem; color: var(--muted-2); font-size: 0.78rem; font-style: italic; }
 """

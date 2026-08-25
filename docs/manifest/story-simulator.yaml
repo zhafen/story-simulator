@@ -1263,6 +1263,201 @@ story_simulator_mission:
                               lines = [f"# {scenario_dir.name}", "", "## Scenario", scenario.summary]
                               lines += ["## Expected", *format_expected(expected_module.EXPECTED)]
                               (scenario_dir / "REVIEW.md").write_text("\n".join(lines))
+        human_validated_test_framework:
+            data:
+                - solution
+                - description: >
+                      Redesign of this same solution using an alternating
+                      nested requirement/solution tree (matching iacs's own
+                      have_a_good_scoring_system sketch) instead of the
+                      mirrored requirements:/candidate_solutions: trees
+                      above: this solution nests the requirement(s) it
+                      still needs to fill, and each requirement nests its
+                      own candidate solutions, one of which eventually gets
+                      selected: true.
+
+                      The requirements below are the same seven already
+                      established above, copied over unchanged (still
+                      accurate) plus one new one (readability). Their
+                      candidate solutions are being redescribed fresh here
+                      -- it wasn't clear how the old solutions above
+                      actually met these requirements. Still being
+                      narrated; the trees above are kept as source
+                      material to fold into this one, not yet reconciled.
+            scenario_variety:
+                - description: >
+                      Must enable testing a variety of scenarios -- adding a
+                      new scenario shouldn't require new test-harness code,
+                      just new data.
+
+                      Mostly true today: a new scenario is just a new
+                      manifest-style scenario_dir plus its own expected.py;
+                      iacs's own example_dirs() parametrization and this repo's
+                      Case list (test_scenario_resolution.py) both add a
+                      scenario as a few lines, not a new file.
+                - requirement
+                - requirement_priority
+                - impact:
+                      type: reliability
+                      value: 0.4
+                - work_state: in progress
+            live_agent_behavior_check:
+                - description: >
+                      Must enable testing how an agent performs live for a
+                      given scenario -- a real model, over a real MCP
+                      round-trip, reasoning about the scenario itself, not a
+                      mocked LLM.
+
+                      Live today via McpClientSession/HeadlessSession
+                      (emc2p.testing) and @pytest.mark.live tests, but
+                      responder="subagent" isolation is unverified (see the
+                      TODO in story_simulator/resolve.py's
+                      _frame_for_responder).
+                - requirement
+                - requirement_priority
+                - impact:
+                      type: reliability
+                      value: 0.6
+                - work_state: in progress
+            deterministic_machinery_check:
+                - description: >
+                      Must enable testing how the simulation machinery itself
+                      works for a given scenario by accepting pre-determined
+                      static input -- isolating "does the mechanism work" from
+                      "does the model reason correctly", with no LLM and no
+                      cost.
+
+                      Done for one scenario (test_car_parking_deterministic.py,
+                      hand-scripted answers driven directly through
+                      advance_simulation/update_registry), but not yet folded
+                      into the same Case/expected.py framework
+                      scenario_variety's other solutions use.
+                - requirement
+                - requirement_priority
+                - impact:
+                      type: reliability
+                      value: 0.5
+                - work_state: in progress
+            switchable_test_agent:
+                - description: >
+                      Must allow the agent executing the process to be switched
+                      to and from a CLI from the host (e.g. claude) or a keyed
+                      subagent, for now depending on static parameters.
+
+                      No requirement yet that this be chosen dynamically
+                      mid-run. Done via HeadlessSession (spawns `claude -p` as
+                      a real subprocess) versus McpClientSession's own
+                      `responder` construction-time argument
+                      ("host"/"subagent"/"keyed_subagent", see
+                      story_simulator.keyed_subagent) -- both a static,
+                      per-session choice, matching what's asked for here.
+                - requirement
+                - requirement_priority
+                - impact:
+                      - type: reliability
+                        value: 0.3
+                      - type: developer_experience
+                        value: 0.2
+                - work_state: in progress
+            centralized_scenario_authoring:
+                data:
+                    - description: >
+                          HIGHEST PRIORITY. Must allow the human creators to easily
+                          lay out a scenario, the expected values, and test
+                          parameters side by side in one centralized location.
+
+                          Humans need to look at what the scenario is and what they
+                          expect to come of it together, not reconstruct that
+                          pairing by reading several files. Not done today: a
+                          scenario's manifest (tests/data/scenarios/<name>/), its
+                          expected.py
+                          (tests/test_human_validated/expected/<name>.py), and its
+                          test parameters (responder, timeouts, turn instructions
+                          -- test_scenario_resolution.py's Case list) are three
+                          separate locations in two different formats (YAML data,
+                          Python data/code).
+                    - requirement
+                    - requirement_priority
+                    - impact:
+                          - type: developer_experience
+                            value: 0.9
+                          - type: architecture_clarity
+                            value: 0.4
+                    - work_state: new
+                single_scenarios_and_tests_directories:
+                    - description: >
+                          A single easy-to-locate directory for the scenarios,
+                          and a single easy-to-locate directory for the
+                          tests, both inside test_human_validated/. The
+                          current solution.
+                    - solution
+                    - work_state: done
+                per_scenario_directory_with_tests_and_yaml:
+                    - description: >
+                          Inside test_human_validated/, a test_scenarios/
+                          directory with one directory per scenario, each
+                          holding a tests.py (or similarly named) file
+                          alongside its own scenario.yaml.
+                    - solution
+                    - work_state: new
+            stepwise_or_completion_execution:
+                - description: >
+                      Must allow running to completion or turn by turn, for a
+                      given scenario -- derived from
+                      centralized_scenario_authoring.
+
+                      If humans lay out a scenario/expected-values/parameters
+                      together, one of those parameters should be able to say
+                      "stop and check after each turn" instead of only "run
+                      everything, check the end state". Run-to-completion is
+                      done (every current live test sends one open-ended
+                      instruction); turn-by-turn against this same framework is
+                      not implemented yet.
+                - requirement
+                - requirement_priority
+                - impact:
+                      - type: reliability
+                        value: 0.3
+                      - type: gameplay_richness
+                        value: 0.2
+                - work_state: in progress
+            machinery_lives_in_emc2p:
+                - description: >
+                      Base machinery must live in emc2p; story-simulator should
+                      contain minimal additions built on top, or no additions
+                      at all, just scenario definitions.
+
+                      Partially true today: emc2p.testing's own
+                      expected_fixtures, headless_session, mcp_client_session,
+                      and registry_checks modules are all generic upstream
+                      infrastructure, but
+                      story_simulator.keyed_subagent (the actual keyed-subagent
+                      tool-calling dispatch) and every Case/instruction/checks
+                      definition in test_scenario_resolution.py are
+                      story-simulator-local Python, not just scenario data.
+                - requirement
+                - requirement_priority
+                - impact:
+                      - type: architecture_clarity
+                        value: 0.5
+                      - type: developer_experience
+                        value: 0.2
+                - work_state: in progress
+            readability:
+                data:
+                    - description: >
+                          New requirement, surfaced only once the
+                          alternating-tree redesign started: the test code
+                          itself must be easy to read and not full of
+                          repeated boilerplate.
+                    - requirement
+                    - requirement_priority
+                shared_pytest_fixtures:
+                    - description: Fixtures to minimize repeated code.
+                    - solution
+                native_python_test_format:
+                    - description: Native Python standard test format.
+                    - solution
 
 # What satisfies each done (or partially done) requirement. Most solutions
 # now live as `__iacs__ = {"solution of": ...}` metadata in Python docstrings.

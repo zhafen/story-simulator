@@ -1147,6 +1147,7 @@ story_simulator_mission:
                           Case/CASES parametrized list.
                     - solution
                     - selected: true
+                    - dependence of: dependencies.live_agent_test_fixtures
             deterministic_machinery_check:
                 data:
                     - description: >
@@ -1177,6 +1178,7 @@ story_simulator_mission:
                           scoped here specifically to the deterministic case.)
                     - solution
                     - selected: true
+                    - dependence of: dependencies.deterministic_test_helpers
             switchable_test_agent:
                 data:
                     - description: >
@@ -1207,6 +1209,7 @@ story_simulator_mission:
                           Case/CASES list.
                     - solution
                     - selected: true
+                    - dependence of: dependencies.responder_switch_fixture
             centralized_scenario_authoring:
                 data:
                     - description: >
@@ -1251,6 +1254,7 @@ story_simulator_mission:
                     - solution of: human_validated_test_framework.scenario_variety
                     - work_state: new
                     - selected: true
+                    - dependence of: dependencies.test_scenario_directories
             stepwise_or_completion_execution:
                 data:
                     - description: >
@@ -1282,27 +1286,13 @@ story_simulator_mission:
                           earlier "put it in emc2p too" narration pass).
                     - solution
                     - selected: true
+                    - dependence of: dependencies.turn_stepping_fixtures
             avoid_duplicated_machinery:
                 data:
                     - description: >
-                          Revised from an earlier draft of this same
-                          requirement (machinery_lives_in_emc2p, in the
-                          trees above) -- that framing was really describing
-                          a solution, not the requirement itself. The actual
-                          requirement: machinery that's going to be reused
-                          across scenarios/tests must live in one central
+                          Machinery that's going to be reused across
+                          scenarios/tests must live in one central
                           location, not be duplicated across call sites.
-
-                          Partially true today: emc2p.testing's own
-                          expected_fixtures, headless_session,
-                          mcp_client_session, and registry_checks modules
-                          are all generic upstream infrastructure, but
-                          story_simulator.keyed_subagent (the actual
-                          keyed-subagent tool-calling dispatch) and every
-                          Case/instruction/checks definition in
-                          test_scenario_resolution.py are
-                          story-simulator-local Python, not just scenario
-                          data.
                     - requirement
                     - requirement_priority
                     - impact:
@@ -1326,6 +1316,10 @@ story_simulator_mission:
                           stepwise_or_completion_execution above).
                     - solution
                     - selected: true
+                    - dependence of: dependencies.live_agent_test_fixtures
+                    - dependence of: dependencies.deterministic_test_helpers
+                    - dependence of: dependencies.responder_switch_fixture
+                    - dependence of: dependencies.turn_stepping_fixtures
             intuitive_language:
                 data:
                     - description: >
@@ -1340,6 +1334,7 @@ story_simulator_mission:
                     - description: Native Python standard test format.
                     - solution
                     - selected: true
+                    - dependence of: dependencies.test_scenario_directories
             concise_code:
                 data:
                     - description: >
@@ -1353,6 +1348,61 @@ story_simulator_mission:
                     - description: Fixtures to minimize repeated code.
                     - solution
                     - selected: true
+                    - dependence of: dependencies.shared_scenario_loading_fixture
+            dependencies:
+                data:
+                    - description: >
+                          The concrete entities that need to be built to
+                          realize the solutions selected above -- referenced
+                          from those solutions via `dependence of:`
+                          relations. Gathered here as siblings, not nested
+                          under any one solution, because more than one
+                          solution can depend on the same entity (see each
+                          entity's own description for which).
+                test_scenario_directories:
+                    - description: >
+                          test_human_validated/test_scenarios/: one
+                          directory per scenario, each holding its own
+                          scenario.yaml alongside a tests.py written as
+                          plain pytest test functions.
+                    - work_state: new
+                live_agent_test_fixtures:
+                    - description: >
+                          New emc2p.testing pytest fixtures wrapping
+                          McpClientSession/HeadlessSession so a scenario's
+                          tests.py can write a live-agent test as an
+                          ordinary test function, without a Case/CASES
+                          parametrized list.
+                    - work_state: new
+                deterministic_test_helpers:
+                    - description: >
+                          New emc2p.testing helpers generalizing
+                          test_car_parking_deterministic.py's hand-scripted,
+                          LLM-free pattern (driving advance_simulation/
+                          update_registry directly against static input) so
+                          every scenario can get a deterministic test the
+                          same way, without a shared data format.
+                    - work_state: new
+                responder_switch_fixture:
+                    - description: >
+                          New emc2p.testing fixture exposing the responder
+                          choice (host/subagent/keyed_subagent) as a plain,
+                          parametrizable pytest fixture.
+                    - work_state: new
+                turn_stepping_fixtures:
+                    - description: >
+                          New story-simulator fixtures/helpers for
+                          turn-by-turn (stepwise) test execution and
+                          assertions, alongside today's run-to-completion
+                          tests.
+                    - work_state: new
+                shared_scenario_loading_fixture:
+                    - description: >
+                          A shared fixture that loads a scenario's
+                          scenario.yaml and registers a fresh registrar for
+                          it, factoring out the boilerplate each scenario's
+                          tests.py would otherwise repeat.
+                    - work_state: new
 
 # What satisfies each done (or partially done) requirement. Most solutions
 # now live as `__iacs__ = {"solution of": ...}` metadata in Python docstrings.

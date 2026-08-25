@@ -12,7 +12,12 @@ entry, for the solutions that cover more than one requirement and would
 otherwise only show up once per requirement above. A solution serving
 multiple requirements is one node either way -- same name, same
 description, listed under each requirement it solves, never duplicated
-under a second name.
+under a second name. Finally, a "Dependencies" section -- every concrete
+implementation entity a selected solution still needs built, linked via
+`dependence of:` relations and gathered here once each (again never
+duplicated under a second name when more than one solution needs the
+same one), so they can be reviewed and organized as their own body of
+work.
 
 Requirement-first rather than solution-first on purpose -- see
 docs/manifest/prioritization_reflections.yaml's fourth installment
@@ -52,6 +57,14 @@ DEFAULT_OUTPUT = Path("/tmp/live_testing_framework_report.html")
 
 NEW_TREE_ENTITY_KEY = "human_validated_test_framework"
 NEW_TREE_MANIFEST_PATH = Path("docs/manifest/story-simulator.yaml")
+
+# The dependencies: subtree holds implementation entities (see
+# load_dependencies_data), not requirements/solutions -- excluded from the
+# requirement/solution graph's own node collection below so it doesn't
+# leak in as bogus requirement-typed nodes (every entity with a parent and
+# no explicit requirement/solution tag defaults to "requirement" there).
+DEPENDENCIES_KEY = "dependencies"
+DEPENDENCIES_MARKER = f".{NEW_TREE_ENTITY_KEY}.{DEPENDENCIES_KEY}"
 
 # On a real D3.js graph viz, if a graph visualization of this tree is ever
 # wanted again (an earlier revision of this report rendered one, since
@@ -103,7 +116,8 @@ def load_new_tree_graph_data(registrar: Registrar) -> dict:
     subtree_path_of = {
         eid: clean(p)
         for eid, p in path_of.items()
-        if marker in clean(p) or clean(p).endswith(NEW_TREE_ENTITY_KEY)
+        if (marker in clean(p) or clean(p).endswith(NEW_TREE_ENTITY_KEY))
+        and DEPENDENCIES_MARKER not in clean(p)
     }
     path_to_eid = {p: eid for eid, p in subtree_path_of.items()}
 
@@ -163,6 +177,113 @@ def load_new_tree_graph_data(registrar: Registrar) -> dict:
                 cross_edges.append(pair)
 
     return {"nodes": nodes, "cross_edges": cross_edges}
+
+
+def load_dependencies_data(registrar: Registrar) -> dict:
+    """The dependencies: subtree -- concrete implementation entities that
+    selected solutions above need built, linked to them via `dependence
+    of:` relations. Kept separate from load_new_tree_graph_data/
+    build_new_tree_report_data because these entities aren't
+    requirements or solutions themselves (see DEPENDENCIES_MARKER's
+    exclusion from the graph's own node collection above).
+
+    Returns {"entities": {key: {"description", "work_state"}},
+    "solution_to_dependencies": {solution_key: [dep_key, ...]},
+    "dependency_to_solutions": {dep_key: [solution_key, ...]}}, keyed by
+    each entity's own short key. A dependency needed by more than one
+    solution (e.g. split_fixtures_between_emc2p_and_story_simulator's own
+    fixtures) is one entity, listed under each solution that needs it --
+    same "shared name, not duplicated" convention as the requirement/
+    solution graph.
+    """
+    from emc2p.dataflows.derive.resolve_paths import (
+        components_with_resolved_paths,
+        fields_of_type_entity_ref,
+        parent_from_hierarchy,
+    )
+
+    entity_id = registrar.get("entity_id")
+    field = registrar.get("field")
+    components = registrar._registry._components
+    hierarchy = parent_from_hierarchy(entity_id)
+    resolved = components_with_resolved_paths(
+        entity_id=entity_id,
+        components=components,
+        fields_of_type_entity_ref=fields_of_type_entity_ref(entity_id, field),
+        parent_from_hierarchy=hierarchy,
+    )
+
+    eids = entity_id.execute()
+    path_of = dict(zip(eids["value"].astype(str), eids["path"].astype(str)))
+
+    def clean(path: str) -> str:
+        return path.split(":", 1)[1]
+
+    container_prefix = f"{DEPENDENCIES_MARKER}."
+    entity_keys: dict[str, str] = {}
+    for eid, p in path_of.items():
+        cp = clean(p)
+        idx = cp.find(container_prefix)
+        if idx == -1:
+            continue
+        rest = cp[idx + len(container_prefix):]
+        if "." in rest:
+            continue  # only direct children of dependencies:, not further-nested entities
+        entity_keys[eid] = rest
+
+    descriptions: dict[str, str] = {}
+    for _, row in registrar.get("description").execute().iterrows():
+        eid = str(row["entity_id"])
+        if eid in entity_keys:
+            descriptions[entity_keys[eid]] = str(row["value"])
+
+    work_states: dict[str, str] = {}
+    for _, row in registrar.get("work_state").execute().iterrows():
+        eid = str(row["entity_id"])
+        if eid in entity_keys:
+            work_states[entity_keys[eid]] = str(row["value"])
+
+    entities = {
+        key: {
+            "description": descriptions.get(key, ""),
+            "work_state": work_states.get(key, "unknown"),
+        }
+        for key in entity_keys.values()
+    }
+
+    def short_key(eid: str) -> str:
+        return clean(path_of[eid]).rsplit(".", 1)[-1]
+
+    solution_to_dependencies: dict[str, list[str]] = {}
+    dependency_to_solutions: dict[str, list[str]] = {}
+    dep_df = resolved.get("dependence")
+    if dep_df is not None:
+        for _, row in dep_df.to_pandas().iterrows():
+            src_eid = str(row["entity_id"])
+            tgt_eid = row.get("value_eid")
+            if tgt_eid is None or (isinstance(tgt_eid, float) and tgt_eid != tgt_eid):
+                continue
+            tgt_eid = str(tgt_eid)
+            if tgt_eid not in entity_keys or src_eid not in path_of:
+                continue
+            dep_key = entity_keys[tgt_eid]
+            sol_key = short_key(src_eid)
+            solution_to_dependencies.setdefault(sol_key, [])
+            if dep_key not in solution_to_dependencies[sol_key]:
+                solution_to_dependencies[sol_key].append(dep_key)
+            dependency_to_solutions.setdefault(dep_key, [])
+            if sol_key not in dependency_to_solutions[dep_key]:
+                dependency_to_solutions[dep_key].append(sol_key)
+
+    for d in (solution_to_dependencies, dependency_to_solutions):
+        for k in d:
+            d[k].sort()
+
+    return {
+        "entities": entities,
+        "solution_to_dependencies": solution_to_dependencies,
+        "dependency_to_solutions": dependency_to_solutions,
+    }
 
 
 def build_new_tree_report_data(registrar: Registrar, graph_data: dict) -> dict:
@@ -385,6 +506,50 @@ def _render_solutions_section(data: dict) -> str:
   {unselected_html}"""
 
 
+def _render_dependency(key: str, dependencies_data: dict) -> str:
+    entity = dependencies_data["entities"][key]
+    description = html.escape(entity["description"])
+    work_state = entity["work_state"]
+    solution_names = dependencies_data["dependency_to_solutions"].get(key, [])
+    chips = "".join(
+        f'<span class="req-chip">{html.escape(_label(s))}</span>' for s in solution_names
+    ) or '<span class="req-chip req-chip-none">none currently</span>'
+    return f"""
+      <details class="solution">
+        <summary>
+          <span class="solution-name">{html.escape(_label(key))}</span>
+          <span class="work-state work-state-{html.escape(work_state.replace(' ', '-'))}">{html.escape(work_state)}</span>
+        </summary>
+        <div class="solution-body">
+          <p class="solution-description">{description}</p>
+          <p class="section-label">Needed by</p>
+          <div class="req-chips">{chips}</div>
+        </div>
+      </details>"""
+
+
+def _render_dependencies_section(dependencies_data: dict) -> str:
+    """Every unique implementation entity the selected solutions above
+    depend on, once each -- gathered here (rather than left scattered
+    across each solution that needs one) so they can be reviewed and
+    organized as their own body of work."""
+    keys = sorted(dependencies_data["entities"])
+    items_html = "".join(_render_dependency(k, dependencies_data) for k in keys)
+    return f"""
+  <div class="masthead">
+    <p class="kicker">live_testing_framework &middot; dependencies</p>
+    <h1>Dependencies</h1>
+    <p class="subtitle">
+      Concrete entities the selected solutions above still need built,
+      gathered here once each -- a shared dependency (e.g. one needed by
+      both a requirement's own solution and
+      split_fixtures_between_emc2p_and_story_simulator) is listed once,
+      under every solution that needs it.
+    </p>
+  </div>
+  {items_html}"""
+
+
 _FONTS_LINK = (
     '<link rel="stylesheet" '
     'href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;600'
@@ -554,14 +719,18 @@ _BODY_TEMPLATE = """<title>{title}</title>
 """
 
 
-def _render_body_sections(data: dict) -> str:
+def _render_body_sections(data: dict, dependencies_data: dict) -> str:
     toc_html = _render_toc_section(data)
     requirements_html = "".join(_render_requirement(r, data) for r in data["requirements"])
     solutions_html = _render_solutions_section(data)
-    return f'{toc_html}{requirements_html}<hr class="section-divider">{solutions_html}'
+    dependencies_html = _render_dependencies_section(dependencies_data)
+    return (
+        f'{toc_html}{requirements_html}<hr class="section-divider">{solutions_html}'
+        f'<hr class="section-divider">{dependencies_html}'
+    )
 
 
-def render_content(data: dict) -> str:
+def render_content(data: dict, dependencies_data: dict) -> str:
     """Title + fonts link + style + body content, no surrounding document
     tags -- for publishing as a Claude Artifact (which wraps its own
     <!doctype>/<html>/<head>/<body> and rejects one of its own)."""
@@ -569,11 +738,11 @@ def render_content(data: dict) -> str:
         title=html.escape(_TITLE),
         fonts_link=_FONTS_LINK,
         style=_STYLE,
-        requirements_html=_render_body_sections(data),
+        requirements_html=_render_body_sections(data, dependencies_data),
     )
 
 
-def render_report(data: dict) -> str:
+def render_report(data: dict, dependencies_data: dict) -> str:
     """A full, directly-openable standalone HTML document."""
     return f"""<!doctype html>
 <html lang="en">
@@ -584,7 +753,7 @@ def render_report(data: dict) -> str:
 <style>{_STYLE}</style>
 </head>
 <body>
-  {_render_body_sections(data)}
+  {_render_body_sections(data, dependencies_data)}
 </body>
 </html>
 """
@@ -602,7 +771,12 @@ def main() -> None:
     registrar = Registrar.from_manifest(["docs/manifest", "story_simulator"])
     graph_data = load_new_tree_graph_data(registrar)
     data = build_new_tree_report_data(registrar, graph_data)
-    content = render_content(data) if args.fragment else render_report(data)
+    dependencies_data = load_dependencies_data(registrar)
+    content = (
+        render_content(data, dependencies_data)
+        if args.fragment
+        else render_report(data, dependencies_data)
+    )
     args.output.write_text(content)
     print(f"Wrote {args.output}")
 

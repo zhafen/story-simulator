@@ -1147,7 +1147,7 @@ story_simulator_mission:
                           Case/CASES parametrized list.
                     - solution
                     - selected: true
-                    - dependence of: dependencies.live_agent_test_fixtures
+                    - dependence of: dependencies.live_agent_fixtures
             deterministic_machinery_check:
                 data:
                     - description: >
@@ -1178,7 +1178,7 @@ story_simulator_mission:
                           scoped here specifically to the deterministic case.)
                     - solution
                     - selected: true
-                    - dependence of: dependencies.deterministic_test_helpers
+                    - dependence of: dependencies.deterministic_fixtures
             switchable_test_agent:
                 data:
                     - description: >
@@ -1209,7 +1209,7 @@ story_simulator_mission:
                           Case/CASES list.
                     - solution
                     - selected: true
-                    - dependence of: dependencies.responder_switch_fixture
+                    - dependence of: dependencies.responder
             centralized_scenario_authoring:
                 data:
                     - description: >
@@ -1254,7 +1254,7 @@ story_simulator_mission:
                     - solution of: human_validated_test_framework.scenario_variety
                     - work_state: new
                     - selected: true
-                    - dependence of: dependencies.test_scenario_directories
+                    - dependence of: dependencies.test_scenarios
             stepwise_or_completion_execution:
                 data:
                     - description: >
@@ -1286,7 +1286,7 @@ story_simulator_mission:
                           earlier "put it in emc2p too" narration pass).
                     - solution
                     - selected: true
-                    - dependence of: dependencies.turn_stepping_fixtures
+                    - dependence of: dependencies.turn_stepper
             avoid_duplicated_machinery:
                 data:
                     - description: >
@@ -1316,10 +1316,10 @@ story_simulator_mission:
                           stepwise_or_completion_execution above).
                     - solution
                     - selected: true
-                    - dependence of: dependencies.live_agent_test_fixtures
-                    - dependence of: dependencies.deterministic_test_helpers
-                    - dependence of: dependencies.responder_switch_fixture
-                    - dependence of: dependencies.turn_stepping_fixtures
+                    - dependence of: dependencies.live_agent_fixtures
+                    - dependence of: dependencies.deterministic_fixtures
+                    - dependence of: dependencies.responder
+                    - dependence of: dependencies.turn_stepper
             intuitive_language:
                 data:
                     - description: >
@@ -1334,7 +1334,7 @@ story_simulator_mission:
                     - description: Native Python standard test format.
                     - solution
                     - selected: true
-                    - dependence of: dependencies.test_scenario_directories
+                    - dependence of: dependencies.test_scenarios
             concise_code:
                 data:
                     - description: >
@@ -1348,7 +1348,7 @@ story_simulator_mission:
                     - description: Fixtures to minimize repeated code.
                     - solution
                     - selected: true
-                    - dependence of: dependencies.shared_scenario_loading_fixture
+                    - dependence of: dependencies.scenario_registrar
             dependencies:
                 data:
                     - description: >
@@ -1359,49 +1359,65 @@ story_simulator_mission:
                           under any one solution, because more than one
                           solution can depend on the same entity (see each
                           entity's own description for which).
-                test_scenario_directories:
+                test_scenarios:
                     - description: >
                           test_human_validated/test_scenarios/: one
                           directory per scenario, each holding its own
                           scenario.yaml alongside a tests.py written as
-                          plain pytest test functions.
+                          plain pytest test functions. Named for the
+                          directory itself.
                     - work_state: new
-                live_agent_test_fixtures:
+                live_agent_fixtures:
                     - description: >
-                          New emc2p.testing pytest fixtures wrapping
-                          McpClientSession/HeadlessSession so a scenario's
-                          tests.py can write a live-agent test as an
-                          ordinary test function, without a Case/CASES
-                          parametrized list.
+                          New emc2p.testing.live_agent_fixtures module,
+                          alongside emc2p.testing's existing
+                          headless_session/mcp_client_session/
+                          expected_fixtures/registry_checks -- pytest
+                          fixtures wrapping McpClientSession/HeadlessSession
+                          so a scenario's tests.py can write a live-agent
+                          test as an ordinary test function, without a
+                          Case/CASES parametrized list. Named for the
+                          module itself.
                     - work_state: new
-                deterministic_test_helpers:
+                deterministic_fixtures:
                     - description: >
-                          New emc2p.testing helpers generalizing
-                          test_car_parking_deterministic.py's hand-scripted,
-                          LLM-free pattern (driving advance_simulation/
-                          update_registry directly against static input) so
-                          every scenario can get a deterministic test the
-                          same way, without a shared data format.
+                          New emc2p.testing.deterministic_fixtures module,
+                          generalizing test_car_parking_deterministic.py's
+                          hand-scripted, LLM-free pattern (driving
+                          advance_simulation/update_registry directly
+                          against static input) so every scenario can get a
+                          deterministic test the same way, without a shared
+                          data format. Named for the module itself.
                     - work_state: new
-                responder_switch_fixture:
+                responder:
                     - description: >
-                          New emc2p.testing fixture exposing the responder
-                          choice (host/subagent/keyed_subagent) as a plain,
-                          parametrizable pytest fixture.
+                          New pytest fixture (in emc2p.testing, alongside
+                          McpClientSession/HeadlessSession's own
+                          construction-time `responder` argument) exposing
+                          the responder choice (host/subagent/
+                          keyed_subagent) as a plain, parametrizable
+                          fixture -- named `responder`, so a test function
+                          just requests it by that name.
                     - work_state: new
-                turn_stepping_fixtures:
+                turn_stepper:
                     - description: >
-                          New story-simulator fixtures/helpers for
-                          turn-by-turn (stepwise) test execution and
+                          New pytest fixture living in story-simulator
+                          itself (tests/test_human_validated/), not emc2p,
+                          for turn-by-turn (stepwise) test execution and
                           assertions, alongside today's run-to-completion
-                          tests.
+                          tests -- named `turn_stepper`, so a test function
+                          just requests it by that name.
                     - work_state: new
-                shared_scenario_loading_fixture:
+                scenario_registrar:
                     - description: >
-                          A shared fixture that loads a scenario's
-                          scenario.yaml and registers a fresh registrar for
-                          it, factoring out the boilerplate each scenario's
-                          tests.py would otherwise repeat.
+                          New shared pytest fixture -- likely promoted from
+                          tests/test_human_validated/helpers.py's existing
+                          private _load_registrar helper -- that loads a
+                          scenario's scenario.yaml and registers a fresh
+                          registrar for it, factoring out the boilerplate
+                          each scenario's tests.py would otherwise repeat.
+                          Named `scenario_registrar`, so a test function
+                          just requests it by that name.
                     - work_state: new
 
 # What satisfies each done (or partially done) requirement. Most solutions

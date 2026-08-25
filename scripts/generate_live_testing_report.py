@@ -1,12 +1,17 @@
 #!/usr/bin/env python3
-"""Generate a requirement-first HTML report of live_testing_framework's
-candidate_solutions (docs/manifest/story-simulator.yaml): one section per
-requirement, listing every solution that satisfies it, each expandable to
+"""Generate an HTML report of the human_validated_test_framework
+alternating requirement/solution tree (docs/manifest/story-simulator.yaml):
+a left-to-right collapsible graph, then a requirement-first document below
+it sourced from that exact same tree -- one section per requirement,
+listing every solution that satisfies it (both directly nested under that
+requirement and any solution of: cross-links onto it), each expandable to
 show its own pros and cons. Followed by a solution-first "Solutions"
 section -- every candidate solution listed once, with which requirement(s)
 it solves shown inside its own expandable entry, for the solutions that
 cover more than one requirement and would otherwise only show up once per
-requirement above.
+requirement above. A solution serving multiple requirements is one node
+either way -- same name, same description, listed under each requirement
+it solves, never duplicated under a second name.
 
 Requirement-first rather than solution-first on purpose -- see
 docs/manifest/prioritization_reflections.yaml's fourth installment
@@ -20,13 +25,11 @@ meaning (a clearly negative point could still net a "pro" if its axis and
 rating happened to multiply positive). Each pro/con's text is shown as-is,
 grouped pros-then-cons, in the order it was written -- no score to sort by.
 
-Reuses find_live_testing_solution_covers.py's own requirement/solution
-loading (same registrar tables, same prefixes, same `_leaf` helper) so
-this can't silently drift out of sync with the coverage script. Prints
-nothing to stdout; writes a single self-contained HTML file (no external
-requests except the Google Fonts stylesheet) to --output, defaulting to a
-scratch path outside the repo, matching find_live_testing_solution_covers.py's
-own precedent of not committing generated output, only the generator.
+Prints nothing to stdout; writes a single self-contained HTML file (no
+external requests except the Google Fonts stylesheet) to --output,
+defaulting to a scratch path outside the repo, matching
+find_live_testing_solution_covers.py's own precedent of not committing
+generated output, only the generator.
 
 --fragment writes just the title/style/body content, without the
 surrounding <!doctype>/<html>/<head>/<body> tags -- for publishing as a
@@ -45,77 +48,7 @@ from pathlib import Path
 
 from emc2p.registrar import Registrar
 
-import find_live_testing_solution_covers as covers
-
-REQUIREMENTS_PREFIX = covers.REQUIREMENTS_PREFIX
-SOLUTIONS_PREFIX = covers.SOLUTIONS_PREFIX
-
 DEFAULT_OUTPUT = Path("/tmp/live_testing_framework_report.html")
-
-
-def load_report_data(registrar: Registrar) -> dict:
-    """Everything the report needs, keyed by requirement/solution short
-    name: which solutions satisfy each requirement, each entity's
-    description, each solution's work_state/cost, and each solution's
-    consideration_rating pros/cons (with their parent consideration's own
-    description for context)."""
-    requirements, solves = covers.load_solution_map(registrar)
-
-    eids = registrar.get("entity_id").execute()
-    path_of = dict(zip(eids["value"].astype(str), eids["path"].astype(str)))
-
-    def name_of(eid, prefix: str) -> str | None:
-        return covers._leaf(path_of[str(eid)].split(":", 1)[1], prefix)
-
-    descriptions: dict[str, str] = {}
-    for _, row in registrar.get("description").execute().iterrows():
-        name = name_of(row["entity_id"], REQUIREMENTS_PREFIX) or name_of(
-            row["entity_id"], SOLUTIONS_PREFIX
-        )
-        if name:
-            descriptions[name] = str(row["value"])
-
-    work_states: dict[str, str] = {}
-    for _, row in registrar.get("work_state").execute().iterrows():
-        name = name_of(row["entity_id"], SOLUTIONS_PREFIX)
-        if name:
-            work_states[name] = str(row["value"])
-
-    costs: dict[str, list[tuple[str, float]]] = {}
-    for _, row in registrar.get("cost").execute().iterrows():
-        name = name_of(row["entity_id"], SOLUTIONS_PREFIX)
-        if name:
-            costs.setdefault(name, []).append((str(row["type"]), float(row["value"])))
-
-    code_examples: dict[str, dict] = {}
-    for _, row in registrar.get("code_example").execute().iterrows():
-        name = name_of(row["entity_id"], SOLUTIONS_PREFIX)
-        if name:
-            code_examples[name] = {"language": str(row["language"]), "code": str(row["value"])}
-
-    pros_cons: dict[str, list[dict]] = {}
-    for sign in ("pro", "con"):
-        for _, row in registrar.get(sign).execute().iterrows():
-            name = name_of(row["entity_id"], SOLUTIONS_PREFIX)
-            if name:
-                pros_cons.setdefault(name, []).append({"sign": sign, "note": str(row["value"])})
-
-    req_to_solutions: dict[str, list[str]] = {name: [] for name in requirements}
-    for solution_name, req_names in solves.items():
-        for req_name in req_names:
-            req_to_solutions.setdefault(req_name, []).append(solution_name)
-
-    return {
-        "requirements": sorted(requirements),
-        "req_to_solutions": {r: sorted(s) for r, s in req_to_solutions.items()},
-        "solution_to_requirements": {s: sorted(r) for s, r in solves.items()},
-        "descriptions": descriptions,
-        "work_states": work_states,
-        "code_examples": code_examples,
-        "costs": costs,
-        "pros_cons": pros_cons,
-    }
-
 
 NEW_TREE_ENTITY_KEY = "human_validated_test_framework"
 NEW_TREE_MANIFEST_PATH = Path("docs/manifest/story-simulator.yaml")
@@ -231,6 +164,86 @@ def load_new_tree_graph_data(registrar: Registrar) -> dict:
                 cross_edges.append(pair)
 
     return {"nodes": nodes, "cross_edges": cross_edges}
+
+
+def build_new_tree_report_data(registrar: Registrar, graph_data: dict) -> dict:
+    """The "Requirements & candidate solutions" body and "Solutions" index
+    below the graph, sourced from the same human_validated_test_framework
+    subtree the graph itself renders -- so the document actually reflects
+    the graph (what solutions exist, and which requirement(s) each one
+    solves), instead of the older mirrored requirements:/candidate_solutions:
+    trees this report used to read from. Same return shape as the old
+    load_report_data() had, keyed by each node's short `key` rather than
+    a name derived from a fixed path prefix, so _render_requirement/
+    _render_solution/_render_solutions_section all work unchanged.
+
+    A solution nested under one requirement but also solution of: another
+    (see the graph's cross_edges) is the same node either way -- it's
+    listed under both requirements, but as one shared name/description/
+    cost/pros-cons, never duplicated under a second name.
+    """
+    nodes = graph_data["nodes"]
+    by_id = {n["id"]: n for n in nodes}
+    key_of = {n["id"]: n["key"] for n in nodes}
+    root_id = next((n["id"] for n in nodes if n["parent_id"] is None), None)
+
+    requirement_ids = [n["id"] for n in nodes if n["type"] == "requirement"]
+    solution_ids = [n["id"] for n in nodes if n["type"] == "solution" and n["id"] != root_id]
+
+    req_to_solutions: dict[str, list[str]] = {key_of[rid]: [] for rid in requirement_ids}
+    solution_to_requirements: dict[str, list[str]] = {key_of[sid]: [] for sid in solution_ids}
+
+    def add_link(sol_id: str, req_id: str) -> None:
+        req_key = key_of.get(req_id)
+        sol_key = key_of.get(sol_id)
+        if req_key not in req_to_solutions or sol_key is None:
+            return
+        if sol_key not in req_to_solutions[req_key]:
+            req_to_solutions[req_key].append(sol_key)
+        if req_key not in solution_to_requirements[sol_key]:
+            solution_to_requirements[sol_key].append(req_key)
+
+    for sid in solution_ids:
+        parent_id = by_id[sid]["parent_id"]
+        if parent_id and by_id.get(parent_id, {}).get("type") == "requirement":
+            add_link(sid, parent_id)
+    for from_id, to_id in graph_data["cross_edges"]:
+        if by_id.get(from_id, {}).get("type") == "solution" and by_id.get(to_id, {}).get("type") == "requirement":
+            add_link(from_id, to_id)
+    for d in (req_to_solutions, solution_to_requirements):
+        for k in d:
+            d[k].sort()
+
+    subtree_ids = set(by_id)
+    costs: dict[str, list[tuple[str, float]]] = {}
+    for _, row in registrar.get("cost").execute().iterrows():
+        eid = str(row["entity_id"])
+        if eid in subtree_ids:
+            costs.setdefault(key_of[eid], []).append((str(row["type"]), float(row["value"])))
+
+    pros_cons: dict[str, list[dict]] = {}
+    for sign in ("pro", "con"):
+        for _, row in registrar.get(sign).execute().iterrows():
+            eid = str(row["entity_id"])
+            if eid in subtree_ids:
+                pros_cons.setdefault(key_of[eid], []).append({"sign": sign, "note": str(row["value"])})
+
+    code_examples: dict[str, dict] = {}
+    for _, row in registrar.get("code_example").execute().iterrows():
+        eid = str(row["entity_id"])
+        if eid in subtree_ids:
+            code_examples[key_of[eid]] = {"language": str(row["language"]), "code": str(row["value"])}
+
+    return {
+        "requirements": sorted(key_of[rid] for rid in requirement_ids),
+        "req_to_solutions": req_to_solutions,
+        "solution_to_requirements": solution_to_requirements,
+        "descriptions": {n["key"]: n["description"] for n in nodes},
+        "work_states": {n["key"]: n["work_state"] for n in nodes if n["work_state"]},
+        "code_examples": code_examples,
+        "costs": costs,
+        "pros_cons": pros_cons,
+    }
 
 
 _GRAPH_NODE_W = 210
@@ -392,7 +405,7 @@ def _render_new_tree_graph_section(graph_data: dict) -> str:
     return f"""
   <details class="yaml-preview" open>
     <summary>
-      <span class="yaml-preview-title">Alternating-tree redesign -- graph view (still being narrated)</span>
+      <span class="yaml-preview-title">Alternating-tree redesign -- graph view</span>
     </summary>
     <p class="graph-legend">
       <span class="graph-legend-item"><span class="graph-swatch graph-swatch-requirement"></span>requirement</span>
@@ -782,8 +795,8 @@ def main() -> None:
     args = parser.parse_args()
 
     registrar = Registrar.from_manifest(["docs/manifest", "story_simulator"])
-    data = load_report_data(registrar)
     graph_data = load_new_tree_graph_data(registrar)
+    data = build_new_tree_report_data(registrar, graph_data)
     content = render_content(data, graph_data) if args.fragment else render_report(data, graph_data)
     args.output.write_text(content)
     print(f"Wrote {args.output}")

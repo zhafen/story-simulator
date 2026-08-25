@@ -1092,6 +1092,17 @@ story_simulator_mission:
                         rating: 0.4
                         effect: minor pro
                 - work_state: new
+                - code_example:
+                      language: python
+                      value: |
+                          # Already how every live test picks its agent driver.
+                          session = McpClientSession(
+                              model="claude-sonnet-5",
+                              responder="subagent",  # or "host" / "keyed_subagent"
+                          )
+                          # HeadlessSession is the other driver: a real `claude -p`
+                          # subprocess instead of a litellm-backed model call.
+                          session = HeadlessSession(cwd=scenario_dir)
             expected_fixtures_manifest_framework:
                 - description: >
                       emc2p.testing.expected_fixtures plus the
@@ -1125,6 +1136,14 @@ story_simulator_mission:
                         rating: 0.3
                         effect: minor pro
                 - work_state: new
+                - code_example:
+                      language: python
+                      value: |
+                          # emc2p.testing.expected_fixtures
+                          for scenario_dir, expected in example_dirs(EXAMPLES_ROOT):
+                              registry = run_scenario(scenario_dir)
+                              checker = ExpectedValueChecker(registry)
+                              assert_subset(checker, expected.EXPECTED)
             deterministic_hand_scripted_harness:
                 - description: >
                       test_car_parking_deterministic.py's own approach: drive
@@ -1157,6 +1176,14 @@ story_simulator_mission:
                         rating: 0.25
                         effect: minor pro
                 - work_state: new
+                - code_example:
+                      language: python
+                      value: |
+                          # test_car_parking_deterministic.py's own shape.
+                          registrar = Registrar.from_manifest([scenario_dir])
+                          registrar.update({"description": [...]})  # hand-written "perfect" turn
+                          registry = advance_simulation(registrar, instruction="park the car")
+                          assert registry.get("state").execute()["value"].iloc[-1] == "parked"
             case_dataclass_parametrization:
                 - description: >
                       test_scenario_resolution.py's own Case dataclass + CASES
@@ -1195,6 +1222,23 @@ story_simulator_mission:
                         rating: 0.25
                         effect: minor pro
                 - work_state: new
+                - code_example:
+                      language: python
+                      value: |
+                          # test_scenario_resolution.py's own shape.
+                          @dataclass
+                          class Case:
+                              scenario_dir: Path
+                              instruction: str
+                              checks: Callable[[Registry], None]
+
+                          CASES = [
+                              Case("car_parking", "park the car", check_car_parked),
+                              Case("race_placement", "run the race", check_race_placements),
+                          ]
+
+                          @pytest.mark.parametrize("case", CASES, ids=lambda c: c.scenario_dir.name)
+                          def test_scenario(case): ...
             turn_list_case_extension:
                 - description: >
                       Possible, not yet built: change Case.instruction: str to
@@ -1235,6 +1279,24 @@ story_simulator_mission:
                         rating: 0.35
                         effect: minor pro
                 - work_state: new
+                - code_example:
+                      language: python
+                      value: |
+                          # Pseudocode: Case grows a turns list instead of one instruction.
+                          @dataclass
+                          class Turn:
+                              instruction: str
+                              checks: Callable[[Registry], None] | None = None
+
+                          @dataclass
+                          class Case:
+                              scenario_dir: Path
+                              turns: list[Turn]  # was: instruction: str
+
+                          Case("car_parking", turns=[
+                              Turn("drive to the spot"),
+                              Turn("park the car", check_car_parked),  # only this turn is checked
+                          ])
             data_driven_step_script:
                 - description: >
                       Possible, not yet built: expected.py grows a `steps` list
@@ -1282,6 +1344,23 @@ story_simulator_mission:
                         rating: 0.4
                         effect: minor pro
                 - work_state: new
+                - code_example:
+                      language: python
+                      value: |
+                          # Pseudocode: expected.py grows a data-driven steps list.
+                          STEPS = [
+                              {"instruction": "drive to the spot", "expected": {}},
+                              {"instruction": "park the car", "expected": {"state": "parked"}},
+                          ]
+
+                          # emc2p.testing's generic step-runner, driven by field name:
+                          READERS = {"state": read_state, "position": read_position}
+
+                          def run_steps(registry, steps):
+                              for step in steps:
+                                  registry = advance_simulation(registry, step["instruction"])
+                                  for field, expected_value in step["expected"].items():
+                                      assert READERS[field](registry) == expected_value
             single_scenario_yaml_file:
                 - description: >
                       Possible, not yet built: one data file per scenario (e.g.
@@ -1332,6 +1411,18 @@ story_simulator_mission:
                         rating: 0.35
                         effect: minor pro
                 - work_state: new
+                - code_example:
+                      language: yaml
+                      value: |
+                          # Pseudocode: tests/scenarios/car_parking/test_case.yaml
+                          scenario: {inherits: data/scenario_seeds/parking_lot}
+                          responder: subagent
+                          timeout_seconds: 120
+                          turns:
+                              - instruction: drive to the spot
+                              - instruction: park the car
+                                expected:
+                                    state: parked
             human_review_doc_generator:
                 - description: >
                       Possible, not yet built: keep
@@ -1370,6 +1461,15 @@ story_simulator_mission:
                         rating: 0.35
                         effect: minor pro
                 - work_state: new
+                - code_example:
+                      language: python
+                      value: |
+                          # Pseudocode: regenerated from the existing sources, never hand-edited.
+                          def generate_review_doc(scenario_dir, expected_module):
+                              scenario = load_scenario(scenario_dir)
+                              lines = [f"# {scenario_dir.name}", "", "## Scenario", scenario.summary]
+                              lines += ["## Expected", *format_expected(expected_module.EXPECTED)]
+                              (scenario_dir / "REVIEW.md").write_text("\n".join(lines))
 
 # What satisfies each done (or partially done) requirement. Most solutions
 # now live as `__iacs__ = {"solution of": ...}` metadata in Python docstrings.

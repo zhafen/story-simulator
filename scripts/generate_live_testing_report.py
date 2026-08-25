@@ -87,6 +87,12 @@ def load_report_data(registrar: Registrar) -> dict:
         if name:
             costs.setdefault(name, []).append((str(row["type"]), float(row["value"])))
 
+    code_examples: dict[str, dict] = {}
+    for _, row in registrar.get("code_example").execute().iterrows():
+        name = name_of(row["entity_id"], SOLUTIONS_PREFIX)
+        if name:
+            code_examples[name] = {"language": str(row["language"]), "code": str(row["value"])}
+
     consideration_descriptions: dict[str, str] = {}
     consideration_weights: dict[str, float] = {}
     for _, row in registrar.get("consideration").execute().iterrows():
@@ -124,6 +130,7 @@ def load_report_data(registrar: Registrar) -> dict:
         "solution_to_requirements": {s: sorted(r) for s, r in solves.items()},
         "descriptions": descriptions,
         "work_states": work_states,
+        "code_examples": code_examples,
         "costs": costs,
         "ratings": ratings,
     }
@@ -172,8 +179,14 @@ def _render_solution(name: str, data: dict, show_requirements: bool = False) -> 
             f'<span class="req-chip">{html.escape(_label(r))}</span>' for r in req_names
         ) or '<span class="req-chip req-chip-none">none currently</span>'
         requirements_html = f"""
-          <p class="solves-label">Solves</p>
+          <p class="section-label">Solves</p>
           <div class="req-chips">{chips}</div>"""
+    code_example_html = ""
+    example = data["code_examples"].get(name)
+    if example:
+        code_example_html = f"""
+          <p class="section-label">Example</p>
+          <pre class="code-example"><code class="language-{html.escape(example['language'])}">{html.escape(example['code'])}</code></pre>"""
     return f"""
       <details class="solution">
         <summary>
@@ -184,6 +197,7 @@ def _render_solution(name: str, data: dict, show_requirements: bool = False) -> 
         <div class="solution-body">
           <p class="solution-description">{description}</p>
           {requirements_html}
+          {code_example_html}
           <ul class="ratings">{ratings_html}</ul>
         </div>
       </details>"""
@@ -348,7 +362,7 @@ _STYLE = """
   .values strong { color: var(--fg); }
   .rating-note { margin: 0.35rem 0 0; color: var(--muted); font-size: 0.92rem; max-width: 62ch; }
 
-  .solves-label {
+  .section-label {
     font-family: "IBM Plex Mono", ui-monospace, monospace;
     font-size: 0.68rem; font-weight: 600; letter-spacing: 0.1em;
     text-transform: uppercase; color: var(--muted-2); margin: 0.9rem 0 0.4rem;
@@ -359,6 +373,15 @@ _STYLE = """
     background: var(--chip-bg); color: var(--chip-fg);
   }
   .req-chip-none { font-style: italic; }
+
+  .code-example {
+    background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+    padding: 0.85rem 1rem; overflow-x: auto; margin: 0;
+  }
+  .code-example code {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 0.8rem; line-height: 1.5; color: var(--fg); white-space: pre;
+  }
 
   .section-divider { border: none; border-top: 1px solid var(--border); margin: 3rem 0 2.75rem; }
 

@@ -1051,6 +1051,36 @@ story_simulator_mission:
                           registrar.update({"description": [...]})  # hand-written "perfect" turn
                           registry = advance_simulation(registrar, instruction="park the car")
                           assert registry.get("state").execute()["value"].iloc[-1] == "parked"
+            hand_scripted_harness_for_everything:
+                - description: >
+                      Possible, not yet built: generalizes
+                      deterministic_hand_scripted_harness beyond
+                      deterministic-only scenarios and replaces expected.py
+                      entirely. One hand-written test function per scenario
+                      holds everything expected.py currently holds --
+                      scenario setup, turn instructions, and checks
+                      together, in plain Python. No Case/CASES list, no
+                      separate data file, no parametrize decorator.
+                - solution of: story_simulator_mission.live_testing_framework.requirements.centralized_scenario_authoring
+                - solution of: story_simulator_mission.live_testing_framework.requirements.stepwise_or_completion_execution
+                - solution of: story_simulator_mission.live_testing_framework.requirements.deterministic_machinery_check
+                - solution of: story_simulator_mission.live_testing_framework.requirements.live_agent_behavior_check
+                - cost:
+                      type: engineering_hours
+                      value: 6
+                - pro: Pure Python -- no new DSL/data format to design, parse, or learn; reuses the language everyone already knows.
+                - pro: Self-evident and easy to read -- the whole scenario's logic sits in one function, nothing to cross-reference.
+                - con: A scenario's test function can grow very large as more turns/checks are added, with nothing forcing it to stay organized.
+                - work_state: new
+                - code_example:
+                      language: python
+                      value: |
+                          # Pseudocode: one hand-written function replaces Case + expected.py.
+                          def test_car_parking(session):
+                              registry = session.start_world(scenario_dir="data/scenario_seeds/parking_lot")
+                              registry = session.advance(registry, "drive to the spot")
+                              registry = session.advance(registry, "park the car")
+                              assert registry.get("state").execute()["value"].iloc[-1] == "parked"
             case_dataclass_parametrization:
                 - description: >
                       test_scenario_resolution.py's own Case dataclass + CASES
@@ -1068,6 +1098,7 @@ story_simulator_mission:
                 - con: Only covers run-to-completion, not turn-by-turn (stepwise_or_completion_execution is still open).
                 - con: Checks are separated from the definitions, and from each other.
                 - con: We'll end up with one giant list of cases.
+                - con: No particularly good motivation to parameterize here -- the pattern this was modeled on parameterizes because it applies the same set of transformations to every example and confirms each still works; that's not really our situation, so this risks being overengineered.
                 - work_state: new
                 - code_example:
                       language: python
@@ -1102,6 +1133,7 @@ story_simulator_mission:
                 - pro: Smallest change that actually enables stepwise_or_completion_execution; reuses every existing helper (assert_subset, _assert_write_order) unchanged; a single-turn Case degrades to today's exact behavior.
                 - con: Doesn't touch centralized_scenario_authoring -- turns/checks still live in test_scenario_resolution.py, not a human-editable central file.
                 - con: A scenario needing many checkpoints means many hand-written per-turn lambdas, the same duplication risk the original consolidation removed.
+                - con: No particularly good motivation to parameterize here -- the pattern this was modeled on parameterizes because it applies the same set of transformations to every example and confirms each still works; that's not really our situation, so this risks being overengineered.
                 - work_state: new
                 - code_example:
                       language: python
@@ -1141,6 +1173,8 @@ story_simulator_mission:
                 - pro: Closest fit to centralized_scenario_authoring of anything here short of single_scenario_yaml_file.
                 - con: Needs a var-name -> reader/leniency-rule dispatch table, which just relocates case_dataclass_parametrization's per-field special-casing rather than removing it.
                 - con: Blurs expected.py's job (today -- pure expected values) into also being the test script; flat data instructions lose room for the scenario-specific narrative framing this codebase's prompts rely on.
+                - con: Yet another data format to fit scenario/instruction/checks content into, on top of the shapes the other candidate solutions already use.
+                - con: No particularly good motivation to parameterize here -- the pattern this was modeled on parameterizes because it applies the same set of transformations to every example and confirms each still works; that's not really our situation, so this risks being overengineered.
                 - work_state: new
                 - code_example:
                       language: python
@@ -1181,6 +1215,7 @@ story_simulator_mission:
                 - pro: Generalizes naturally to stepwise_or_completion_execution (a `steps:` list) and scenario_variety (variety = new directories); keeps machinery_lives_in_emc2p by construction (the loader is the only code, and it's upstream).
                 - con: Real new engineering -- a small schema/DSL to design, parse, and validate, not a refactor of existing code.
                 - con: Instruction text authored as flat data loses Python's f-string templating; the "which reader/leniency rule applies to which field" question doesn't go away, it just moves into the new loader's own vocabulary.
+                - con: No particularly good motivation to parameterize here -- the pattern this was modeled on parameterizes because it applies the same set of transformations to every example and confirms each still works; that's not really our situation, so this risks being overengineered.
                 - work_state: new
                 - code_example:
                       language: yaml
@@ -1211,6 +1246,13 @@ story_simulator_mission:
                 - pro: Directly and cheaply satisfies the "review side by side" half of centralized_scenario_authoring.
                 - con: Doesn't change how a human authors a scenario -- still edits three files/formats even if they can review one generated doc.
                 - con: Needs its own small generator to keep the doc in sync; doesn't move stepwise_or_completion_execution or scenario_variety forward at all.
+                - con:
+                      value: >
+                          The whole point of the human-validated tests is to
+                          look at actual code that executes and confirm it's
+                          functioning -- wrapping that in a generated review
+                          doc defeats the purpose.
+                      disabling: true
                 - work_state: new
                 - code_example:
                       language: python

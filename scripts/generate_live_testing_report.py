@@ -116,6 +116,54 @@ def load_report_data(registrar: Registrar) -> dict:
     }
 
 
+NEW_TREE_ENTITY_KEY = "human_validated_test_framework"
+NEW_TREE_MANIFEST_PATH = Path("docs/manifest/story-simulator.yaml")
+
+
+def load_new_tree_yaml_snippet() -> str:
+    """Raw YAML source of the human_validated_test_framework subtree --
+    zhafen's own alternating-tree redesign (each solution nests the
+    requirement(s) it needs; each requirement nests its own candidate
+    solutions), sketched inline in story-simulator.yaml but not yet
+    reflected in this report's own rendering (which still only understands
+    the older mirrored requirements:/candidate_solutions: shape). Embedded
+    verbatim rather than rendered while the redesign is still being
+    narrated, so nothing about it is silently reinterpreted.
+
+    Extracted textually: from the line declaring the entity key (at its
+    known 8-space indent) up to the first following non-blank line
+    indented 4 spaces or less, i.e. wherever the subtree ends and a
+    sibling/comment at a shallower nesting level begins.
+    """
+    lines = NEW_TREE_MANIFEST_PATH.read_text().splitlines()
+    key_line = f"        {NEW_TREE_ENTITY_KEY}:"
+    start = next((i for i, line in enumerate(lines) if line == key_line), None)
+    if start is None:
+        return ""
+    end = len(lines)
+    for i in range(start + 1, len(lines)):
+        line = lines[i]
+        if not line.strip():
+            continue
+        if len(line) - len(line.lstrip(" ")) <= 4:
+            end = i
+            break
+    return "\n".join(lines[start:end]).rstrip("\n")
+
+
+def _render_new_tree_yaml_section(yaml_text: str) -> str:
+    if not yaml_text:
+        return ""
+    return f"""
+  <details class="yaml-preview">
+    <summary>
+      <span class="yaml-preview-title">Alternating-tree redesign (raw YAML, still being narrated)</span>
+    </summary>
+    <pre class="yaml-preview-body"><code>{html.escape(yaml_text)}</code></pre>
+  </details>
+  <hr class="section-divider">"""
+
+
 def _label(name: str) -> str:
     return name.replace("_", " ")
 
@@ -347,6 +395,32 @@ _STYLE = """
   }
 
   .section-divider { border: none; border-top: 1px solid var(--border); margin: 3rem 0 2.75rem; }
+
+  details.yaml-preview {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+    padding: 0 1.1rem; margin-bottom: 2.75rem;
+  }
+  details.yaml-preview summary {
+    cursor: pointer; padding: 0.85rem 0; display: flex; align-items: center;
+    gap: 0.7rem; list-style: none; font-weight: 600;
+  }
+  details.yaml-preview summary::-webkit-details-marker { display: none; }
+  details.yaml-preview summary::before {
+    content: "▸"; color: var(--muted-2); font-weight: normal; flex-shrink: 0;
+    transition: transform 0.15s ease;
+  }
+  details.yaml-preview[open] summary::before { transform: rotate(90deg); }
+  .yaml-preview-title {
+    font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 0.9rem;
+  }
+  .yaml-preview-body {
+    background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+    padding: 0.85rem 1rem; overflow-x: auto; margin: 0 0 1.1rem;
+  }
+  .yaml-preview-body code {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 0.78rem; line-height: 1.5; color: var(--fg); white-space: pre;
+  }
 """
 
 _TITLE = "Live Testing Framework"
@@ -370,7 +444,8 @@ def render_content(data: dict) -> str:
     """Title + fonts link + style + body content, no surrounding document
     tags -- for publishing as a Claude Artifact (which wraps its own
     <!doctype>/<html>/<head>/<body> and rejects one of its own)."""
-    requirements_html = "".join(_render_requirement(r, data) for r in data["requirements"])
+    requirements_html = _render_new_tree_yaml_section(load_new_tree_yaml_snippet())
+    requirements_html += "".join(_render_requirement(r, data) for r in data["requirements"])
     requirements_html += f'<hr class="section-divider">{_render_solutions_section(data)}'
     return _BODY_TEMPLATE.format(
         title=html.escape(_TITLE), fonts_link=_FONTS_LINK, style=_STYLE, requirements_html=requirements_html
@@ -379,6 +454,7 @@ def render_content(data: dict) -> str:
 
 def render_report(data: dict) -> str:
     """A full, directly-openable standalone HTML document."""
+    new_tree_yaml_html = _render_new_tree_yaml_section(load_new_tree_yaml_snippet())
     requirements_html = "".join(_render_requirement(r, data) for r in data["requirements"])
     solutions_section_html = _render_solutions_section(data)
     return f"""<!doctype html>
@@ -398,6 +474,7 @@ def render_report(data: dict) -> str:
       satisfies it. Expand a solution to see its pros and cons.
     </p>
   </div>
+  {new_tree_yaml_html}
   {requirements_html}
   <hr class="section-divider">
   {solutions_section_html}

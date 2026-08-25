@@ -44,6 +44,7 @@ from __future__ import annotations
 import argparse
 import html
 import json
+import re
 from pathlib import Path
 
 from emc2p.registrar import Registrar
@@ -433,6 +434,38 @@ def _label(name: str) -> str:
     return name.replace("_", " ")
 
 
+# Only split where sentence-ending punctuation is followed by whitespace
+# AND a capital letter/digit/quote/paren -- i.e. what a new sentence
+# actually starts with. Without the lookahead, abbreviations like "e.g."
+# get mis-split ("...from the host (e.g." | "claude) or a keyed subagent
+# ..."), cutting a sentence off mid-parenthetical.
+_SENTENCE_SPLIT_RE = re.compile(r'(?<=[.!?])\s+(?=[A-Z0-9"\'(])')
+
+
+def _sentences(text: str) -> list[str]:
+    text = text.strip()
+    return [s for s in _SENTENCE_SPLIT_RE.split(text) if s] if text else []
+
+
+def _render_description(text: str, class_name: str = "description") -> str:
+    """A description leads with its first sentence; the rest sits behind a
+    small inline expand toggle -- unless the whole description is already
+    3 sentences or fewer, in which case there's nothing meaningful to hide
+    and it's just shown in full."""
+    text = text.strip()
+    if not text:
+        return ""
+    sentences = _sentences(text)
+    if len(sentences) <= 3:
+        return f'<div class="{class_name}">{html.escape(text)}</div>'
+    summary = html.escape(sentences[0])
+    rest = html.escape(" ".join(sentences[1:]))
+    return (
+        f'<div class="{class_name}">{summary} '
+        f'<details class="description-more"><summary></summary>{rest}</details></div>'
+    )
+
+
 def _render_pro_con(item: dict) -> str:
     sign_label = "Pro" if item["sign"] == "pro" else "Con"
     note = html.escape(item["note"])
@@ -446,7 +479,7 @@ def _render_pro_con(item: dict) -> str:
 
 
 def _render_solution(name: str, data: dict, show_requirements: bool = False) -> str:
-    description = html.escape(data["descriptions"].get(name, ""))
+    description_html = _render_description(data["descriptions"].get(name, ""), "solution-description")
     work_state = data["work_states"].get(name, "unknown")
     cost_items = data["costs"].get(name, [])
     cost_html = (
@@ -479,7 +512,7 @@ def _render_solution(name: str, data: dict, show_requirements: bool = False) -> 
           <span class="cost">cost: {html.escape(cost_html)}</span>
         </summary>
         <div class="solution-body">
-          <p class="solution-description">{description}</p>
+          {description_html}
           {requirements_html}
           {code_example_html}
           <ul class="ratings">{ratings_html}</ul>
@@ -487,20 +520,72 @@ def _render_solution(name: str, data: dict, show_requirements: bool = False) -> 
       </details>"""
 
 
-def _render_requirement(name: str, data: dict) -> str:
-    description = html.escape(data["descriptions"].get(name, ""))
-    solution_names = data["req_to_solutions"].get(name, [])
-    if solution_names:
-        solutions_html = "".join(_render_solution(s, data) for s in solution_names)
-    else:
-        solutions_html = '<p class="no-solutions">No candidate solution currently solves this requirement.</p>'
+def _render_toc_section(graph_data: dict) -> str:
+    """A table of contents: the same alternating-tree structure the graph
+    above already draws, as a plain-text outline instead -- one entry per
+    requirement/solution/sub-requirement, each with its own description
+    (leading sentence + expand for the rest). Replaces what used to be a
+    full prose section per requirement, each with its solutions rendered
+    in full: that duplicated the graph outright once the graph existed,
+    just in a slower, heavier form. Full solution detail (cost, pros/cons,
+    example code) lives one section down, in the Solutions index -- this
+    section is deliberately just an outline."""
+    nodes = graph_data["nodes"]
+    by_id = {n["id"]: n for n in nodes}
+    children: dict[str, list[str]] = {}
+    for n in nodes:
+        if n["parent_id"]:
+            children.setdefault(n["parent_id"], []).append(n["id"])
+    for pid in children:
+        children[pid].sort(key=lambda nid: by_id[nid]["key"])
+
+    also_solves: dict[str, list[str]] = {}
+    for from_id, to_id in graph_data["cross_edges"]:
+        also_solves.setdefault(from_id, []).append(to_id)
+    for k in also_solves:
+        also_solves[k].sort(key=lambda nid: by_id[nid]["key"])
+
+    root_id = next((n["id"] for n in nodes if n["parent_id"] is None), None)
+
+    def render_node(node_id: str) -> str:
+        n = by_id[node_id]
+        desc_html = _render_description(n["description"], "toc-description")
+        extra = ""
+        if node_id in also_solves:
+            names = ", ".join(html.escape(_label(by_id[t]["key"])) for t in also_solves[node_id])
+            extra = f'<p class="toc-also-solves">Also solves: {names}</p>'
+        work = ""
+        if n["work_state"]:
+            ws = html.escape(n["work_state"])
+            work = f'<span class="work-state work-state-{html.escape(n["work_state"].replace(" ", "-"))}">{ws}</span>'
+        kids_html = "".join(render_node(k) for k in children.get(node_id, []))
+        kids_wrap = f'<ul class="toc-children">{kids_html}</ul>' if kids_html else ""
+        return f"""
+      <li class="toc-item toc-item-{n["type"]}">
+        <div class="toc-item-head">
+          <span class="toc-item-badge toc-item-badge-{n["type"]}">{n["type"]}</span>
+          <span class="toc-item-label">{html.escape(n["label"])}</span>
+          {work}
+        </div>
+        {desc_html}
+        {extra}
+        {kids_wrap}
+      </li>"""
+
+    top_ids = sorted(children.get(root_id, []), key=lambda nid: by_id[nid]["key"])
+    items_html = "".join(render_node(nid) for nid in top_ids)
+
     return f"""
-    <section class="requirement">
-      <p class="eyebrow">Requirement</p>
-      <h2>{html.escape(_label(name))}</h2>
-      <p class="requirement-description">{description}</p>
-      {solutions_html}
-    </section>"""
+  <div class="masthead">
+    <p class="kicker">live_testing_framework &middot; table of contents</p>
+    <h1>Requirements</h1>
+    <p class="subtitle">
+      Outline of the alternating-tree redesign shown in the graph above --
+      expand a description for the rest of it. Full solution detail
+      (cost, pros/cons, example code) is in the Solutions index below.
+    </p>
+  </div>
+  <ul class="toc-root">{items_html}</ul>"""
 
 
 def _render_solutions_section(data: dict) -> str:
@@ -583,19 +668,35 @@ _STYLE = """
   }
   .subtitle { color: var(--muted); margin: 0; font-size: 0.95rem; max-width: 62ch; }
 
-  .requirement { margin-bottom: 2.25rem; padding-bottom: 2.25rem; border-bottom: 1px solid var(--border); }
-  .requirement:last-child { border-bottom: none; }
-  .eyebrow {
-    font-family: "IBM Plex Mono", ui-monospace, monospace;
-    font-size: 0.68rem; font-weight: 600; letter-spacing: 0.1em;
-    text-transform: uppercase; color: var(--muted-2); margin: 0 0 0.35rem;
+  ul.toc-root, ul.toc-children { list-style: none; margin: 0; padding: 0; }
+  ul.toc-children { padding-left: 1.4rem; margin-top: 0.6rem; border-left: 1px solid var(--border); }
+  li.toc-item { margin-bottom: 1rem; }
+  li.toc-item:last-child { margin-bottom: 0; }
+  .toc-item-head { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+  .toc-item-label {
+    font-family: "IBM Plex Mono", ui-monospace, monospace; font-weight: 600;
+    font-size: 0.95rem; text-wrap: balance;
   }
-  .requirement h2 {
+  .toc-item-requirement > .toc-item-head .toc-item-label { font-size: 1.05rem; }
+  .toc-item-badge {
     font-family: "IBM Plex Mono", ui-monospace, monospace;
-    font-size: 1.15rem; font-weight: 600; margin: 0; text-wrap: balance;
+    font-size: 0.62rem; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase;
+    padding: 0.1rem 0.45rem; border-radius: 5px;
   }
-  .requirement-description { color: var(--muted); margin: 0.5rem 0 1.1rem; max-width: 62ch; }
-  .no-solutions { color: var(--con); font-style: italic; }
+  .toc-item-badge-requirement { background: var(--chip-bg); color: var(--chip-fg); }
+  .toc-item-badge-solution { background: transparent; color: var(--accent); border: 1px solid var(--accent); }
+  .toc-description { color: var(--muted); margin: 0.3rem 0 0; max-width: 62ch; font-size: 0.92rem; }
+  .toc-also-solves { color: var(--muted-2); font-size: 0.8rem; font-style: italic; margin: 0.3rem 0 0; }
+  .description { color: var(--fg); margin: 0; max-width: 62ch; }
+  .description-more {
+    display: inline; font-size: 0.9em;
+  }
+  .description-more summary {
+    display: inline; cursor: pointer; color: var(--accent); list-style: none;
+  }
+  .description-more summary::-webkit-details-marker { display: none; }
+  .description-more summary::before { content: "(more)"; }
+  .description-more[open] summary::before { content: "(less)"; }
 
   details.solution {
     background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
@@ -730,35 +831,31 @@ _TITLE = "Live Testing Framework"
 _BODY_TEMPLATE = """<title>{title}</title>
 {fonts_link}
 <style>{style}</style>
-  <div class="masthead">
-    <p class="kicker">live_testing_framework &middot; requirement coverage</p>
-    <h1>Requirements &amp; candidate solutions</h1>
-    <p class="subtitle">
-      One section per requirement, listing every candidate solution that
-      satisfies it. Expand a solution to see its pros and cons.
-    </p>
-  </div>
   {requirements_html}
 """
+
+
+def _render_body_sections(data: dict, graph_data: dict) -> str:
+    graph_html = _render_new_tree_graph_section(graph_data)
+    toc_html = _render_toc_section(graph_data)
+    solutions_html = _render_solutions_section(data)
+    return f'{graph_html}{toc_html}<hr class="section-divider">{solutions_html}'
 
 
 def render_content(data: dict, graph_data: dict) -> str:
     """Title + fonts link + style + body content, no surrounding document
     tags -- for publishing as a Claude Artifact (which wraps its own
     <!doctype>/<html>/<head>/<body> and rejects one of its own)."""
-    requirements_html = _render_new_tree_graph_section(graph_data)
-    requirements_html += "".join(_render_requirement(r, data) for r in data["requirements"])
-    requirements_html += f'<hr class="section-divider">{_render_solutions_section(data)}'
     return _BODY_TEMPLATE.format(
-        title=html.escape(_TITLE), fonts_link=_FONTS_LINK, style=_STYLE, requirements_html=requirements_html
+        title=html.escape(_TITLE),
+        fonts_link=_FONTS_LINK,
+        style=_STYLE,
+        requirements_html=_render_body_sections(data, graph_data),
     )
 
 
 def render_report(data: dict, graph_data: dict) -> str:
     """A full, directly-openable standalone HTML document."""
-    new_tree_graph_html = _render_new_tree_graph_section(graph_data)
-    requirements_html = "".join(_render_requirement(r, data) for r in data["requirements"])
-    solutions_section_html = _render_solutions_section(data)
     return f"""<!doctype html>
 <html lang="en">
 <head>
@@ -768,18 +865,7 @@ def render_report(data: dict, graph_data: dict) -> str:
 <style>{_STYLE}</style>
 </head>
 <body>
-  <div class="masthead">
-    <p class="kicker">live_testing_framework &middot; requirement coverage</p>
-    <h1>Requirements &amp; candidate solutions</h1>
-    <p class="subtitle">
-      One section per requirement, listing every candidate solution that
-      satisfies it. Expand a solution to see its pros and cons.
-    </p>
-  </div>
-  {new_tree_graph_html}
-  {requirements_html}
-  <hr class="section-divider">
-  {solutions_section_html}
+  {_render_body_sections(data, graph_data)}
 </body>
 </html>
 """

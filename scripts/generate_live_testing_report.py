@@ -40,6 +40,7 @@ from __future__ import annotations
 
 import argparse
 import html
+import json
 from pathlib import Path
 
 from emc2p.registrar import Registrar
@@ -238,167 +239,154 @@ _GRAPH_H_GAP = 60
 _GRAPH_V_GAP = 14
 
 
-def _layout_tree(nodes: list[dict]) -> dict:
-    """Left-to-right tidy-tree layout (root at the left, depth grows
-    rightward, siblings stack vertically) -- a tall, narrow shape scrolls
-    naturally with the page instead of needing wide horizontal scroll.
-    Each leaf gets one row's worth of height, a parent's row is the
-    average of its children's rows. Deterministic ordering by node key
-    (not narration order -- pandas/emc2p row order isn't guaranteed,
-    alphabetical is at least stable). Also returns each node's ancestor-id
-    chain, used client-side for click-to-collapse."""
-    by_id = {n["id"]: n for n in nodes}
-    children: dict[str, list[str]] = {}
-    roots = []
-    for n in nodes:
-        pid = n["parent_id"]
-        if pid is None:
-            roots.append(n["id"])
-        else:
-            children.setdefault(pid, []).append(n["id"])
-    for pid in children:
-        children[pid].sort(key=lambda nid: by_id[nid]["key"])
-    roots.sort(key=lambda nid: by_id[nid]["key"])
-
-    positions: dict[str, tuple[float, int]] = {}
-    ancestors: dict[str, list[str]] = {}
-    next_row = [0]
-
-    def visit(node_id: str, depth: int, chain: list[str]) -> float:
-        ancestors[node_id] = chain
-        kids = children.get(node_id, [])
-        if not kids:
-            row = next_row[0]
-            next_row[0] += 1
-            y = row + 0.5
-        else:
-            ys = [visit(k, depth + 1, chain + [node_id]) for k in kids]
-            y = sum(ys) / len(ys)
-        positions[node_id] = (y, depth)
-        return y
-
-    for r in roots:
-        visit(r, 0, [])
-
-    max_row = next_row[0] or 1
-    max_depth = max((d for _, d in positions.values()), default=0)
-    width = (max_depth + 1) * (_GRAPH_NODE_W + _GRAPH_H_GAP)
-    height = max_row * (_GRAPH_NODE_H + _GRAPH_V_GAP)
-    pixel_positions = {
-        nid: (
-            depth * (_GRAPH_NODE_W + _GRAPH_H_GAP) + _GRAPH_H_GAP / 2,
-            y * (_GRAPH_NODE_H + _GRAPH_V_GAP) + _GRAPH_V_GAP / 2,
-        )
-        for nid, (y, depth) in positions.items()
-    }
-    return {"positions": pixel_positions, "width": width, "height": height, "ancestors": ancestors}
-
-
 def _render_new_tree_graph_section(graph_data: dict) -> str:
+    """Left-to-right tree graph (root at the left, depth grows rightward,
+    siblings stack vertically). Layout runs client-side, not in Python:
+    the whole point of the -/+ collapse toggle is to make the diagram
+    genuinely smaller when a branch is hidden, which means re-computing
+    positions for whatever's currently visible and shrinking the SVG's own
+    viewBox to match -- a build-it-once-in-Python-then-hide-elements
+    approach can't do that, it just leaves blank space where the hidden
+    subtree used to be. So Python only serializes the node/edge data;
+    layoutTree()/render() below (plain JS, no framework) do the actual
+    tidy-tree math and DOM building, called once on load and again on
+    every toggle.
+    """
     nodes = graph_data["nodes"]
     if not nodes:
         return ""
-    layout = _layout_tree(nodes)
-    positions = layout["positions"]
-    ancestors = layout["ancestors"]
-    by_id = {n["id"]: n for n in nodes}
-    has_children = {n["parent_id"] for n in nodes if n["parent_id"]}
 
-    def anc_attr(node_id: str) -> str:
-        chain = ancestors.get(node_id, [])
-        return " ".join(chain) if chain else ""
+    payload = {
+        "nodes": [
+            {
+                "id": n["id"],
+                "key": n["key"],
+                "label": n["label"],
+                "type": n["type"],
+                "description": n["description"].strip().replace("\n\n", " ").replace("\n", " "),
+                "work_state": n["work_state"],
+                "parent_id": n["parent_id"],
+            }
+            for n in nodes
+        ],
+        "cross_edges": [list(pair) for pair in graph_data["cross_edges"]],
+    }
+    # Embedded as its own application/json element rather than inlined into
+    # a JS string literal -- description text is full of apostrophes
+    # ("it's", "doesn't", ...) that would otherwise break out of whatever
+    # quote character wrapped it. This way nothing needs JS-string
+    # escaping at all, only the standard "</script" HTML-parser guard.
+    data_json = json.dumps(payload).replace("</", "<\\/")
 
-    svg_parts = []
-    # Tree edges (solid) drawn first, under the nodes. Belongs to its
-    # child's subtree for collapse purposes.
-    for n in nodes:
-        pid = n["parent_id"]
-        if pid is None or pid not in positions:
-            continue
-        x1, y1 = positions[pid]
-        x2, y2 = positions[n["id"]]
-        edge_anc = anc_attr(n["id"])
-        svg_parts.append(
-            f'<path class="graph-edge" data-anc="{edge_anc}" d="M {x1 + _GRAPH_NODE_W} {y1 + _GRAPH_NODE_H / 2} '
-            f'C {x1 + _GRAPH_NODE_W + _GRAPH_H_GAP / 2} {y1 + _GRAPH_NODE_H / 2}, '
-            f'{x2 - _GRAPH_H_GAP / 2} {y2 + _GRAPH_NODE_H / 2}, '
-            f'{x2} {y2 + _GRAPH_NODE_H / 2}"/>'
-        )
-    # Cross edges (dashed) -- e.g. one solution also solving a second requirement.
-    for from_id, to_id in graph_data["cross_edges"]:
-        if from_id not in positions or to_id not in positions:
-            continue
-        x1, y1 = positions[from_id]
-        x2, y2 = positions[to_id]
-        sx, sy = x1 + _GRAPH_NODE_W, y1 + _GRAPH_NODE_H / 2
-        tx, ty = x2 + _GRAPH_NODE_W, y2 + _GRAPH_NODE_H / 2
-        bulge = 46
-        edge_anc = " ".join({*ancestors.get(from_id, []), *ancestors.get(to_id, [])})
-        svg_parts.append(
-            f'<path class="graph-edge graph-edge-cross" data-anc="{edge_anc}" '
-            f'd="M {sx} {sy} C {sx + bulge} {sy}, {tx + bulge} {ty}, {tx} {ty}" '
-            f'marker-end="url(#graph-arrow)"/>'
-        )
-    # Nodes on top.
-    for n in nodes:
-        x, y = positions[n["id"]]
-        node_type = n["type"]
-        collapsible = n["id"] in has_children
-        work_badge = ""
-        if n["work_state"]:
-            ws = html.escape(n["work_state"])
-            work_badge = f'<text class="graph-node-badge" x="{_GRAPH_NODE_W - 8}" y="15" text-anchor="end">{ws}</text>'
-        toggle = (
-            f'<circle class="graph-node-toggle" cx="{_GRAPH_NODE_W}" cy="{_GRAPH_NODE_H / 2}" r="7"/>'
-            f'<text class="graph-node-toggle-glyph" x="{_GRAPH_NODE_W}" y="{_GRAPH_NODE_H / 2 + 3.5}" text-anchor="middle">&#8722;</text>'
-            if collapsible else ""
-        )
-        desc_attr = html.escape(n["description"].strip().replace("\n\n", " ").replace("\n", " "))
-        node_class = f"graph-node graph-node-{node_type}" + (" graph-node-collapsible" if collapsible else "")
-        svg_parts.append(f"""
-      <g class="{node_class}" transform="translate({x},{y})" data-id="{n["id"]}" data-anc="{anc_attr(n["id"])}">
-        <title>{html.escape(n["label"])}&#10;&#10;{desc_attr}</title>
-        <rect width="{_GRAPH_NODE_W}" height="{_GRAPH_NODE_H}" rx="{8 if node_type == "requirement" else _GRAPH_NODE_H / 2}"/>
-        <text class="graph-node-label" x="10" y="{_GRAPH_NODE_H / 2 + 4.5}">{html.escape(n["label"])}</text>
-        {work_badge}
-        {toggle}
-      </g>""")
-
-    svg = f"""
-    <svg class="graph-svg" viewBox="0 0 {layout['width']} {layout['height']}" width="{layout['width']}" height="{layout['height']}">
-      <defs>
-        <marker id="graph-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-          <path d="M 0 0 L 10 5 L 0 10 z" class="graph-arrowhead"/>
-        </marker>
-      </defs>
-      {"".join(svg_parts)}
-    </svg>"""
-
-    script = """
+    script = f"""
+    <script type="application/json" class="graph-data">{data_json}</script>
     <script>
-    (function() {
+    (function() {{
+      var W = {_GRAPH_NODE_W}, H = {_GRAPH_NODE_H}, HGAP = {_GRAPH_H_GAP}, VGAP = {_GRAPH_V_GAP};
+      var SVGNS = 'http://www.w3.org/2000/svg';
       var root = document.currentScript.closest('.yaml-preview');
+      var svg = root.querySelector('.graph-svg');
+      var data = JSON.parse(root.querySelector('.graph-data').textContent);
+      var byId = {{}};
+      data.nodes.forEach(function(n) {{ byId[n.id] = n; }});
+      var childrenOf = {{}};
+      var roots = [];
+      data.nodes.forEach(function(n) {{
+        if (n.parent_id) {{ (childrenOf[n.parent_id] = childrenOf[n.parent_id] || []).push(n.id); }}
+        else {{ roots.push(n.id); }}
+      }});
+      Object.keys(childrenOf).forEach(function(pid) {{
+        childrenOf[pid].sort(function(a, b) {{ return byId[a].key.localeCompare(byId[b].key); }});
+      }});
+      roots.sort(function(a, b) {{ return byId[a].key.localeCompare(byId[b].key); }});
       var collapsed = new Set();
-      function apply() {
-        root.querySelectorAll('[data-anc]').forEach(function(el) {
-          var chain = (el.getAttribute('data-anc') || '').split(' ').filter(Boolean);
-          var hidden = chain.some(function(a) { return collapsed.has(a); });
-          el.style.display = hidden ? 'none' : '';
-        });
-        root.querySelectorAll('.graph-node-collapsible').forEach(function(g) {
-          var id = g.getAttribute('data-id');
-          var glyph = g.querySelector('.graph-node-toggle-glyph');
-          if (glyph) glyph.textContent = collapsed.has(id) ? '+' : String.fromCharCode(8722);
-        });
-      }
-      root.querySelectorAll('.graph-node-collapsible').forEach(function(g) {
-        g.addEventListener('click', function() {
-          var id = g.getAttribute('data-id');
-          if (collapsed.has(id)) { collapsed.delete(id); } else { collapsed.add(id); }
-          apply();
-        });
-      });
-    })();
+
+      function layout() {{
+        var positions = {{}};
+        var nextRow = 0;
+        function visit(id, depth) {{
+          var kids = collapsed.has(id) ? [] : (childrenOf[id] || []);
+          var y;
+          if (kids.length === 0) {{
+            y = nextRow + 0.5; nextRow += 1;
+          }} else {{
+            var ys = kids.map(function(k) {{ return visit(k, depth + 1); }});
+            y = ys.reduce(function(a, b) {{ return a + b; }}, 0) / ys.length;
+          }}
+          positions[id] = {{x: depth * (W + HGAP) + HGAP / 2, y: y * (H + VGAP) - H / 2, depth: depth}};
+          return y;
+        }}
+        roots.forEach(function(r) {{ visit(r, 0); }});
+        var maxDepth = 0;
+        Object.keys(positions).forEach(function(id) {{ maxDepth = Math.max(maxDepth, positions[id].depth); }});
+        return {{positions: positions, width: (maxDepth + 1) * (W + HGAP), height: nextRow * (H + VGAP)}};
+      }}
+
+      function el(tag, attrs, text) {{
+        var e = document.createElementNS(SVGNS, tag);
+        for (var k in attrs) {{ e.setAttribute(k, attrs[k]); }}
+        if (text !== undefined) {{ e.textContent = text; }}
+        return e;
+      }}
+
+      function render() {{
+        var lay = layout();
+        var positions = lay.positions;
+        svg.setAttribute('viewBox', '0 0 ' + lay.width + ' ' + lay.height);
+        svg.setAttribute('width', lay.width);
+        svg.setAttribute('height', lay.height);
+        var content = svg.querySelector('.graph-content');
+        content.innerHTML = '';
+
+        data.nodes.forEach(function(n) {{
+          var p = positions[n.parent_id];
+          var here = positions[n.id];
+          if (!p || !here) return;
+          var x1 = p.x + W, y1 = p.y + H / 2, x2 = here.x, y2 = here.y + H / 2;
+          content.appendChild(el('path', {{
+            'class': 'graph-edge',
+            d: 'M ' + x1 + ' ' + y1 + ' C ' + (x1 + HGAP / 2) + ' ' + y1 + ', ' + (x2 - HGAP / 2) + ' ' + y2 + ', ' + x2 + ' ' + y2,
+          }}));
+        }});
+        data.cross_edges.forEach(function(pair) {{
+          var a = positions[pair[0]], b = positions[pair[1]];
+          if (!a || !b) return;
+          var sx = a.x + W, sy = a.y + H / 2, tx = b.x + W, ty = b.y + H / 2, bulge = 46;
+          content.appendChild(el('path', {{
+            'class': 'graph-edge graph-edge-cross',
+            d: 'M ' + sx + ' ' + sy + ' C ' + (sx + bulge) + ' ' + sy + ', ' + (tx + bulge) + ' ' + ty + ', ' + tx + ' ' + ty,
+            'marker-end': 'url(#graph-arrow)',
+          }}));
+        }});
+        data.nodes.forEach(function(n) {{
+          var pos = positions[n.id];
+          if (!pos) return;
+          var hasKids = (childrenOf[n.id] || []).length > 0;
+          var cls = 'graph-node graph-node-' + n.type + (hasKids ? ' graph-node-collapsible' : '');
+          var g = el('g', {{'class': cls, transform: 'translate(' + pos.x + ',' + pos.y + ')', 'data-id': n.id}});
+          var title = el('title', {{}}, n.label + '\\n\\n' + n.description);
+          g.appendChild(title);
+          g.appendChild(el('rect', {{width: W, height: H, rx: n.type === 'requirement' ? 8 : H / 2}}));
+          g.appendChild(el('text', {{'class': 'graph-node-label', x: 10, y: H / 2 + 4.5}}, n.label));
+          if (n.work_state) {{
+            g.appendChild(el('text', {{'class': 'graph-node-badge', x: W - 8, y: 15, 'text-anchor': 'end'}}, n.work_state));
+          }}
+          if (hasKids) {{
+            g.appendChild(el('circle', {{'class': 'graph-node-toggle', cx: W, cy: H / 2, r: 7}}));
+            g.appendChild(el('text', {{
+              'class': 'graph-node-toggle-glyph', x: W, y: H / 2 + 3.5, 'text-anchor': 'middle',
+            }}, collapsed.has(n.id) ? '+' : String.fromCharCode(8722)));
+            g.addEventListener('click', function() {{
+              if (collapsed.has(n.id)) {{ collapsed.delete(n.id); }} else {{ collapsed.add(n.id); }}
+              render();
+            }});
+          }}
+          content.appendChild(g);
+        }});
+      }}
+
+      render();
+    }})();
     </script>"""
 
     return f"""
@@ -412,8 +400,17 @@ def _render_new_tree_graph_section(graph_data: dict) -> str:
       <span class="graph-legend-item"><span class="graph-edge-sample"></span>nested (implied) relation</span>
       <span class="graph-legend-item"><span class="graph-edge-sample graph-edge-sample-cross"></span>additional solution of: link</span>
     </p>
-    <div class="graph-scroll">{svg}</div>
-    <p class="graph-hint">Hover a node for its full description. Click a node with a &#8722;/+ marker to collapse or expand its branch.</p>
+    <div class="graph-scroll">
+      <svg class="graph-svg">
+        <defs>
+          <marker id="graph-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 0 L 10 5 L 0 10 z" class="graph-arrowhead"/>
+          </marker>
+        </defs>
+        <g class="graph-content"></g>
+      </svg>
+    </div>
+    <p class="graph-hint">Hover a node for its full description. Click a node with a &#8722;/+ marker to collapse or expand its branch -- the diagram reflows and shrinks.</p>
     {script}
   </details>
   <hr class="section-divider">"""

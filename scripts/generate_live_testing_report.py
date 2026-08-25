@@ -12,14 +12,13 @@ Requirement-first rather than solution-first on purpose -- see
 docs/manifest/prioritization_reflections.yaml's fourth installment
 ("2026-08-22_retrospective_on_the_scoring_approach"): checking "does this
 requirement have a good solution" is the direction that's actually useful,
-not "what does this solution cover." Each pro/con is shown as its own
-consideration_rating note, labeled Pro/Con by the sign of its own
-consideration's `weight` times its `rating` (not by rating's sign alone --
-a negative rating on a negative-weight axis nets positive), with the raw
-weight and rating values shown alongside rather than the qualitative
-`effect` field -- the earlier attempt to lead with that categorical field
-on its own caused confusion, not clarity, so it's set aside here (still
-recorded on each consideration_rating, just not surfaced by this report).
+not "what does this solution cover." Pros/cons are plain qualitative
+`pro`/`con` bare tags, not weighted consideration/consideration_rating
+axes -- that scheme was tried first here but dropped: its weight*rating
+formula kept producing a sign that didn't match a point's own actual
+meaning (a clearly negative point could still net a "pro" if its axis and
+rating happened to multiply positive). Each pro/con's text is shown as-is,
+grouped pros-then-cons, in the order it was written -- no score to sort by.
 
 Reuses find_live_testing_solution_covers.py's own requirement/solution
 loading (same registrar tables, same prefixes, same `_leaf` helper) so
@@ -93,31 +92,12 @@ def load_report_data(registrar: Registrar) -> dict:
         if name:
             code_examples[name] = {"language": str(row["language"]), "code": str(row["value"])}
 
-    consideration_descriptions: dict[str, str] = {}
-    consideration_weights: dict[str, float] = {}
-    for _, row in registrar.get("consideration").execute().iterrows():
-        axis = str(row["value"])
-        consideration_descriptions[axis] = str(row["description"])
-        consideration_weights[axis] = float(row["weight"])
-
-    ratings: dict[str, list[dict]] = {}
-    for _, row in registrar.get("consideration_rating").execute().iterrows():
-        name = name_of(row["entity_id"], SOLUTIONS_PREFIX)
-        if name is None:
-            continue
-        axis = str(row["value"])
-        weight = consideration_weights.get(axis, 0.0)
-        rating = float(row["rating"])
-        ratings.setdefault(name, []).append(
-            {
-                "axis": axis,
-                "axis_description": consideration_descriptions.get(axis, ""),
-                "note": str(row["note"]),
-                "weight": weight,
-                "rating": rating,
-                "contribution": weight * rating,
-            }
-        )
+    pros_cons: dict[str, list[dict]] = {}
+    for sign in ("pro", "con"):
+        for _, row in registrar.get(sign).execute().iterrows():
+            name = name_of(row["entity_id"], SOLUTIONS_PREFIX)
+            if name:
+                pros_cons.setdefault(name, []).append({"sign": sign, "note": str(row["value"])})
 
     req_to_solutions: dict[str, list[str]] = {name: [] for name in requirements}
     for solution_name, req_names in solves.items():
@@ -132,7 +112,7 @@ def load_report_data(registrar: Registrar) -> dict:
         "work_states": work_states,
         "code_examples": code_examples,
         "costs": costs,
-        "ratings": ratings,
+        "pros_cons": pros_cons,
     }
 
 
@@ -140,22 +120,13 @@ def _label(name: str) -> str:
     return name.replace("_", " ")
 
 
-def _render_rating(rating: dict) -> str:
-    contribution = rating["contribution"]
-    sign_label = "Pro" if contribution > 0 else "Con" if contribution < 0 else "Neutral"
-    axis_title = html.escape(_label(rating["axis"]))
-    axis_desc = html.escape(rating["axis_description"])
-    note = html.escape(rating["note"])
-    values = (
-        f'weight {rating["weight"]:+.2g} &times; rating {rating["rating"]:+.2g} '
-        f'= <strong>{contribution:+.2g}</strong>'
-    )
+def _render_pro_con(item: dict) -> str:
+    sign_label = "Pro" if item["sign"] == "pro" else "Con"
+    note = html.escape(item["note"])
     return f"""
         <li class="rating rating-{sign_label.lower()}">
           <div class="rating-head">
             <span class="sign-badge sign-{sign_label.lower()}">{sign_label}</span>
-            <span class="axis-name" title="{axis_desc}">{axis_title}</span>
-            <span class="values">{values}</span>
           </div>
           <p class="rating-note">{note}</p>
         </li>"""
@@ -168,10 +139,10 @@ def _render_solution(name: str, data: dict, show_requirements: bool = False) -> 
     cost_html = (
         ", ".join(f"{value:g} {ctype}" for ctype, value in cost_items) if cost_items else "none"
     )
-    ratings = sorted(data["ratings"].get(name, []), key=lambda r: -r["contribution"])
-    pros = [r for r in ratings if r["contribution"] > 0]
-    cons = [r for r in ratings if r["contribution"] <= 0]
-    ratings_html = "".join(_render_rating(r) for r in pros + cons)
+    items = data["pros_cons"].get(name, [])
+    pros = [r for r in items if r["sign"] == "pro"]
+    cons = [r for r in items if r["sign"] == "con"]
+    ratings_html = "".join(_render_pro_con(r) for r in pros + cons)
     requirements_html = ""
     if show_requirements:
         req_names = data["solution_to_requirements"].get(name, [])
@@ -352,14 +323,6 @@ _STYLE = """
   }
   .sign-pro { background: var(--pro-bg); color: var(--pro); }
   .sign-con { background: var(--con-bg); color: var(--con); }
-  .sign-neutral { background: var(--chip-bg); color: var(--chip-fg); }
-  .axis-name { font-weight: 600; }
-  .values {
-    font-family: "IBM Plex Mono", ui-monospace, monospace;
-    font-variant-numeric: tabular-nums;
-    font-size: 0.74rem; color: var(--muted); margin-left: auto; white-space: nowrap;
-  }
-  .values strong { color: var(--fg); }
   .rating-note { margin: 0.35rem 0 0; color: var(--muted); font-size: 0.92rem; max-width: 62ch; }
 
   .section-label {
@@ -384,10 +347,6 @@ _STYLE = """
   }
 
   .section-divider { border: none; border-top: 1px solid var(--border); margin: 3rem 0 2.75rem; }
-
-  @media (max-width: 480px) {
-    .values { margin-left: 0; }
-  }
 """
 
 _TITLE = "Live Testing Framework"

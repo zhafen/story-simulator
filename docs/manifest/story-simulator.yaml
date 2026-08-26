@@ -1140,14 +1140,16 @@ story_simulator_mission:
                     - work_state: in progress
                 live_agent_fixtures:
                     - description: >
-                          Fixtures enabling live-agent tests to be
-                          written inline as regular Python code --
-                          McpClientSession/HeadlessSession usage wrapped
-                          up as reusable fixtures, rather than a
-                          Case/CASES parametrized list.
+                          Live-agent tests written inline as regular
+                          Python code, directly against
+                          test_human_validated.helpers.McpClientSession/
+                          HeadlessSession -- already thin enough
+                          (McpClientSession(save_dir)/HeadlessSession(save_dir))
+                          that no separate fixtures module is needed on
+                          top, rather than a Case/CASES parametrized
+                          list.
                     - solution
                     - selected: true
-                    - dependence of: dependencies.live_agent_fixtures
             deterministic_machinery_check:
                 data:
                     - description: >
@@ -1172,13 +1174,15 @@ story_simulator_mission:
                     - description: >
                           Plain Python test files -- ordinary test functions
                           driving advance_simulation/update_registry
-                          directly, no Case/CASES list, no data format.
+                          directly, no Case/CASES list, no data format, no
+                          separate fixtures module either: write each
+                          scenario's deterministic test the same way
+                          test_car_parking_deterministic.py already does.
                           (Sketched earlier, above, as
                           hand_scripted_harness_for_everything -- same idea,
                           scoped here specifically to the deterministic case.)
                     - solution
                     - selected: true
-                    - dependence of: dependencies.deterministic_fixtures
             switchable_test_agent:
                 data:
                     - description: >
@@ -1308,18 +1312,26 @@ story_simulator_mission:
                     - solution
                 split_fixtures_between_emc2p_and_story_simulator:
                     - description: >
-                          Live-agent and deterministic fixtures live in
-                          emc2p; run-to-completion/stepwise fixtures live in
-                          story-simulator, since turns/steps are a
-                          story-simulator-specific data format (see
-                          story_simulator_turn_fixtures under
-                          stepwise_or_completion_execution above).
+                          responder, turn_stepper, and scenario_registrar
+                          all turn out to be story-simulator-local (not
+                          emc2p-generic as first assumed for responder --
+                          see that dependency's own corrected
+                          description): responder threads through
+                          test_human_validated.helpers's own
+                          STORY_SIM_RESPONDER env var mechanism,
+                          turn_stepper works with this project's own
+                          turn/step data format, and scenario_registrar
+                          needs story_simulator.config's schema/URL
+                          resolution. The "split" that remains true is
+                          negative -- none of these get pushed down into
+                          emc2p, where they wouldn't belong -- rather than
+                          a positive claim that something here does live
+                          in emc2p.
                     - solution
                     - selected: true
-                    - dependence of: dependencies.live_agent_fixtures
-                    - dependence of: dependencies.deterministic_fixtures
                     - dependence of: dependencies.responder
                     - dependence of: dependencies.turn_stepper
+                    - dependence of: dependencies.scenario_registrar
             intuitive_language:
                 data:
                     - description: >
@@ -1366,65 +1378,60 @@ story_simulator_mission:
                           plain pytest test functions.
                     - location: tests/test_human_validated/test_scenarios/
                     - work_state: new
-                live_agent_fixtures:
-                    - description: >
-                          Pytest fixtures wrapping McpClientSession/
-                          HeadlessSession so a scenario's tests.py can
-                          write a live-agent test as an ordinary test
-                          function, without a Case/CASES parametrized
-                          list. The module itself doesn't exist yet, but
-                          both classes it would wrap already do:
-                          emc2p.testing.mcp_client_session.McpClientSession
-                          and emc2p.testing.headless_session.HeadlessSession.
-                    - location: emc2p.testing.live_agent_fixtures
-                    - work_state: in progress
-                deterministic_fixtures:
-                    - description: >
-                          Generalizes test_car_parking_deterministic.py's
-                          hand-scripted, LLM-free pattern (driving
-                          advance_simulation/update_registry directly
-                          against static input) so every scenario can get a
-                          deterministic test the same way, without a shared
-                          data format. The generalized module doesn't exist
-                          yet, but the one-off pattern it would generalize
-                          already does: see
-                          test_human_validated.test_car_parking_deterministic
-                          (tests/test_human_validated/).
-                    - location: emc2p.testing.deterministic_fixtures
-                    - work_state: in progress
                 responder:
                     - description: >
                           Exposes the responder choice (host/subagent/
-                          keyed_subagent) -- already a construction-time
-                          argument on
-                          emc2p.testing.mcp_client_session.McpClientSession
-                          and emc2p.testing.headless_session.HeadlessSession
-                          -- as a plain, parametrizable pytest fixture
-                          instead. The fixture itself doesn't exist yet,
-                          but the mechanism it would expose already works.
-                    - location: emc2p.testing.mcp_client_session.responder
-                    - work_state: in progress
+                          keyed_subagent) as a plain, parametrizable
+                          pytest fixture, in
+                          tests/test_human_validated/conftest.py.
+                          Corrected from an earlier, wrong assumption
+                          that this was an emc2p-generic
+                          McpClientSession/HeadlessSession constructor
+                          argument -- it isn't: those classes take no
+                          such argument. The real mechanism is
+                          story-simulator-local:
+                          test_human_validated.helpers._session_extra_env
+                          already resolved a responder value (explicit
+                          argument, else STORY_SIM_LIVE_TEST_RESPONDER,
+                          else DEFAULT_LIVE_TEST_RESPONDER) into a
+                          STORY_SIM_RESPONDER env var -- the fixture
+                          parametrizes that same resolution per-test via
+                          `@pytest.mark.parametrize("responder", [...],
+                          indirect=True)`, rather than only being able to
+                          flip the whole suite's default through the env
+                          var.
+                    - location: test_human_validated.conftest.responder
+                    - work_state: done
                 turn_stepper:
                     - description: >
                           Turn-by-turn (stepwise) test execution and
                           assertions, alongside today's run-to-completion
-                          tests. Lives in story-simulator itself, not
-                          emc2p -- turns/steps are a story-simulator-
-                          specific data format.
+                          tests, in
+                          tests/test_human_validated/conftest.py: sends
+                          each turn in a list one at a time, running an
+                          optional check after every step. Lives in
+                          story-simulator itself, not emc2p -- turns/
+                          steps are a story-simulator-specific data
+                          format. Not yet exercised by an actual live
+                          scenario test (that's separate, larger work --
+                          picking a scenario and writing the live test
+                          itself), but the fixture itself is built and
+                          unit-tested.
                     - location: test_human_validated.conftest.turn_stepper
-                    - work_state: new
+                    - work_state: done
                 scenario_registrar:
                     - description: >
-                          Loads a scenario's scenario.yaml and registers a
-                          fresh registrar for it, factoring out the
-                          boilerplate each scenario's tests.py would
-                          otherwise repeat. The fixture itself doesn't
-                          exist yet, but the logic it would wrap already
-                          does, as a private helper: see
+                          Loads a scenario's registrar after confirming
+                          its save_dir's schema actually exists,
+                          factoring out the boilerplate each scenario's
+                          tests.py would otherwise repeat -- a fixture in
+                          tests/test_human_validated/conftest.py wrapping
+                          the existing private helper
                           test_human_validated.helpers._load_registrar
-                          (tests/test_human_validated/helpers.py).
+                          (unchanged; still directly importable too, for
+                          the two call sites that already use it).
                     - location: test_human_validated.conftest.scenario_registrar
-                    - work_state: in progress
+                    - work_state: done
 
 # What satisfies each done (or partially done) requirement. Most solutions
 # now live as `__iacs__ = {"solution of": ...}` metadata in Python docstrings.

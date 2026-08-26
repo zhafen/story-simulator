@@ -84,7 +84,7 @@ class TestHumanValidatedTestFrameworkDependencies:
         path/module/fixture name) and work_state."""
         registrar = _load_registrar()
         dependency_ids = set(self._dependency_paths(registrar))
-        assert len(dependency_ids) == 6
+        assert len(dependency_ids) == 4
 
         location_ids = set(registrar.get("location").execute()["entity_id"].astype(str))
         work_state_ids = set(registrar.get("work_state").execute()["entity_id"].astype(str))

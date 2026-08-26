@@ -1,0 +1,140 @@
+"""Live regressions for this directory's own scenario.yaml (task #57): a
+bare arrival-order check with nothing else to reason about -- three cars,
+one race, each car's own `race_placement` recorded directly. Permanent
+regression, checked exactly via that dedicated component rather than by
+matching substrings in freeform outcome text (a heuristic text match
+produced a false positive during the original diagnostic -- see
+docs/manifest/history.yaml).
+
+Two tests, along a deliberately different axis from each other (which
+responder answers each event's judgment call, not which scenario runs):
+
+- test_resolves_correctly_via_host_responder: the *connected* model does
+  the resolve/plan reasoning itself.
+- test_resolves_and_persists_via_keyed_subagent: keyed_subagent (DeepSeek
+  by default) does the actual reasoning and update_registry writes
+  in-process instead, with the connected model's job narrowed to just
+  driving advance_simulation to "done". Not a test of keyed_subagent's
+  own tool-calling mechanics (dispatch, iteration cap, usage logging,
+  ...) -- that lives in emc2p's own tests/agents/test_tool_calling_loop.py.
+  What this checks is simulation correctness (does the race still
+  resolve in the right order, with the right timing) and CLAUDE.md's own
+  re-export-on-every-update_registry invariant (save_dir/world/ actually
+  gets created/updated), independent of which responder is doing the
+  driving.
+
+Deliberately checks only *final* state, not turn-by-turn state (see
+#61/docs/manifest/history.yaml: project_history.
+live_tests_decoupled_from_turn_count) -- each test runs the whole
+scenario in one open-ended instruction, in as many or as few
+advance_simulation round-trips as the model wants. Order evidence
+instead comes from each expected write's own recorded world time
+(helpers._assert_write_order), confirming it was recorded while its own
+event resolved, not retroactively.
+"""
+
+from pathlib import Path
+
+import pytest
+
+from emc2p.testing.expected_fixtures import assert_subset, load_expected_module
+from test_human_validated.helpers import (
+    McpClientSession,
+    _assert_write_order,
+    _event_states,
+    _load_registrar,
+    _placement,
+)
+
+SCENARIO_DIR = Path(__file__).parent
+EXPECTED = load_expected_module(SCENARIO_DIR / "expected.py")
+
+
+def _check_race(r, expected) -> None:
+    """race_placement is a plain int field the model fills directly -- an exact
+    match (assert_subset) is the right check, no phrasing to be lenient about."""
+    placements = {alias: _placement(r, alias) for alias in expected.race_placement}
+    assert_subset("race_placement", expected.race_placement, placements)
+
+
+# Deliberately one open-ended instruction, not one per event (see
+# #61/docs/manifest/history.yaml) -- checks the final result and order, not turn count.
+_RUN_TO_DONE_INSTRUCTION = (
+    "Call advance_simulation and keep answering its prompts (resolve, then plan, for "
+    "whatever event it names) until its status is \"done\". For each event's resolve step, "
+    "record via update_registry that event's own outcome and event_state (complete), AND "
+    "that car's own race_placement -- its 1-indexed finishing position among all three cars "
+    "(1 = first to finish), based on which cars' own trips have already finished by this "
+    "point in time. Don't narrate anything back to me."
+)
+
+_DRIVE_TO_DONE_INSTRUCTION = (
+    "Call advance_simulation repeatedly until its status is \"done\". If it ever comes back "
+    "with status \"input_required\", just call it again with the same resume_token and a "
+    "short answer telling it to keep going -- don't try to answer the substance of any "
+    "prompt yourself. Don't narrate anything back to me."
+)
+
+
+@pytest.mark.live
+def test_resolves_correctly_via_host_responder(tmp_path: Path):
+    """Run to completion under a live "host"-responder session, then check
+    final registry state against expected.py (race_placement exactly,
+    event_state/write-order generically)."""
+    save_dir = tmp_path / "test_save"
+
+    # This test's whole point is the *connected* model's own reasoning --
+    # explicit override of McpClientSession's keyed_subagent default.
+    with McpClientSession(save_dir, responder="host") as session:
+        print(f"McpClientSession trace: {session.trace_path}")
+        narration = session.send_turn(
+            f"Use start_world with save_dir={save_dir} and scenario_dir={SCENARIO_DIR} "
+            f"to open a story-simulator world. Then {_RUN_TO_DONE_INSTRUCTION}"
+        )
+        r = _load_registrar(save_dir, narration)
+        try:
+            _check_race(r, EXPECTED)
+            assert_subset("event_state", EXPECTED.event_state, _event_states(r))
+            _assert_write_order(r, EXPECTED)
+        except AssertionError as exc:
+            raise AssertionError(f"{exc} -- narration: {narration!r}") from exc
+
+
+@pytest.mark.live
+def test_resolves_and_persists_via_keyed_subagent(tmp_path: Path):
+    """Does the simulation still resolve correctly, and does the write
+    actually persist, when keyed_subagent (not the connected model) is
+    doing the resolve/plan reasoning and the update_registry writes?
+
+    Confirmed two ways: (1) the same correctness checks
+    test_resolves_correctly_via_host_responder runs (car_b first, car_c
+    second, car_a third, all three trip events complete, each placement
+    time-stamped with its own trip event's end_time), and (2)
+    save_dir/world/ actually exists and isn't empty afterward --
+    CLAUDE.md's own re-export-on-every-update_registry invariant.
+    """
+    save_dir = tmp_path / "test_save"
+
+    # Both timeouts raised well past McpClientSession's own 120s/240s defaults --
+    # keyed_subagent's own nested DeepSeek rounds cost real time inside each call.
+    with McpClientSession(save_dir, turn_timeout=420, session_timeout=420) as session:  # responder="keyed_subagent", the default
+        print(f"McpClientSession trace: {session.trace_path}")
+        narration = session.send_turn(
+            f"Use start_world with save_dir={save_dir} and scenario_dir={SCENARIO_DIR} "
+            f"to open a story-simulator world. Then {_DRIVE_TO_DONE_INSTRUCTION}"
+        )
+        r = _load_registrar(save_dir, narration)
+        try:
+            _check_race(r, EXPECTED)
+            assert_subset("event_state", EXPECTED.event_state, _event_states(r))
+            _assert_write_order(r, EXPECTED)
+        except AssertionError as exc:
+            raise AssertionError(f"{exc} -- narration: {narration!r}") from exc
+
+        world_dir = save_dir / "world"
+        assert world_dir.is_dir(), (
+            f"save_dir/world/ was never created -- keyed_subagent's update_registry calls "
+            f"never actually persisted anything. narration: {narration!r}"
+        )
+        assert any(world_dir.iterdir()), f"save_dir/world/ exists but is empty. narration: {narration!r}"
+

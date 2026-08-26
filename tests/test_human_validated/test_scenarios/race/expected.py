@@ -1,12 +1,9 @@
-"""Known-correct final state for tests/data/scenarios/race, shared by both
-the connected-model-driven "race" case in test_scenario_resolution.py and
-the keyed_subagent-driven test_race_placement_via_keyed_subagent.py --
-same scenario, same known-correct outcome (car_b finishes first, car_c
-second, car_a third), different responder answering each event's
-resolve/plan judgment call. See test_race_placement_via_keyed_subagent.py's
-own docstring for why it's kept as a separate test rather than folded into
-test_scenario_resolution.py's own parametrization (a different axis --
-which responder answers, not which scenario runs).
+"""Known-correct final state for this directory's own scenario.yaml,
+shared by both of test_scenario.py's tests: the connected-model-driven
+test_resolves_correctly_via_host_responder and the keyed_subagent-driven
+test_resolves_and_persists_via_keyed_subagent -- same scenario, same
+known-correct outcome (car_b finishes first, car_c second, car_a third),
+different responder answering each event's resolve/plan judgment call.
 """
 
 # alias -> expected race_placement.value (1-indexed finishing position).

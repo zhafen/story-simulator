@@ -7,8 +7,8 @@ sibling test module in this tests/test_human_validated/ package. Carries
 no live test of its own: the original combined driving+parking scenario
 this file used to test (test_car_parking_core_sim) was removed once it
 became clear that combined event resolves unreliably in a way the
-split-events structure (test_scenario_resolution.py's "parking_split"
-case) doesn't -- see docs/manifest/history.yaml:
+split-events structure (test_scenarios/parking_split/test_scenario.py) doesn't --
+see docs/manifest/history.yaml:
 project_history.combined_parking_test_removed.
 
 There is no in-process narrator to call directly (see docs/manifest/
@@ -62,7 +62,6 @@ from types import ModuleType
 import pytest
 
 from emc2p.registrar import Registrar
-from emc2p.testing.expected_fixtures import load_expected_module
 from emc2p.testing.headless_session import HeadlessSession as _Emc2pHeadlessSession
 from emc2p.testing.mcp_client_session import McpClientSession as _Emc2pMcpClientSession
 from emc2p.testing.registry_checks import schema_exists, write_time
@@ -70,22 +69,6 @@ from story_simulator.config import registry_schema_name, registry_url, resolve_d
 from story_simulator.core import safe_view_current
 
 REPO_ROOT = Path(__file__).parent.parent.parent
-
-# Per-scenario known-correct final state (tests/test_human_validated/expected/
-# <name>.py), loaded via emc2p's own shared expected-fixtures framework --
-# see that module's own docstring for the load/transform/compare-to-expected.py
-# contract this package's live tests build their comparisons on. Unlike
-# iacs's own use of the same framework, the "transformation" step here is a
-# live headless/MCP session's turns, not an in-process Hamilton driver, so
-# only `load_expected_module`/`assert_subset` get reused, not
-# `ExpectedValueChecker` (which is specific to checking individual Hamilton
-# node results as they execute).
-EXPECTED_DIR = REPO_ROOT / "tests" / "test_human_validated" / "expected"
-
-
-def load_expected(name: str) -> ModuleType:
-    """Load tests/test_human_validated/expected/<name>.py as a module."""
-    return load_expected_module(EXPECTED_DIR / f"{name}.py")
 
 # Every raw stream-json line from a HeadlessSession's `claude -p` subprocess
 # lands here, one file per session -- not just the final narrated result.

@@ -1,8 +1,8 @@
 """Deterministic sibling to the live human-validated tests
 (tests/test_human_validated/).
 
-Drives the same real scenario (tests/data/scenarios/parking) through the
-same advance_simulation/update_registry mechanism, but in-process with
+Drives this same directory's own scenario.yaml through the same
+advance_simulation/update_registry mechanism, but in-process with
 hand-written "perfect" answers instead of a live model over a `claude -p`
 subprocess -- no LLM, no MCP round-trip, no cost, no flakiness. This
 exists to separate two different failure modes that look identical from
@@ -24,8 +24,7 @@ from conftest import _make_ctx, update_registry
 from story_simulator.config import registry_url
 from story_simulator.mcp_server import advance_simulation, start_world
 
-REPO_ROOT = Path(__file__).parent.parent.parent
-PARKING_SCENARIO_DIR = REPO_ROOT / "tests" / "data" / "scenarios" / "parking"
+SCENARIO_DIR = Path(__file__).parent
 
 _HOST_FRAMING = (
     "Decide the answer yourself, standing in for whichever role this call "
@@ -110,7 +109,7 @@ def test_end_time_order_matches_true_arrival_order(tmp_path):
     """
     ctx = _make_ctx()
     save_dir = tmp_path / "save"
-    start_world(str(save_dir), ctx, scenario_dir=str(PARKING_SCENARIO_DIR))
+    start_world(str(save_dir), ctx, scenario_dir=str(SCENARIO_DIR))
 
     result = asyncio.run(advance_simulation(ctx))
     assert result["status"] == "input_required"
@@ -122,7 +121,7 @@ def test_full_walkthrough_exact_prompts_and_registry_state(tmp_path):
     answers, asserting the exact prompt text and registry state at every step."""
     ctx = _make_ctx()
     save_dir = tmp_path / "save"
-    start_world(str(save_dir), ctx, scenario_dir=str(PARKING_SCENARIO_DIR))
+    start_world(str(save_dir), ctx, scenario_dir=str(SCENARIO_DIR))
 
     plan = [
         ("car_b_trip", "car_b", "parked in parking_spot_1", 1020),

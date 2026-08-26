@@ -1,7 +1,6 @@
 file_info:
     - description: >
-        Regression fixture shared by tests/test_human_validated/
-        test_car_parking_deterministic.py and test_write_accuracy.py.
+        Regression fixture for this directory's own test_scenario.py.
         Three cars drive to a restaurant with only two parking spots.
 
 restaurant:

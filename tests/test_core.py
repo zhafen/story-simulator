@@ -103,7 +103,7 @@ def test_update_registry_backfills_time_for_a_scenario_local_time_dimension_fiel
     the scenario's own seed YAML, not manifest/builtins.yaml), must still
     get backfilled on a *later* update_registry write that doesn't
     redeclare it -- mirroring race_placement.time in
-    tests/data/scenarios/race/scenario.yaml, only ever loaded at
+    tests/test_human_validated/test_scenarios/race/scenario.yaml, only ever loaded at
     start_world time, not by every later per-turn write.
     """
     save_dir = tmp_path / "test_save"

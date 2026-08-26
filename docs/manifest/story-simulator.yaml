@@ -1177,7 +1177,8 @@ story_simulator_mission:
                           directly, no Case/CASES list, no data format, no
                           separate fixtures module either: write each
                           scenario's deterministic test the same way
-                          test_car_parking_deterministic.py already does.
+                          test_scenarios/parking/test_scenario.py already
+                          does.
                           (Sketched earlier, above, as
                           hand_scripted_harness_for_everything -- same idea,
                           scoped here specifically to the deterministic case.)
@@ -1374,10 +1375,22 @@ story_simulator_mission:
                 test_scenarios:
                     - description: >
                           One directory per scenario, each holding its own
-                          scenario.yaml alongside a tests.py written as
-                          plain pytest test functions.
+                          scenario.yaml alongside a test_scenario.py
+                          written as plain pytest test functions (named
+                          "test_scenario.py", not "tests.py", so pytest's
+                          own default test_*.py collection pattern
+                          actually picks it up -- confirmed the hard way:
+                          a file literally named tests.py is silently
+                          skipped by normal `pytest` collection, only
+                          found when named on the command line
+                          explicitly). Migrated: parking, parking_split,
+                          and race each have their own directory now;
+                          location_write_isolated stays at
+                          tests/data/scenarios/ since it's used by
+                          tests/location_write_harness.py, a standalone
+                          debug script, not a pytest test case.
                     - location: tests/test_human_validated/test_scenarios/
-                    - work_state: new
+                    - work_state: done
                 responder:
                     - description: >
                           Exposes the responder choice (host/subagent/
@@ -1424,12 +1437,14 @@ story_simulator_mission:
                           Loads a scenario's registrar after confirming
                           its save_dir's schema actually exists,
                           factoring out the boilerplate each scenario's
-                          tests.py would otherwise repeat -- a fixture in
+                          test_scenario.py would otherwise repeat -- a
+                          fixture in
                           tests/test_human_validated/conftest.py wrapping
                           the existing private helper
                           test_human_validated.helpers._load_registrar
                           (unchanged; still directly importable too, for
-                          the two call sites that already use it).
+                          the three call sites that already use it: race's
+                          two tests and parking_split's one).
                     - location: test_human_validated.conftest.scenario_registrar
                     - work_state: done
 

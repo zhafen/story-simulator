@@ -5,14 +5,13 @@ story-simulator's MCP tools possible, session state included.
 functions that unpack `Context` into a plain session id and call
 straight into here).
 
-Historically stayed framework-agnostic on purpose ("works with nothing
-layered on top"); that constraint no longer holds now that responders
-(`story_simulator.config.event_responder`, `story_simulator.resolve`) are
-central to how this project works, not an optional layer on top of it -- so
-this module absorbed the bulk of `mcp_server.py`'s own implementation rather
-than staying a small Context-free base. Splitting pieces back out (e.g. if a
-second host protocol besides MCP ever needs this logic) is still open to do
-later, as needed.
+Not framework-agnostic: responders (`story_simulator.config.event_responder`,
+`story_simulator.resolve`) are central to how this project works, not an
+optional layer on top of it -- so this module carries the bulk of
+`mcp_server.py`'s own implementation rather than staying a small
+Context-free base. Splitting pieces back out (e.g. if a second host
+protocol besides MCP ever needs this logic) is still open to do later,
+as needed.
 """
 
 from __future__ import annotations
@@ -100,10 +99,8 @@ def pop_event(registrar: Registrar) -> str | None:
 
     An event only enters consideration once it has both start_time and
     duration set -- one not yet scheduled (event_state "not started", or
-    no event_state row at all yet) isn't a candidate, the same way an
-    entity with no next_due row wasn't under the mechanism this replaces.
-    A terminal event (event_state "complete" or "interrupted") is filtered
-    out the same way an inf-valued next_due used to be. end_time is
+    no event_state row at all yet) isn't a candidate. A terminal event
+    (event_state "complete" or "interrupted") is filtered out too. end_time is
     start_time + duration, computed fresh from the registry every call --
     there's no separate reschedule write to keep in sync with it, since an
     event's own timing isn't revised once set (see this section's own
@@ -172,9 +169,7 @@ def _next_time_stamp(registrar: Registrar) -> float:
     world-time axis `event.start_time`/`event_state.time`/`outcome` writes
     all use, rather than a wall-clock substitute. A registry entity, not
     process memory scoped to one MCP session -- it survives a session
-    reconnect the same way every other piece of world state already does
-    (a prior, session-scoped-dict version of this did not: see
-    docs/manifest/history.yaml: project_history.world_clock_persisted).
+    reconnect the same way every other piece of world state already does.
 
     `world_clock` isn't itself flagged `time_dimension` (unlike
     `position.time`/`state.time`/...): a row's own `value` IS the world
@@ -340,22 +335,21 @@ async def resolve_event(alias: str, replay: TurnReplay, end_time: float, session
     """Resolve box: ask a responder to interpret `alias` now that its
     end_time has been reached, and hand back whatever it says, for narration.
 
-    No next_due_in convention to parse here, unlike the mechanism this
-    replaces: the responder is expected to record everything itself via
+    The responder is expected to record everything itself via
     update_registry -- this event's own `outcome`, this event's own
     `event_state` transition (complete or interrupted), and whatever it
     changes about the entities it involves (see involved_entity) -- the
     same direct tool-calling pattern it already uses for every other
     write. The prompt spells out that last part explicitly (write changes
     onto the affected entity itself, not just described in this event's
-    own outcome text) -- confirmed live that a weak model otherwise
-    narrates an involved entity's new state inside the event's outcome
-    without a separate update_registry write for that entity, leaving
-    nothing for a caller reading that entity directly to find. This
-    function's only job is to ask and hand back the answer;
-    persisting is entirely the responder's own, not a return value this
-    code applies on its behalf (see `plan_events`, and `process_event`'s
-    own docstring for why there's no separate mechanical "update" step).
+    own outcome text): a weak model otherwise narrates an involved
+    entity's new state inside the event's outcome without a separate
+    update_registry write for that entity, leaving nothing for a caller
+    reading that entity directly to find. This function's only job is to
+    ask and hand back the answer; persisting is entirely the responder's
+    own, not a return value this code applies on its behalf (see
+    `plan_events`, and `process_event`'s own docstring for why there's no
+    separate mechanical "update" step).
 
     Doesn't name a specific component type (e.g. `location`) as an
     example, even though that's what most scenarios so far have needed:
@@ -364,35 +358,34 @@ async def resolve_event(alias: str, replay: TurnReplay, end_time: float, session
     would bias every scenario toward it. Points at `view_entity` on the
     component type's own name instead (its field descriptions carry
     scenario-specific examples, e.g. `location`'s own doubles as the
-    phrasing convention) -- confirmed live that a model resolving its
-    first-ever write to an unfamiliar component type doesn't otherwise
-    think to look up that component type's own schema, and improvises a
-    reasonable-but-inconsistent phrasing instead.
+    phrasing convention): a model resolving its first-ever write to an
+    unfamiliar component type otherwise doesn't think to look up that
+    component type's own schema, and improvises a reasonable-but-inconsistent
+    phrasing instead.
 
     `end_time` (the same value `process_event` just fed to `advance_clock`
     -- `alias`'s own start_time + duration, plain arithmetic, not left for
-    the responder to infer) is stated explicitly in the prompt: confirmed
-    live that a weak model otherwise sometimes reads a due-style ("X is
-    due") framing against start_time alone (i.e. when the trip *starts*)
-    rather than start_time + duration (when it actually *arrives*),
-    misjudging which other events have already resolved by that point --
-    part of why this uses "end_time" rather than "due" throughout, not
-    just here.
+    the responder to infer) is stated explicitly in the prompt: a weak
+    model otherwise sometimes reads a due-style ("X is due") framing
+    against start_time alone (i.e. when the trip *starts*) rather than
+    start_time + duration (when it actually *arrives*), misjudging which
+    other events have already resolved by that point -- part of why this
+    uses "end_time" rather than "due" throughout, not just here.
 
     The prompt also states outright that nothing with an earlier end_time
     is still unresolved -- `pop_event`'s own sort guarantees this is the
     earliest-end_time event still pending, so nothing else has resolved
-    yet either. Confirmed live that, without this stated explicitly, a
-    weak model sometimes assumes a *different*, not-yet-resolved entity's
-    event has already happened -- reasoning from that other event's
-    start_time or its row's position in a table instead of
-    checking its actual `event_state` -- and writes a wrong outcome for
-    `alias` on top of that wrong assumption (e.g. deciding a shared
-    resource a different car "already took" is unavailable, when that
-    other car's own trip hasn't resolved at all). Deliberately points at
-    checking `event_state` itself (already the one place this loop
-    records whether an event is done) rather than adding a second,
-    redundant field elsewhere for the same fact.
+    yet either. Without this stated explicitly, a weak model sometimes
+    assumes a *different*, not-yet-resolved entity's event has already
+    happened -- reasoning from that other event's start_time or its row's
+    position in a table instead of checking its actual `event_state` --
+    and writes a wrong outcome for `alias` on top of that wrong
+    assumption (e.g. deciding a shared resource a different car "already
+    took" is unavailable, when that other car's own trip hasn't resolved
+    at all). Deliberately points at checking `event_state` itself
+    (already the one place this loop records whether an event is done)
+    rather than adding a second, redundant field elsewhere for the same
+    fact.
 
     Never responder="human": no player is ever behind an event here
     (there's no `character.interaction_type` to branch on, since the
@@ -614,14 +607,10 @@ def start_world(session, save_dir: str, scenario_dir: str | None = None) -> str:
     see mcp_server.py) cover that directly, via the same
     underlying Registrar methods iacs's own tools use, so there's no
     separate MCP server a host needs to discover just to look something
-    up. (An earlier version of this removed view_registry/view_entity
-    entirely in favor of requiring iacs's tools instead -- reverted before
-    that specific "required first step" framing was ever live-verified,
-    on the strength of prior evidence already in hand: across every live
-    rerun so far, a weak model has reliably discovered and used tools
-    already on this server, but never once discovered or called a tool on
-    a *separate* MCP server, nudged or not; see docs/manifest/history.yaml:
-    project_history.story_simulator_view_tools_reinstated_as_iacs_delegates.)
+    up. Keeping these here rather than only on iacs's separate MCP server
+    matters in practice: a weak model reliably discovers and uses tools
+    already on this server, but rarely discovers or calls a tool on a
+    *separate* MCP server, nudged or not.
 
     Args:
         save_dir: Directory holding (or to hold) this world's save data.
@@ -685,10 +674,8 @@ async def advance_simulation(session, resume_token: str | None = None, answer: s
     anything, follows from that) -- each via responder="host" or
     "subagent" (see `config.event_responder`); a fresh event typically
     means two pauses in a row, one per call, before the loop reaches the
-    next one. No character/NPC concept at all. (A character-aware branch
-    used to layer player/NPC turns on top of an earlier, next_due-based
-    version of this loop; moved out to `shelved/` pending a rewrite -- see
-    `docs/architecture.md`.)
+    next one. No character/NPC concept at all -- that behavior is
+    currently shelved (see `docs/architecture.md`), pending a rewrite.
 
     Call with neither argument to start (or continue after a prior call
     finished with nothing left scheduled). That, and every later call,

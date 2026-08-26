@@ -1,10 +1,9 @@
-"""Live regressions for this directory's own scenario.yaml (task #57): a
+"""Live regressions for this directory's own scenario.yaml: a
 bare arrival-order check with nothing else to reason about -- three cars,
 one race, each car's own `race_placement` recorded directly. Permanent
 regression, checked exactly via that dedicated component rather than by
-matching substrings in freeform outcome text (a heuristic text match
-produced a false positive during the original diagnostic -- see
-docs/manifest/history.yaml).
+matching substrings in freeform outcome text, which risks a false
+positive on a coincidental wording match.
 
 Two tests, along a deliberately different axis from each other (which
 responder answers each event's judgment call, not which scenario runs):
@@ -23,10 +22,9 @@ responder answers each event's judgment call, not which scenario runs):
   gets created/updated), independent of which responder is doing the
   driving.
 
-Deliberately checks only *final* state, not turn-by-turn state (see
-#61/docs/manifest/history.yaml: project_history.
-live_tests_decoupled_from_turn_count) -- each test runs the whole
-scenario in one open-ended instruction, in as many or as few
+Deliberately checks only *final* state, not turn-by-turn state -- each
+test runs the whole scenario in one open-ended instruction, in as many
+or as few
 advance_simulation round-trips as the model wants. Order evidence
 instead comes from each expected write's own recorded world time
 (helpers._assert_write_order), confirming it was recorded while its own
@@ -57,8 +55,8 @@ def _check_race(r, expected) -> None:
     assert_subset("race_placement", expected.race_placement, placements)
 
 
-# Deliberately one open-ended instruction, not one per event (see
-# #61/docs/manifest/history.yaml) -- checks the final result and order, not turn count.
+# Deliberately one open-ended instruction, not one per event -- checks
+# the final result and order, not turn count.
 _RUN_TO_DONE_INSTRUCTION = (
     "Call advance_simulation and keep answering its prompts (resolve, then plan, for "
     "whatever event it names) until its status is \"done\". For each event's resolve step, "
@@ -106,7 +104,7 @@ def test_resolves_and_persists_via_keyed_subagent(tmp_path: Path):
     actually persist, when keyed_subagent (not the connected model) is
     doing the resolve/plan reasoning and the update_registry writes?
 
-    Confirmed two ways: (1) the same correctness checks
+    Checks two things: (1) the same correctness checks
     test_resolves_correctly_via_host_responder runs (car_b first, car_c
     second, car_a third, all three trip events complete, each placement
     time-stamped with its own trip event's end_time), and (2)

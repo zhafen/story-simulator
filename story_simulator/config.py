@@ -58,8 +58,7 @@ def registry_url(save_dir: Path) -> str:
 
     Postgres specifically: a live MCP session needs its connection to stay
     open for the whole session while other processes read/write
-    concurrently -- see docs/manifest/history.yaml:
-    project_history.database_migrated_to_postgres.
+    concurrently.
     """
     __iacs__ = {"solution of": "story_simulator_mission.concurrent_readable_registry"}
     dsn = resolve_database_dsn()
@@ -81,13 +80,10 @@ def resolve_anthropic_api_key() -> str | None:
     """
     return os.environ.get("STORY_SIM_ANTHROPIC_API_KEY") or None
 
-# ALL_MODULES/enabled_modules() (the character/npc/physics/terrain/spatial
-# optional-module toggle) removed along with the code it gated.
-
 _EVENT_RESPONDERS = ("host", "subagent", "keyed_subagent")
 
 # LiteLLM model string `keyed_subagent_model()` falls back to -- any
-# provider LiteLLM supports; DeepSeek is the current pick (see docs/manifest/history.yaml).
+# provider LiteLLM supports; DeepSeek is the current pick.
 DEFAULT_KEYED_SUBAGENT_MODEL = "deepseek/deepseek-chat"
 
 # Wall-clock seconds `keyed_subagent_time_budget_seconds()` falls back to.

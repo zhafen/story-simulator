@@ -31,28 +31,15 @@ Same request shape (`JudgmentRequest`) at every call site, dispatched by
   the same way "host" would, so an unattended run can't chain past Claude
   Code's own per-MCP-tool-call timeout.
 
-A responder of this same name (a nested specialist call on
-story-simulator's own API key, no MCP round-trip, via
-`TurnReplay.resolve_preferring_keyed_subagent`) was removed along with its
-only caller (`get_character_input`) and its dependency on
-`story_simulator.agents` (now shelved too) -- see git history, and PR #42
-("Rename responders and add isolated subagent delegation option") for the
-fuller four-way design this is a subset of. The version above is a
-narrower revival: no `AgentSpec`/YAML config, no NPC/character framing,
-just a direct LiteLLM call with real registry tool access -- see
-`story_simulator.keyed_subagent`'s own docstring.
-
 "human"/"subagent"/"host" are reached by raising `NeedsExternalInput`, resumed
 through MRTR (Multi Round-Trip Requests, MCP spec 2026-07-28) rather than
-MCP sampling. Sampling would have offered a third option -- the connected
-client's own model/provider, not ours -- but it's gone: deprecated
-protocol-wide by that same spec revision, not just unsupported by this
-project's actual client (Claude Code CLI 2.1.222 declared no `sampling`
-capability, confirmed live before the deprecation). "keyed_subagent" is
-the odd one out here: it answers inline, in the same `await`, without
-ever raising (except its own deadline check-in, which does raise, framed
-as "host") -- there is no host to round-trip to for this responder in the
-ordinary case.
+MCP sampling: sampling is deprecated protocol-wide by that same spec
+revision, not just unsupported by any one client, so it isn't an
+available option regardless of what a connected client might otherwise
+support. "keyed_subagent" is the odd one out here: it answers inline, in
+the same `await`, without ever raising (except its own deadline
+check-in, which does raise, framed as "host") -- there is no host to
+round-trip to for this responder in the ordinary case.
 
 Raising is what lets a judgment call reach either from any nesting depth
 without every intervening function having to be a generator (`yield from`

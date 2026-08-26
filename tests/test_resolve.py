@@ -79,10 +79,10 @@ def test_keyed_subagent_checks_in_once_deadline_passes(monkeypatch):
     """See TurnReplay.deadline / resolve()'s keyed_subagent branch: past
     the time budget, keyed_subagent must check in with the host instead.
 
-    Instead of placing another (possibly slow) model call -- confirmed
-    live that with no budget at all, one advance_simulation call
-    chained 31 DeepSeek round-trips and blew past Claude Code's own
-    ~60s MCP tool-call timeout.
+    Instead of placing another (possibly slow) model call: with no
+    budget at all, one advance_simulation call can chain many DeepSeek
+    round-trips and blow past Claude Code's own ~60s MCP tool-call
+    timeout.
     """
     called = False
 

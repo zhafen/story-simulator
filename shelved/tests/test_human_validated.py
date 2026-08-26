@@ -1,7 +1,6 @@
 """Live end-to-end tests that drive story-simulator-mcp through a real MCP client.
 
-There is no in-process narrator to call directly (see
-docs/manifest/history.yaml: project_history.turn_pipeline_removed), so
+There is no in-process narrator to call directly, so
 these spawn `claude -p` as a real subprocess against this repo's .mcp.json,
 exactly the way the README's quick-start describes a client connecting.
 Deliberately not built on story_simulator.agents.run_tool_loop --
@@ -13,8 +12,8 @@ hand, with the same assumptions, as the server itself.
 Anything needing more than one turn (test_move, test_npc) uses HeadlessSession
 to drive one continuous `claude -p` process over stream-json, rather than
 chaining separate --resume calls. That's not just an optimization: the whole
-point of moving the registry off DuckDB and onto Postgres was that a
-still-open session's connection no longer blocks anyone else from reading --
+point of using Postgres (over an embedded database like DuckDB) is that a
+still-open session's connection doesn't block anyone else from reading --
 a --resume chain would sidestep ever needing that, since each call is its own
 process that fully exits (closing its connection) before the next one starts.
 HeadlessSession keeps one story-simulator-mcp child alive for the test's
@@ -52,7 +51,7 @@ LOW_QUALITY_MODEL = "claude-haiku-4-5-20251001"
 # Bash/Task are explicitly denied everywhere below, not just left off the
 # allowlist: a weak model, given the choice, sometimes reaches for "write a
 # Python script that calls these functions directly" instead of just calling
-# the MCP tools it already has -- confirmed happening in practice -- and an
+# the MCP tools it already has, and an
 # unapproved Bash call in headless mode doesn't fail fast, it sits waiting
 # for an approval that never comes. Denying it outright removes the option
 # instead of hoping the model doesn't reach for it.
@@ -189,9 +188,9 @@ def _load_registrar(save_dir: Path, narration: str) -> Registrar:
 
     A weak model can narrate a plausible-sounding scene without ever
     calling `start_world` -- or call it with a subtly wrong `save_dir` it
-    mistyped out of the prompt's text, confirmed happening in practice --
-    so this checks the schema was actually created for the exact `save_dir`
-    the test used before reading it, rather than either silently reading
+    mistyped out of the prompt's text -- so this checks the schema was
+    actually created for the exact `save_dir` the test used before
+    reading it, rather than either silently reading
     whichever schema the connection falls through to when the named one
     doesn't exist (see `config.registry_url`'s docstring) or hitting a
     confusing raw `ibis` error partway through `Registry.from_database`'s

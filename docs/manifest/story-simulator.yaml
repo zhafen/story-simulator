@@ -159,11 +159,10 @@ story_simulator_mission:
             - description: >
                   Markdown dump of every recorded instance of one component
                   type. Delegates to iacs's own Registrar.view_df rather than
-                  reimplementing the read logic -- see docs/manifest/
-                  history.yaml: project_history.
-                  story_simulator_view_tools_reinstated_as_iacs_delegates for
-                  why this is a thin wrapper rather than routed through a
-                  separate iacs-mcp call.
+                  reimplementing the read logic -- a thin wrapper mounted
+                  directly on this server rather than routed through a
+                  separate iacs-mcp call, so a connected host doesn't need
+                  to discover a second MCP server just to read something.
             - requirement_priority
             - impact:
                   type: reliability
@@ -174,9 +173,8 @@ story_simulator_mission:
                   Every recorded component instance for one entity, resolved by
                   exact hash, exact alias, or unambiguous path fragment.
                   Delegates to iacs's own Registrar.view_entity rather than
-                  reimplementing the traversal -- see docs/manifest/
-                  history.yaml: project_history.
-                  story_simulator_view_tools_reinstated_as_iacs_delegates.
+                  reimplementing the traversal -- same thin-wrapper
+                  reasoning as view_registry above.
             - requirement_priority
             - impact:
                   type: reliability
@@ -192,13 +190,11 @@ story_simulator_mission:
         consolidate_review:
             - description: >
                   Every component type recorded so far, in one call, for the
-                  host to review and consolidate anything wrong -- #76's
+                  host to review and consolidate anything wrong -- a
                   post-write alternative to update_registry's own pre-write
                   preview/confirm flow. Delegates to iacs's own Registrar.
                   summarize_components rather than reimplementing it -- same
-                  reason view_registry/view_entity are thin wrappers (see
-                  docs/manifest/history.yaml: project_history.
-                  story_simulator_view_tools_reinstated_as_iacs_delegates).
+                  reason view_registry/view_entity are thin wrappers.
             - requirement_priority
             - impact:
                   type: reliability
@@ -215,13 +211,11 @@ story_simulator_mission:
                   single flat cutoff for every entity — a mountain stays
                   perceptible far beyond a dropped coin, with no artificial
                   floor keeping small objects perceptible regardless of range
-                  (a floor was tried and dropped on review: the formula already
-                  gives even a 0.02m object ~1.9m of visibility distance on its
-                  own). Computed as one relational query (a left join between
+                  (no floor is needed: the formula already gives even a
+                  0.02m object ~1.9m of visibility distance on its own).
+                  Computed as one relational query (a left join between
                   positions and sizes, then a filter) via ibis, not a Python
-                  loop over rows. Fixes a playtesting bug (see
-                  project_history.door_visibility_bug_found_playtesting) where
-                  a 2m door was narrated as visible from ~2km away.
+                  loop over rows.
             - requirement_priority
             - impact:
                   type: reliability
@@ -255,17 +249,14 @@ story_simulator_mission:
     seed_yaml_reflects_live_state:
         - description: >
               An agent that reads a save's YAML directly should see current
-              registry state, or at least be clearly warned it can't. Fixed
-              by having every update_registry call (including
-              advance_npc_turn's own internal one) re-export the registry's
-              current state to save_dir/world.yaml, a generated, read-only
-              mirror rewritten in full each turn — the original seed YAML
-              itself is still never touched. See docs/manifest/history.yaml:
-              project_history.seed_yaml_staleness_discovered and
-              .seed_yaml_reflects_live_state_fix_landed for the bug/fix
-              history. Not fully closed: an agent could still default to
-              grepping the frozen seed specifically instead of the live
-              world.yaml, or not know world.yaml exists — see
+              registry state, or at least be clearly warned it can't. Every
+              update_registry call (including advance_npc_turn's own
+              internal one) re-exports the registry's current state to
+              save_dir/world.yaml, a generated, read-only mirror rewritten
+              in full each turn — the original seed YAML itself is still
+              never touched. Not fully closed: an agent could still
+              default to grepping the frozen seed specifically instead of
+              the live world.yaml, or not know world.yaml exists — see
               mcp_instructions_mention_world_yaml.
         - requirement_priority
         - impact:
@@ -319,36 +310,25 @@ story_simulator_mission:
         - work_state: new
     world_time_concept:
         - description: >
-              The simulation had no representation of in-fiction elapsed time
-              (day/night, how long a character has walked, the living world's
-              "a year forward" door mechanic) independent of the wall-clock
-              ordering value (_next_turn_stamp) that only existed to resolve
-              which of an entity's position rows is current.
+              The simulation has no representation of in-fiction elapsed
+              time (day/night, how long a character has walked, the living
+              world's "a year forward" door mechanic) beyond the plain
+              world-time axis described below.
 
               Position/state/location's ordering field is `time` (in seconds
               since world creation), sourced from whichever `event` was most
               recently popped -- see core._next_time_stamp and
-              single_ordering_vocabulary. The old next_due-based mechanism
-              this paragraph used to describe is gone entirely
-              (manifest/builtins.yaml's next_due component was dead schema,
-              removed); still no day/night cycle or calendar, and "how long
-              has X been walking" is answerable from `time` deltas but
-              nothing surfaces it yet.
+              single_ordering_vocabulary. Still no day/night cycle or
+              calendar, and "how long has X been walking" is answerable
+              from `time` deltas but nothing surfaces it yet.
 
-              Resolved on 2026-08-19 (docs/manifest/history.yaml:
-              project_history.world_clock_persisted): world time used to be
-              purely in-process, session-scoped memory (_current_world_time),
-              not a registry entity, so it reset on *every* idle-triggered
-              MCP disconnect (a routine, expected event per CLAUDE.md's own
-              recovery guidance), not just a crash -- risking a
-              silently-stale read if an update_registry call landed in the
-              narrow reconnect window before the next event pop. Now a
-              `world_clock` component (manifest/builtins.yaml) on a fixed
-              entity, read via `core._next_time_stamp(registrar)`, so it
-              survives a reconnect the same way every other piece of world
-              state already does. What remains open here is the day/night
-              cycle/calendar/elapsed-time-surfacing scope only, not this
-              persistence gap.
+              World time itself is a `world_clock` component
+              (manifest/builtins.yaml) on a fixed entity, read via
+              `core._next_time_stamp(registrar)` -- a registry entity, not
+              process memory scoped to one MCP session, so it survives a
+              reconnect the same way every other piece of world state
+              already does. What remains open here is the day/night
+              cycle/calendar/elapsed-time-surfacing scope only.
         - requirement_priority
         - impact:
               type: gameplay_richness
@@ -380,10 +360,10 @@ story_simulator_mission:
               provider relies on that provider's own standard env-var discovery;
               there's no general per-user, per-provider credential story yet.
 
-              Sharpened 2026-08-16: today every API key (any provider) is
-              stored the same way regardless of who's running the server --
-              a plain process environment variable, read straight off the
-              host. Before designing the per-provider story above, assess
+              Today every API key (any provider) is stored the same way
+              regardless of who's running the server -- a plain process
+              environment variable, read straight off the host. Before
+              designing the per-provider story above, assess
               whether that storage mechanism itself is still right once
               this isn't just one developer's local env: is a bare env var
               adequate for a shared/hosted deployment (Epic E's stranger-
@@ -405,9 +385,9 @@ story_simulator_mission:
         - work_state: new
     position_render_tool:
         - description: >
-              The pre-rebuild VisualizerSystem's SVG position plot has no
-              equivalent MCP tool today — a connected agent can't currently get
-              a rendered top-down view of the world, only text.
+              No MCP tool renders a top-down view of the world today —
+              a connected agent can't currently get a rendered position
+              plot, only text.
         - requirement_priority
         - impact:
               type: gameplay_richness
@@ -436,8 +416,7 @@ story_simulator_mission:
     no_orphaned_modules:
         - description: >
               story_simulator/mcp_client.py (open_iacs_mcp_session,
-              McpToolSession) has had no importer since the turn-pipeline
-              removal (acb2956) deleted the Archivist that used it. Either
+              McpToolSession) has no importer today. Either
               delete it or repurpose it for ec_defined_agents (an EC-defined
               agent could plausibly need to talk to iacs-mcp the same way).
         - requirement_priority
@@ -456,10 +435,7 @@ story_simulator_mission:
               identifiers, and other project constants in Python rather than
               letting a world-author override them via EC data. Evaluate
               moving as much of that config as reasonably can be into EC
-              files instead. Migrated 2026-08-13 from a loose
-              `__iacs__ = {"todo": ...}` marker in config.py itself, so this
-              backlog note isn't split across code docstrings and the
-              manifest.
+              files instead.
         - requirement_priority
         - impact:
               type: developer_experience
@@ -477,13 +453,7 @@ story_simulator_mission:
               core.py. Evaluate whether the event loop deserves a more
               deliberate structure (a class, a dataclass-based state object,
               an explicit stage protocol) as more modules start hooking into
-              it, instead of a flat function bag. Migrated 2026-08-13 from a
-              loose `__iacs__ = {"todo": ...}` marker in core.py itself
-              (which also carries `"solution of":
-              story_simulator_mission.stateless_client` -- that part stays
-              in the code, only the todo note moved here). Function names
-              updated 2026-08-16 to match the event-entity rework
-              (predict_next_event/push_event no longer exist).
+              it, instead of a flat function bag.
         - requirement_priority
         - impact:
               type: architecture_clarity
@@ -499,57 +469,46 @@ story_simulator_mission:
             - description: >
                   Review of every slowly-changing-dimension/time-ordering
                   object across iacs (the general mechanism) and
-                  story-simulator (position/state/next_due/clock), prompted
-                  by real duplication found while adding next_due/clock this
-                  session: a tie-breaking bug traced to iacs's own
-                  Registry.merge/view_current (see
-                  deterministic_current_resolution) -- and while scoping a
-                  fix, four near-identical turn/time field blocks (position,
-                  state, next_due, clock) turned up along the way (see
-                  single_ordering_vocabulary). Related to world_time_concept
-                  (a still-open sibling requirement asking for a genuine
-                  in-fiction-time axis distinct from mere row-ordering) --
-                  next_due/clock are this session's first attempt at that
-                  axis, not a replacement for evaluating it properly.
+                  story-simulator (position/state/next_due/clock): four
+                  near-identical turn/time field blocks (position, state,
+                  next_due, clock) repeat almost the same schema (see
+                  single_ordering_vocabulary), and Registry.merge/
+                  view_current has a tie-breaking gap on shared
+                  time_dimension values (see
+                  deterministic_current_resolution). Related to
+                  world_time_concept (a still-open sibling requirement
+                  asking for a genuine in-fiction-time axis distinct from
+                  mere row-ordering) -- next_due/clock are a first attempt
+                  at that axis, not a replacement for evaluating it
+                  properly.
 
-                  Impact estimates below were lowered on 2026-08-13: a
-                  working solution (zhafen/iacs#94's `_seq_{field}` fix)
-                  already resolves the concrete tie-breaking bug that made
-                  this cluster urgent, even though it isn't merged yet. What
-                  remains open here is naming/architecture cleanup, not an
-                  active correctness gap -- kept in this manifest rather
-                  than pulled into a GitHub issue, since it's no longer
-                  actively worked at that urgency.
+                  What remains open here is naming/architecture cleanup,
+                  not an active correctness gap: zhafen/iacs#94's
+                  `_seq_{field}` fix already resolves the concrete
+                  tie-breaking bug that made this cluster urgent, even
+                  though it isn't merged yet.
         deterministic_current_resolution:
             - description: >
                   Two rows sharing the same time_dimension value must still
                   resolve to exactly one deterministic "current" row --
-                  Registry.view_current's row_number() window previously
-                  broke ties arbitrarily (backend-dependent), confirmed
-                  failing this session (a second update_registry call in
-                  the same in-world "turn" silently lost to the first).
+                  Registry.view_current's row_number() window can otherwise
+                  break ties arbitrarily (backend-dependent), silently
+                  losing a second update_registry call in the same
+                  in-world "turn" to the first.
 
-                  A `type: time_dimension` shorthand field type was tried
-                  first (zhafen/iacs#93) but abandoned -- extra schema-
-                  language complexity for a small boilerplate savings, and
-                  inaccurate (it hardcoded int, but some time_dimension
-                  fields are legitimately float). It also didn't even touch
-                  tie-breaking; that gap sat undiscovered in this
-                  requirement's own "done" status until directly reproduced.
-
-                  Fixed for real via zhafen/iacs#94 (open, not yet merged):
-                  a `_seq_{field}` write-order column, scoped only to
+                  Fix (via zhafen/iacs#94, open, not yet merged): a
+                  `_seq_{field}` write-order column, scoped only to
                   component types with a time_dimension field, that
                   Registry.merge assigns to genuinely-new rows (identified
                   via a set difference on every other column, matching the
                   existing union/distinct dedup) and never rewrites once
                   assigned. Registry._current_table breaks a tie via
                   `_seq_{field}` (most-recent-write wins) when present.
-                  Known gap, not fixed: a cold reload from an exported save
-                  reassigns fresh sequence numbers from scratch rather than
-                  truly persisting write order across a session boundary --
-                  good enough for the concrete bug (a tie within one
-                  continuous session), not a complete fix.
+                  Known gap: a cold reload from an exported save reassigns
+                  fresh sequence numbers from scratch rather than truly
+                  persisting write order across a session boundary -- good
+                  enough for a tie within one continuous session, not a
+                  complete fix.
             - requirement_priority
             - impact:
                   type: reliability
@@ -558,21 +517,18 @@ story_simulator_mission:
         single_ordering_vocabulary:
             - description: >
                   One name, one schema shape, for "the field that orders
-                  which row is current" -- position.turn/state.turn/
-                  next_due.turn used `turn`, iacs's own description.time
-                  used `time`, and each of the three story-simulator blocks
-                  repeated the same ~6-line description/type/nullable/
-                  time_dimension declaration almost word for word.
+                  which row is current" across position/state/next_due/
+                  clock's `time` field (matching iacs's own
+                  description.time) -- each block still repeats the same
+                  ~6-line description/type/nullable/time_dimension
+                  declaration by hand.
 
-                  Naming half done: position/state/next_due were renamed to
-                  `time`, matching iacs's own description.time, so it's one
-                  name everywhere now. The schema-shape half (a shorthand
-                  field type so a component author writes one line instead
-                  of six) was tried as `type: time_dimension`
-                  (zhafen/iacs#93) and abandoned -- extra schema-language
-                  complexity for a small saving, and inaccurate (hardcoded
-                  int, but time is legitimately float here). The three
-                  blocks still repeat the boilerplate by hand.
+                  A `type: time_dimension` shorthand field type (candidate
+                  solution reusable_time_dimension_field_type,
+                  zhafen/iacs#93) would collapse that to one line, but
+                  needs to support both int and float -- not every
+                  time_dimension field is an int -- to be worth the added
+                  schema-language complexity.
             - requirement_priority
             - impact:
                   type: architecture_clarity
@@ -586,8 +542,7 @@ story_simulator_mission:
                   iacs's own "which columns are infrastructure, not user
                   data" concept is defined twice, independently:
                   registry.py's _TABLE_META_COLS and export_manifest.py's
-                  _METADATA_COLS. Both needed the same _seq addition by hand
-                  this session -- exactly the kind of drift risk a single
+                  _METADATA_COLS -- exactly the kind of drift risk a single
                   source of truth would prevent.
             - requirement_priority
             - impact:
@@ -601,12 +556,10 @@ story_simulator_mission:
             - work_state: new
         honest_function_responsibilities:
             - description: >
-                  story_simulator.core.advance_clock (moved from
-                  story_simulator.spatial when the base event-loop kernel
-                  was split out) reads next_due AND writes the world_clock
-                  entity under a name that only advertises reading -- a
-                  caller checking "what does this function do" from its
-                  name alone would miss the write.
+                  story_simulator.core.advance_clock reads next_due AND
+                  writes the world_clock entity under a name that only
+                  advertises reading -- a caller checking "what does this
+                  function do" from its name alone would miss the write.
             - requirement_priority
             - impact:
                   type: architecture_clarity
@@ -625,13 +578,13 @@ story_simulator_mission:
                       entry here stays work_state: new until one is picked.
             keep_current_design:
                 - description: >
-                      Do nothing further -- ship this session's `_seq` fix
-                      as-is and leave the rest.
+                      Do nothing further -- ship the `_seq` fix as-is and
+                      leave the rest.
 
-                      PROS: already implemented and fully tested (367 iacs +
-                      55 story-simulator tests green); zero further
-                      engineering cost; every component's schema stays
-                      fully self-contained and explicit, nothing "magic".
+                      PROS: already implemented and fully tested; zero
+                      further engineering cost; every component's schema
+                      stays fully self-contained and explicit, nothing
+                      "magic".
 
                       CONS: the duplication that prompted this review is
                       still there -- four near-copy-pasted turn blocks, two
@@ -764,8 +717,8 @@ story_simulator_mission:
                       independently.
 
                       PROS: directly fixes the exact two-lists-out-of-sync
-                      pain hit this session; small, low-risk, no schema or
-                      behavior change.
+                      pain this cluster identified; small, low-risk, no
+                      schema or behavior change.
 
                       CONS: export_manifest.py's list has one entry
                       (is_primary) registry.py's doesn't -- needs a small
@@ -791,8 +744,6 @@ story_simulator_mission:
                   emc2p.testing/emc2p.testing.expected_fixtures upstream) must
                   actually guarantee.
 
-                  Sharpened after this session's work consolidating
-                  test_scenario_resolution.py and dropping the emc2p submodule.
                   Sibling to live_model_test_coverage (a still-open, more
                   general "have real-model coverage at all" requirement) --
                   this subtree is about the shape of the testing solution
@@ -953,22 +904,18 @@ story_simulator_mission:
             data:
                 - description: >
                       Design options against the seven requirements above --
-                      both already-implemented (this session's own work) and
-                      still-possible ones.
+                      both already-implemented and still-possible ones.
 
                       Scored with the same cost vocabulary as everywhere else
                       in this manifest (no impact here -- see
                       live_testing_framework's own description for why) plus
-                      plain pro/con bare tags (one per point). Weighted
-                      consideration/consideration_rating axes were tried
-                      first here but dropped: the weight*rating formula kept
-                      producing a sign that didn't match the point's own
-                      actual meaning (e.g. a clearly negative point scoring
-                      as a net "pro" because its axis and rating happened to
-                      multiply positive) -- pure qualitative pro/con is what
-                      this project is actually evaluating solutions with
-                      while still trying the format out. Every entry stays
-                      work_state: new, same convention as
+                      plain pro/con bare tags (one per point), rather than
+                      weighted consideration/consideration_rating axes: a
+                      weighted weight*rating formula can produce a sign that
+                      doesn't match a point's own actual meaning (e.g. a
+                      clearly negative point scoring as a net "pro" because
+                      its axis and rating happen to multiply positive).
+                      Every entry stays work_state: new, same convention as
                       scd_time_data.candidate_solutions above: "new" marks a
                       candidate not yet formally settled on, independent of
                       whether it happens to already be implemented.
@@ -1095,13 +1042,11 @@ story_simulator_mission:
                       selected: true.
 
                       The requirements below are the same seven already
-                      established above, copied over unchanged (still
-                      accurate) plus one new one (readability). Their
-                      candidate solutions are being redescribed fresh here
-                      -- it wasn't clear how the old solutions above
-                      actually met these requirements. Still being
-                      narrated; the trees above are kept as source
-                      material to fold into this one, not yet reconciled.
+                      established above (still accurate) plus one new one
+                      (readability). Their candidate solutions are
+                      described fresh here, not yet reconciled with the
+                      requirements:/candidate_solutions: trees above, which
+                      are kept as source material to fold into this one.
             scenario_variety:
                 - description: >
                       Must enable testing a variety of scenarios -- adding a
@@ -1179,9 +1124,9 @@ story_simulator_mission:
                           scenario's deterministic test the same way
                           test_scenarios/parking/test_scenario.py already
                           does.
-                          (Sketched earlier, above, as
-                          hand_scripted_harness_for_everything -- same idea,
-                          scoped here specifically to the deterministic case.)
+                          (As with hand_scripted_harness_for_everything
+                          above -- same idea, scoped here specifically to
+                          the deterministic case.)
                     - solution
                     - selected: true
             switchable_test_agent:
@@ -1287,8 +1232,7 @@ story_simulator_mission:
                           Fixtures for turn-by-turn/stepwise execution live
                           in story-simulator itself, not emc2p -- turns/steps
                           are a story-simulator-specific data format, not a
-                          generic emc2p concern (self-corrected from an
-                          earlier "put it in emc2p too" narration pass).
+                          generic emc2p concern.
                     - solution
                     - selected: true
                     - dependence of: dependencies.turn_stepper
@@ -1314,10 +1258,7 @@ story_simulator_mission:
                 split_fixtures_between_emc2p_and_story_simulator:
                     - description: >
                           responder, turn_stepper, and scenario_registrar
-                          all turn out to be story-simulator-local (not
-                          emc2p-generic as first assumed for responder --
-                          see that dependency's own corrected
-                          description): responder threads through
+                          are all story-simulator-local: responder threads through
                           test_human_validated.helpers's own
                           STORY_SIM_RESPONDER env var mechanism,
                           turn_stepper works with this project's own
@@ -1336,9 +1277,7 @@ story_simulator_mission:
             intuitive_language:
                 data:
                     - description: >
-                          Split off from a single readability requirement,
-                          surfaced only once the alternating-tree redesign
-                          started: the syntax test code is written in must
+                          The syntax test code is written in must
                           be easy to read and intuitive, not a
                           project-specific data format someone has to learn.
                     - requirement
@@ -1351,9 +1290,7 @@ story_simulator_mission:
             concise_code:
                 data:
                     - description: >
-                          Split off from a single readability requirement,
-                          surfaced only once the alternating-tree redesign
-                          started: test code must be concise, not full of
+                          Test code must be concise, not full of
                           repeated boilerplate.
                     - requirement
                     - requirement_priority
@@ -1379,12 +1316,11 @@ story_simulator_mission:
                           written as plain pytest test functions (named
                           "test_scenario.py", not "tests.py", so pytest's
                           own default test_*.py collection pattern
-                          actually picks it up -- confirmed the hard way:
-                          a file literally named tests.py is silently
-                          skipped by normal `pytest` collection, only
-                          found when named on the command line
-                          explicitly). Migrated: parking, parking_split,
-                          and race each have their own directory now;
+                          actually picks it up -- a file literally named
+                          tests.py is silently skipped by normal `pytest`
+                          collection, only found when named on the
+                          command line explicitly). parking, parking_split,
+                          and race each have their own directory;
                           location_write_isolated stays at
                           tests/data/scenarios/ since it's used by
                           tests/location_write_harness.py, a standalone
@@ -1397,14 +1333,11 @@ story_simulator_mission:
                           keyed_subagent) as a plain, parametrizable
                           pytest fixture, in
                           tests/test_human_validated/conftest.py.
-                          Corrected from an earlier, wrong assumption
-                          that this was an emc2p-generic
+                          Story-simulator-local, not an emc2p-generic
                           McpClientSession/HeadlessSession constructor
-                          argument -- it isn't: those classes take no
-                          such argument. The real mechanism is
-                          story-simulator-local:
+                          argument (those classes take no such argument):
                           test_human_validated.helpers._session_extra_env
-                          already resolved a responder value (explicit
+                          already resolves a responder value (explicit
                           argument, else STORY_SIM_LIVE_TEST_RESPONDER,
                           else DEFAULT_LIVE_TEST_RESPONDER) into a
                           STORY_SIM_RESPONDER env var -- the fixture

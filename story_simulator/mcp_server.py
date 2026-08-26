@@ -46,11 +46,10 @@ loop itself). The docstrings here are what a connected host actually reads
 functions describe the behavior itself.
 
 Character/NPC/terrain/physics/spatial-perception behavior (`perceive`,
-`advance_npc_turn`, `generate_terrain`, `resolve_physics`, and the
-character-aware branch this file's event loop used to take) has been moved
-out to `shelved/` (see `docs/architecture.md`) pending a rewrite -- not
-deleted, and easy to pull back in piece by piece; see git history for
-exactly what those looked like at removal.
+`advance_npc_turn`, `generate_terrain`, `resolve_physics`, and a
+character-aware branch of this file's event loop) is currently shelved
+(see `docs/architecture.md`) pending a rewrite -- not deleted, and easy
+to pull back in piece by piece.
 
 The judgment resolver behind all of this (`story_simulator.resolve`) is
 what lets `core.resolve_event` reach a real decision from any nesting depth
@@ -150,10 +149,8 @@ async def advance_simulation(ctx: Context, resume_token: str | None = None, answ
     -- resolve (what happened), then
     plan (what, if anything, follows) -- each via responder="host" or
     "subagent" (see `config.event_responder`); expect two pauses per
-    event, not one. No character/NPC concept at all. (A character-aware
-    branch used to layer player/NPC turns on top of an earlier,
-    next_due-based version of this loop; moved out to `shelved/` pending
-    a rewrite -- see `docs/architecture.md`.)
+    event, not one. No character/NPC concept at all -- that behavior is
+    currently shelved (see `docs/architecture.md`), pending a rewrite.
 
     Call with neither argument to start (or continue after a prior call
     finished with nothing left scheduled). That, and every later call,

@@ -12,8 +12,7 @@ __iacs__ = {"solution of": "story_simulator_mission.tool_catalog.perceive"}
 # Perception/visibility geometry: an object subtending less than this
 # fraction of the observer's field of view blends into the background.
 # A person/door-sized (~2m) object stays perceptible out to roughly 190m
-# under these defaults -- see docs/manifest/history.yaml:
-# project_history.door_visibility_bug_found_playtesting.
+# under these defaults.
 FOV_DEGREES = 60.0
 PERCEPTIBLE_FOV_FRACTION = 0.01
 

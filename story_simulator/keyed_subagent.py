@@ -25,8 +25,7 @@ story-simulator-mcp's own process.
 update_registry's preview/confirm_token flow -- are deliberately not
 exposed here: keyed_subagent only ever answers one judgment call, it has
 no business driving the simulation loop itself, and it has no reviewer of
-its own to make a two-round-trip preview/confirm flow meaningful (see
-#74/#76 for that flow's origin).
+its own to make a two-round-trip preview/confirm flow meaningful.
 """
 
 from __future__ import annotations

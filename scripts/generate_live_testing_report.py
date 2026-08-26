@@ -19,17 +19,15 @@ duplicated under a second name when more than one solution needs the
 same one), so they can be reviewed and organized as their own body of
 work.
 
-Requirement-first rather than solution-first on purpose -- see
-docs/manifest/prioritization_reflections.yaml's fourth installment
-("2026-08-22_retrospective_on_the_scoring_approach"): checking "does this
-requirement have a good solution" is the direction that's actually useful,
-not "what does this solution cover." Pros/cons are plain qualitative
-`pro`/`con` bare tags, not weighted consideration/consideration_rating
-axes -- that scheme was tried first here but dropped: its weight*rating
-formula kept producing a sign that didn't match a point's own actual
-meaning (a clearly negative point could still net a "pro" if its axis and
-rating happened to multiply positive). Each pro/con's text is shown as-is,
-grouped pros-then-cons, in the order it was written -- no score to sort by.
+Requirement-first rather than solution-first on purpose: checking "does
+this requirement have a good solution" is the direction that's actually
+useful, not "what does this solution cover." Pros/cons are plain
+qualitative `pro`/`con` bare tags, not weighted consideration/
+consideration_rating axes -- a weighted weight*rating formula can produce
+a sign that doesn't match a point's own actual meaning (a clearly
+negative point could still net a "pro" if its axis and rating happen to
+multiply positive). Each pro/con's text is shown as-is, grouped
+pros-then-cons, in the order it was written -- no score to sort by.
 
 Prints nothing to stdout; writes a single self-contained HTML file (no
 external requests except the Google Fonts stylesheet) to --output,
@@ -66,9 +64,7 @@ NEW_TREE_MANIFEST_PATH = Path("docs/manifest/story-simulator.yaml")
 DEPENDENCIES_KEY = "dependencies"
 DEPENDENCIES_MARKER = f".{NEW_TREE_ENTITY_KEY}.{DEPENDENCIES_KEY}"
 
-# On a real D3.js graph viz, if a graph visualization of this tree is ever
-# wanted again (an earlier revision of this report rendered one, since
-# replaced by the plain table of contents below -- see git history): this
+# If a graph visualization of this tree is ever added (D3.js, say): this
 # report gets published as a Claude Artifact, whose CSP blocks CDN script
 # loads outright (Google Fonts is the one exception) -- a normal
 # <script src="https://d3js.org/..."> tag would silently fail to load
@@ -298,10 +294,7 @@ def build_new_tree_report_data(registrar: Registrar, graph_data: dict) -> dict:
     below the graph, sourced from the same human_validated_test_framework
     subtree the graph itself renders -- so the document actually reflects
     the graph (what solutions exist, and which requirement(s) each one
-    solves), instead of the older mirrored requirements:/candidate_solutions:
-    trees this report used to read from. Same return shape as the old
-    load_report_data() had, keyed by each node's short `key` rather than
-    a name derived from a fixed path prefix, so _render_requirement/
+    solves). Keyed by each node's short `key`, so _render_requirement/
     _render_solution/_render_solutions_section all work unchanged.
 
     A solution nested under one requirement but also solution of: another

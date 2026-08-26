@@ -1,9 +1,9 @@
-"""Live regression for this directory's own scenario.yaml (task #65,
-investigating #57): the same arrival-order reasoning as the race
-scenario, but with a real consequence attached (which parking spot each
-car gets) and each car's drive/park decision split into two separate,
-pre-planned events rather than one combined trip. Isolates whether
-splitting the events keeps the same correctness a combined event lost.
+"""Live regression for this directory's own scenario.yaml: the same
+arrival-order reasoning as the race scenario, but with a real
+consequence attached (which parking spot each car gets) and each car's
+drive/park decision split into two separate, pre-planned events rather
+than one combined trip. Isolates whether splitting the events keeps the
+same correctness a combined event lost.
 
 A scenario_dir is the input (a manifest, same as emc2p/iacs's own
 examples), one open-ended live-session turn is the transformation, and
@@ -15,14 +15,12 @@ test_human_validated.py builds on (see that module's own docstring),
 just with a live session standing in for the in-process Hamilton driver
 iacs/emc2p use it for.
 
-Deliberately checks only *final* state, not turn-by-turn state (see
-#61/docs/manifest/history.yaml: project_history.
-live_tests_decoupled_from_turn_count) -- runs the whole scenario in one
-open-ended instruction, in as many or as few advance_simulation
-round-trips as the model wants. Order evidence instead comes from each
-expected write's own recorded world time (helpers._assert_write_order),
-confirming it was recorded while its own event resolved, not
-retroactively.
+Deliberately checks only *final* state, not turn-by-turn state -- runs
+the whole scenario in one open-ended instruction, in as many or as few
+advance_simulation round-trips as the model wants. Order evidence
+instead comes from each expected write's own recorded world time
+(helpers._assert_write_order), confirming it was recorded while its own
+event resolved, not retroactively.
 """
 
 from pathlib import Path
@@ -74,9 +72,8 @@ def test_scenario_resolves_correctly(tmp_path: Path):
     #
     # A "host"-responder run driving all six resolve+plan steps itself
     # (twice as many as the race scenario's three events) routinely needs
-    # more than McpClientSession's own 120s/240s defaults -- confirmed
-    # live it times out mid-event otherwise, not on anything about the
-    # simulation itself.
+    # more than McpClientSession's own 120s/240s defaults, timing out
+    # mid-event otherwise -- not on anything about the simulation itself.
     with McpClientSession(save_dir, responder="host", turn_timeout=420, session_timeout=420) as session:
         print(f"McpClientSession trace: {session.trace_path}")
         narration = session.send_turn(

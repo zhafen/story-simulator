@@ -54,11 +54,7 @@ def test_pop_event_returns_soonest_end_time():
 
 def test_pop_event_excludes_events_missing_start_time_or_duration():
     """An event not yet fully scheduled (either field still null) isn't a
-    candidate.
-
-    Unlike the next_due mechanism this replaces, where an entity with no
-    row at all simply wasn't a candidate -- here the row exists
-    (event_state may say "not started") but the timing is incomplete.
+    candidate, even if its event_state row already exists (e.g. "not started").
     """
     registrar = _registrar_from_yaml(
         "scheduled_event:\n"

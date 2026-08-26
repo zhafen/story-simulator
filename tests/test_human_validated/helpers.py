@@ -4,15 +4,12 @@ story-simulator-mcp through a real MCP client.
 `McpClientSession` (the class every live test in this package should
 actually construct) plus registry-reading helpers, imported by every
 sibling test module in this tests/test_human_validated/ package. Carries
-no live test of its own: the original combined driving+parking scenario
-this file used to test (test_car_parking_core_sim) was removed once it
-became clear that combined event resolves unreliably in a way the
-split-events structure (test_scenarios/parking_split/test_scenario.py) doesn't --
-see docs/manifest/history.yaml:
-project_history.combined_parking_test_removed.
+no live test of its own: a combined driving+parking scenario resolved as
+one event is deliberately not tested here -- that resolves unreliably in
+a way the split-events structure
+(test_scenarios/parking_split/test_scenario.py) doesn't.
 
-There is no in-process narrator to call directly (see docs/manifest/
-history.yaml: project_history.turn_pipeline_removed), so a live test
+There is no in-process narrator to call directly, so a live test
 needs a real MCP client driving this repo's own server. `McpClientSession`
 is a real `mcp` client plus `emc2p.agents.tool_calling_loop` (via litellm)
 playing the "connected" side -- works with any litellm-supported model,
@@ -30,8 +27,7 @@ module's own subclasses just fix those project-specific details (this
 repo's .mcp.json, its "mcp__story-simulator__*"/"mcp__iacs__*" tool
 namespaces, and the per-save Postgres schema its sibling iacs-mcp server
 needs) so every caller in this test suite can keep constructing either as
-`McpClientSession(save_dir)`/`HeadlessSession(save_dir)`, same as before
-the move.
+`McpClientSession(save_dir)`/`HeadlessSession(save_dir)`.
 
 Written for the current event-entity simulation loop (no character/NPC
 module -- see docs/architecture.md and CLAUDE.md's shelving note): world
@@ -48,11 +44,6 @@ as the server's own tool instructions describe; at responder=
 in-process rather than by the connected agent over MCP (see
 `story_simulator.keyed_subagent`), so the connected agent's own job
 narrows to driving `advance_simulation` to "done".
-
-The character-module-era tests that used to live in this file (NPC/move
-scenarios, an earlier version of this same class) are preserved at
-shelved/tests/test_human_validated.py, dormant until that module is
-un-shelved.
 """
 
 import os
@@ -196,18 +187,17 @@ class McpClientSession(_Emc2pMcpClientSession):
     the *connected* model's own reasoning, not just for
     keyed_subagent's own already-DeepSeek-by-default judgment calls.
     Same public shape either way (context manager, `send_turn`,
-    `usage_summary`, `trace_path`, `turn_timeout`/`session_timeout`), so
-    every test that used to construct `HeadlessSession(save_dir, ...)`
-    only needs the class name swapped -- with one gap: `claude -p` has no
-    fixed per-turn tool-call ceiling the way `run_tool_calling_loop`'s own
-    `max_iterations` (McpClientSession's `max_tool_iterations`) does.
-    Confirmed live that its own default (15) is too low for one of these
-    tests' single open-ended "run everything to done" turn -- a
-    six-event scenario needs on the order of 2-4 tool calls per event per
-    responder step (resolve, then plan), i.e. well past 15 total -- so
-    this subclass raises the default substantially rather than silently
-    truncating a still-in-progress turn (the model's last tool call
-    simply never runs, with no error surfaced, once the cap is hit).
+    `usage_summary`, `trace_path`, `turn_timeout`/`session_timeout`), with
+    one gap: `claude -p` has no fixed per-turn tool-call ceiling the way
+    `run_tool_calling_loop`'s own `max_iterations`
+    (McpClientSession's `max_tool_iterations`) does. Its own default (15)
+    is too low for one of these tests' single open-ended "run everything
+    to done" turn -- a six-event scenario needs on the order of 2-4 tool
+    calls per event per responder step (resolve, then plan), i.e. well
+    past 15 total -- so this subclass raises the default substantially
+    rather than silently truncating a still-in-progress turn (the
+    model's last tool call simply never runs, with no error surfaced,
+    once the cap is hit).
     """
 
     def __init__(
@@ -261,8 +251,8 @@ def _parked_at(location: str | None, spot: str) -> bool:
     "parking_spot_1" or "street"), not any one exact phrasing.
 
     `location`'s own schema (manifest/builtins.yaml) calls it a "short
-    freeform phrase", and confirmed live that a model's correct answer
-    can reasonably come out phrased several ways ("parked in
+    freeform phrase" -- a model's correct answer can reasonably come out
+    phrased several ways ("parked in
     parking_spot_1" vs. just "parking_spot_1") -- the model shouldn't
     have to guess the one exact wording a test hardcodes. Takes the
     value directly (e.g. from `registrar.get_current_value("location",

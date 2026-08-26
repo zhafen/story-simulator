@@ -200,10 +200,10 @@ class TestRegistryTools:
         """A component written without the required leading `- ` (a bare
         mapping instead of a list) is silently ignored by iacs's own ETL.
 
-        No error, no invalid_field row, no data merged. Confirmed live
-        as a real failure mode (a responder's write appeared to succeed
-        but left the registry untouched), so update_registry now
-        raises instead of reporting success for it.
+        No error, no invalid_field row, no data merged -- a responder's
+        write could appear to succeed while leaving the registry
+        untouched, so update_registry raises instead of reporting
+        success for it.
         """
         ctx = _make_ctx()
         start_world(str(tmp_path / "save"), ctx)
@@ -232,9 +232,9 @@ class TestRegistryTools:
         """A real component type nothing has written to yet (declared in
         manifest/builtins.yaml, e.g. `location`) must not be rejected as unknown.
 
-        component_types alone only reflects data-bearing types, which
-        is exactly the gap that let this bug go unnoticed in the first
-        place (see iacs's own known_component_types).
+        component_types alone only reflects data-bearing types -- checking
+        only that would wrongly reject a declared-but-unused type (see
+        iacs's own known_component_types).
         """
         ctx = _make_ctx()
         start_world(str(tmp_path / "save"), ctx)

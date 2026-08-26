@@ -1,5 +1,5 @@
-"""Diagnostic harness for #73: compares different approaches to
-recording a car's `location` once parked.
+"""Diagnostic harness comparing different approaches to recording a
+car's `location` once parked.
 
 Measures failure RATE across many reps per approach rather than a
 single pass/fail. Deliberately NOT a pytest test (no @pytest.mark.live
@@ -16,15 +16,15 @@ driving/parking separation (test_parking_split_live.py in that same
 package), which are already covered elsewhere.
 
 Three approaches are compared: "baseline" (today's direct single-shot
-update_registry write), "confirm" (#74's opt-in preview=True /
+update_registry write), "confirm" (an opt-in preview=True /
 confirm_token round trip -- write, review what it's about to commit
 against what's already there, then confirm or correct BEFORE committing),
-and "consolidate" (#76's post-write alternative -- write normally, then
+and "consolidate" (a post-write alternative -- write normally, then
 call consolidate_review to see everything recorded so far and fix
 anything wrong AFTER committing). All three share the same run/
 measurement machinery below; only the instruction text differs.
 
-#83: every rep also records which component type(s) car_a actually got
+Every rep also records which component type(s) car_a actually got
 written to beyond what a correct run produces (_EXPECTED_CAR_A_COMPONENTS)
 -- e.g. `parent` instead of `location` -- so a run's printed summary names
 what a wrong write actually contained, not just that `location` came up
@@ -80,7 +80,7 @@ _BASELINE_INSTRUCTION = (
     "Don't narrate anything back to me."
 )
 
-# #74's preview/confirm alternative: write with preview=True first,
+# The preview/confirm alternative: write with preview=True first,
 # check the returned review against what was intended before confirming.
 _CONFIRM_INSTRUCTION = (
     "Call advance_simulation and answer its prompts (resolve, then plan) until its "
@@ -95,7 +95,7 @@ _CONFIRM_INSTRUCTION = (
     "Don't narrate anything back to me."
 )
 
-# #76's post-write alternative: write normally (no confirmation step),
+# The post-write alternative: write normally (no confirmation step),
 # then call consolidate_review to see everything and fix anything wrong.
 _CONSOLIDATE_INSTRUCTION = (
     "Call advance_simulation and answer its prompts (resolve, then plan) until its "
@@ -120,14 +120,14 @@ def run_one(approach: str, tmp_dir: Path, model: str = LOW_QUALITY_MODEL) -> tup
 
     Returns (success, narration, usage, misfires) -- narration kept for
     diagnosing failures after the fact, not just the pass/fail count;
-    usage (see HeadlessSession.usage_summary) kept so #75's cost
-    comparison isn't limited to whichever approach happens to get run
+    usage (see HeadlessSession.usage_summary) kept so a cost comparison
+    across approaches isn't limited to whichever one happens to get run
     last; misfires (see unexpected_components) names which component(s)
-    car_a actually got written to beyond what a correct run produces --
-    #83, collected every rep (not just failures) since a false positive
-    here is itself useful signal. `model` defaults to this harness's
-    usual weak-model target, but #85 needs a stronger-model comparison
-    point (Sonnet vs. Haiku spend on the identical task) -- see --model.
+    car_a actually got written to beyond what a correct run produces,
+    collected every rep (not just failures) since a false positive here
+    is itself useful signal. `model` defaults to this harness's usual
+    weak-model target, but a stronger-model comparison point (Sonnet vs.
+    Haiku spend on the identical task) is also useful -- see --model.
     """
     save_dir = tmp_dir / "save"
     instruction = _APPROACHES[approach]

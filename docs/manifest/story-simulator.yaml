@@ -1257,18 +1257,20 @@ story_simulator_mission:
                     - solution
                 split_fixtures_between_emc2p_and_story_simulator:
                     - description: >
-                          responder, turn_stepper, and scenario_registrar
-                          are all story-simulator-local: responder threads through
+                          turn_stepper and scenario_registrar are
+                          story-simulator-local: turn_stepper works with
+                          this project's own turn/step data format, and
+                          scenario_registrar needs story_simulator.config's
+                          schema/URL resolution. responder is the one
+                          genuine split -- the generic (explicit-param
+                          > env-var > default) resolution now lives in
+                          emc2p.testing.responder_fixture.make_responder_fixture,
+                          with only the actual env var name/default
+                          (which itself feeds
                           test_human_validated.helpers's own
-                          STORY_SIM_RESPONDER env var mechanism,
-                          turn_stepper works with this project's own
-                          turn/step data format, and scenario_registrar
-                          needs story_simulator.config's schema/URL
-                          resolution. The "split" that remains true is
-                          negative -- none of these get pushed down into
-                          emc2p, where they wouldn't belong -- rather than
-                          a positive claim that something here does live
-                          in emc2p.
+                          STORY_SIM_RESPONDER mechanism) staying
+                          story-simulator-local, supplied where this
+                          project's own conftest.py calls that factory.
                     - solution
                     - selected: true
                     - dependence of: dependencies.responder
@@ -1332,18 +1334,25 @@ story_simulator_mission:
                           Exposes the responder choice (host/subagent/
                           keyed_subagent) as a plain, parametrizable
                           pytest fixture, in
-                          tests/test_human_validated/conftest.py.
-                          Story-simulator-local, not an emc2p-generic
-                          McpClientSession/HeadlessSession constructor
-                          argument (those classes take no such argument):
+                          tests/test_human_validated/conftest.py. Not an
+                          emc2p-generic McpClientSession/HeadlessSession
+                          constructor argument (those classes take no
+                          such argument):
                           test_human_validated.helpers._session_extra_env
                           already resolves a responder value (explicit
                           argument, else STORY_SIM_LIVE_TEST_RESPONDER,
                           else DEFAULT_LIVE_TEST_RESPONDER) into a
-                          STORY_SIM_RESPONDER env var -- the fixture
-                          parametrizes that same resolution per-test via
+                          STORY_SIM_RESPONDER env var. The fixture itself
+                          is built via
+                          emc2p.testing.responder_fixture.make_responder_fixture
+                          (that same explicit-param/env-var/default
+                          resolution generalized there, since any
+                          downstream project's own live-test suite needs
+                          the identical shape) -- this project's own
+                          conftest.py just supplies its own env var
+                          name/default, parametrizing per-test via
                           `@pytest.mark.parametrize("responder", [...],
-                          indirect=True)`, rather than only being able to
+                          indirect=True)` rather than only being able to
                           flip the whole suite's default through the env
                           var.
                     - location: test_human_validated.conftest.responder

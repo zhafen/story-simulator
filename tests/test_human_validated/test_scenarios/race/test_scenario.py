@@ -24,18 +24,24 @@ responder answers each event's judgment call, not which scenario runs):
 
 Deliberately checks only *final* state, not turn-by-turn state -- each
 test runs the whole scenario in one open-ended instruction, in as many
-or as few
-advance_simulation round-trips as the model wants. Order evidence
-instead comes from each expected write's own recorded world time
-(helpers._assert_write_order), confirming it was recorded while its own
-event resolved, not retroactively.
+or as few advance_simulation round-trips as the model wants. Order
+evidence instead comes from each expected write's own recorded world
+time (helpers._assert_write_order), confirming it was recorded while its
+own event resolved, not retroactively.
+
+Both instructions below are deliberately generic ("run to done") -- any
+reasoning a responder needs to resolve a specific event correctly (what
+to look up, what to record, and how) comes from the MCP server's own
+resolve/plan prompts (see `core.resolve_event`/`plan_events`), not from
+this test smuggling in scenario-specific hints no real deployment would
+provide.
 """
 
 from pathlib import Path
 
 import pytest
 
-from emc2p.testing.expected_fixtures import assert_subset, load_expected_module
+from emc2p.testing.expected_fixtures import assert_subset
 from test_human_validated.helpers import (
     McpClientSession,
     _assert_write_order,
@@ -45,25 +51,40 @@ from test_human_validated.helpers import (
 )
 
 SCENARIO_DIR = Path(__file__).parent
-EXPECTED = load_expected_module(SCENARIO_DIR / "expected.py")
+
+# alias -> expected race_placement.value (1-indexed finishing position).
+EXPECTED_RACE_PLACEMENT = {"car_b": 1, "car_c": 2, "car_a": 3}
+
+# alias -> expected event_state.value, once the whole race has resolved.
+EXPECTED_EVENT_STATE = {
+    "car_b_trip": "complete",
+    "car_c_trip": "complete",
+    "car_a_trip": "complete",
+}
+
+# Order evidence: each car's race_placement write should be time-stamped
+# with its own trip event's end_time (world time -- see
+# core._next_time_stamp), confirming it was recorded while that car's own
+# event resolved, not retroactively or out of turn.
+EXPECTED_WRITE_ORDER = {
+    "component_type": "race_placement",
+    "times": {"car_b": 1020, "car_c": 1080, "car_a": 1800},
+}
 
 
-def _check_race(r, expected) -> None:
+def _check_race(r) -> None:
     """race_placement is a plain int field the model fills directly -- an exact
     match (assert_subset) is the right check, no phrasing to be lenient about."""
-    placements = {alias: _placement(r, alias) for alias in expected.race_placement}
-    assert_subset("race_placement", expected.race_placement, placements)
+    placements = {alias: _placement(r, alias) for alias in EXPECTED_RACE_PLACEMENT}
+    assert_subset("race_placement", EXPECTED_RACE_PLACEMENT, placements)
 
 
 # Deliberately one open-ended instruction, not one per event -- checks
 # the final result and order, not turn count.
 _RUN_TO_DONE_INSTRUCTION = (
-    "Call advance_simulation and keep answering its prompts (resolve, then plan, for "
-    "whatever event it names) until its status is \"done\". For each event's resolve step, "
-    "record via update_registry that event's own outcome and event_state (complete), AND "
-    "that car's own race_placement -- its 1-indexed finishing position among all three cars "
-    "(1 = first to finish), based on which cars' own trips have already finished by this "
-    "point in time. Don't narrate anything back to me."
+    "Call advance_simulation and keep answering its prompts (recording each "
+    "decision via update_registry) until its status is \"done\". Don't "
+    "narrate anything back to me."
 )
 
 _DRIVE_TO_DONE_INSTRUCTION = (
@@ -77,8 +98,8 @@ _DRIVE_TO_DONE_INSTRUCTION = (
 @pytest.mark.live
 def test_resolves_correctly_via_host_responder(tmp_path: Path):
     """Run to completion under a live "host"-responder session, then check
-    final registry state against expected.py (race_placement exactly,
-    event_state/write-order generically)."""
+    final registry state against this module's own EXPECTED_* constants
+    (race_placement exactly, event_state/write-order generically)."""
     save_dir = tmp_path / "test_save"
 
     # This test's whole point is the *connected* model's own reasoning --
@@ -91,9 +112,9 @@ def test_resolves_correctly_via_host_responder(tmp_path: Path):
         )
         r = _load_registrar(save_dir, narration)
         try:
-            _check_race(r, EXPECTED)
-            assert_subset("event_state", EXPECTED.event_state, _event_states(r))
-            _assert_write_order(r, EXPECTED)
+            _check_race(r)
+            assert_subset("event_state", EXPECTED_EVENT_STATE, _event_states(r))
+            _assert_write_order(r, EXPECTED_WRITE_ORDER)
         except AssertionError as exc:
             raise AssertionError(f"{exc} -- narration: {narration!r}") from exc
 
@@ -123,9 +144,9 @@ def test_resolves_and_persists_via_keyed_subagent(tmp_path: Path):
         )
         r = _load_registrar(save_dir, narration)
         try:
-            _check_race(r, EXPECTED)
-            assert_subset("event_state", EXPECTED.event_state, _event_states(r))
-            _assert_write_order(r, EXPECTED)
+            _check_race(r)
+            assert_subset("event_state", EXPECTED_EVENT_STATE, _event_states(r))
+            _assert_write_order(r, EXPECTED_WRITE_ORDER)
         except AssertionError as exc:
             raise AssertionError(f"{exc} -- narration: {narration!r}") from exc
 

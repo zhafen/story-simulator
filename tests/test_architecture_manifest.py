@@ -1,7 +1,7 @@
 """Tests for docs/manifest/story-simulator.yaml -- the project's own
 architecture manifest (requirements/solutions/dependencies), not the
-gameplay data in manifest/builtins.yaml. Loads the same way
-scripts/generate_live_testing_report.py does, so a typo or broken
+gameplay data in manifest/builtins.yaml. Loads the same way iacs's
+scripts/generate_requirement_tree_report.py does, so a typo or broken
 `dependence of:`/`solution of:` link in the manifest fails a fast test
 instead of only surfacing as a silently-empty report section.
 """
@@ -9,6 +9,7 @@ instead of only surfacing as a silently-empty report section.
 from emc2p.dataflows.derive.resolve_paths import (
     components_with_resolved_paths,
     fields_of_type_entity_ref,
+    implicit_parent_target_types,
     parent_from_hierarchy,
 )
 from emc2p.registrar import Registrar
@@ -25,11 +26,13 @@ def _resolved_components(registrar: Registrar) -> dict:
     entity_id = registrar.get("entity_id")
     field = registrar.get("field")
     hierarchy = parent_from_hierarchy(entity_id)
+    components = registrar._registry._components
     return components_with_resolved_paths(
         entity_id=entity_id,
-        components=registrar._registry._components,
+        components=components,
         fields_of_type_entity_ref=fields_of_type_entity_ref(entity_id, field),
         parent_from_hierarchy=hierarchy,
+        implicit_parent_target_types=implicit_parent_target_types(components),
     )
 
 

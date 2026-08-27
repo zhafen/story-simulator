@@ -8,13 +8,13 @@ these exists.
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from typing import Callable
 
 import pytest
 
 from emc2p.registrar import Registrar
+from emc2p.testing.responder_fixture import make_responder_fixture
 
 from test_human_validated.helpers import (
     DEFAULT_LIVE_TEST_RESPONDER,
@@ -22,22 +22,11 @@ from test_human_validated.helpers import (
     _load_registrar,
 )
 
-
-@pytest.fixture
-def responder(request: pytest.FixtureRequest) -> str:
-    """The responder choice (host/subagent/keyed_subagent) for this test.
-
-    Resolves the same way session construction's own fallback already
-    does (an explicit value wins, else the env var, else the hard-coded
-    default) -- parametrize per-test with
-    `@pytest.mark.parametrize("responder", ["host"], indirect=True)`
-    rather than only being able to flip the whole suite's default via
-    STORY_SIM_LIVE_TEST_RESPONDER.
-    """
-    explicit = getattr(request, "param", None)
-    if explicit is not None:
-        return explicit
-    return os.environ.get(LIVE_TEST_RESPONDER_ENV_VAR, DEFAULT_LIVE_TEST_RESPONDER)
+# The (explicit request.param) > (env var) > (default) resolution itself
+# is generic across any downstream project's own live-test suite, not
+# story-simulator-specific -- only the env var name/default (this
+# project's own "host"/"subagent"/"keyed_subagent" vocabulary) are.
+responder = make_responder_fixture(LIVE_TEST_RESPONDER_ENV_VAR, DEFAULT_LIVE_TEST_RESPONDER)
 
 
 @pytest.fixture

@@ -48,7 +48,6 @@ narrows to driving `advance_simulation` to "done".
 
 import os
 from pathlib import Path
-from types import ModuleType
 
 import pytest
 
@@ -286,20 +285,20 @@ def _event_states(registrar: Registrar) -> dict[str, str]:
     return dict(zip(df["entity_id.alias"], df["event_state.value"]))
 
 
-def _assert_write_order(registrar: Registrar, expected: ModuleType) -> None:
+def _assert_write_order(registrar: Registrar, write_order: dict) -> None:
     """Order evidence, generic across scenarios: each alias in
-    `expected.write_order["times"]` should have its own
-    `expected.write_order["component_type"]` value time-stamped with the
-    given world time (see `core._next_time_stamp`), confirming it was
-    recorded while its own event resolved -- not retroactively, and not
-    out of turn relative to the other aliases checked alongside it.
+    `write_order["times"]` should have its own `write_order["component_type"]`
+    value time-stamped with the given world time (see
+    `core._next_time_stamp`), confirming it was recorded while its own
+    event resolved -- not retroactively, and not out of turn relative to
+    the other aliases checked alongside it.
 
     What varies between scenarios is only the data (which component type,
     which alias->time map) -- the check itself doesn't, so this is shared
     rather than reimplemented per scenario/test module.
     """
-    component_type = expected.write_order["component_type"]
-    expected_times = expected.write_order["times"]
+    component_type = write_order["component_type"]
+    expected_times = write_order["times"]
     times = {alias: write_time(registrar, component_type, alias) for alias in expected_times}
     for alias, expected_time in expected_times.items():
         assert times[alias] == pytest.approx(expected_time), (

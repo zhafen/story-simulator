@@ -175,8 +175,9 @@ def record_memory(registrar: Registrar, owner_alias: str, perceived_aliases: set
     """Merge `perceived_aliases` into `owner_alias`'s permanent `memory` relation.
 
     Unlike `active`, `memory` is never cleared — a character's memory only
-    grows. Re-merging an already-known alias is a harmless no-op (iacs
-    dedupes exact repeats), so this is safe to call every time `perceive` runs.
+    grows. Re-merging an already-known alias is a harmless no-op (emc2p's
+    own Registry.merge dedupes exact repeats), so this is safe to call
+    every time `perceive` runs.
     """
     if not perceived_aliases:
         return

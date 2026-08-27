@@ -61,7 +61,6 @@ _MCP_TOOL_ARGS = [
     "--strict-mcp-config",
     "--allowedTools",
     "mcp__story-simulator__*",
-    "mcp__iacs__*",
     "--disallowedTools",
     "Bash",
     "Task",
@@ -248,7 +247,7 @@ def test_startup_one_loop_save(tmp_path):
     assert objects.filter(objects.type.contains("door")).count().execute() == 1
     # At least two of the default world's starting entities carry their own
     # description. (The old test checked an `appearance` component type;
-    # that's since been retired in favor of iacs's own builtin `description`
+    # that's since been retired in favor of emc2p's own builtin `description`
     # -- which every declared component/field also uses for its own
     # docstring, so this filters down to the starting aliases rather than
     # counting the several dozen unrelated schema-doc rows that come with

@@ -24,10 +24,9 @@ driving/timeout/trace mechanics for both live in
 mcp_client_session.McpClientSession` -- generic infrastructure with no
 notion of story-simulator's own MCP tool names or registry backend; this
 module's own subclasses just fix those project-specific details (this
-repo's .mcp.json, its "mcp__story-simulator__*"/"mcp__iacs__*" tool
-namespaces, and the per-save Postgres schema its sibling iacs-mcp server
-needs) so every caller in this test suite can keep constructing either as
-`McpClientSession(save_dir)`/`HeadlessSession(save_dir)`.
+repo's .mcp.json, its "mcp__story-simulator__*" tool namespace, and the
+per-save Postgres schema) so every caller in this test suite can keep
+constructing either as `McpClientSession(save_dir)`/`HeadlessSession(save_dir)`.
 
 Written for the current event-entity simulation loop (no character/NPC
 module -- see docs/architecture.md and CLAUDE.md's shelving note): world
@@ -83,10 +82,10 @@ DEFAULT_LIVE_TEST_MODEL = "deepseek/deepseek-chat"
 # at the generic default.
 DEFAULT_LIVE_TEST_MAX_TOOL_ITERATIONS = 60
 
-# The two MCP tool namespaces this repo's own .mcp.json exposes --
+# The one MCP tool namespace this repo's own .mcp.json exposes --
 # emc2p.testing.HeadlessSession/McpClientSession strip every other
 # built-in tool outright.
-_ALLOWED_TOOLS = ["mcp__story-simulator__*", "mcp__iacs__*"]
+_ALLOWED_TOOLS = ["mcp__story-simulator__*"]
 
 # Flips HeadlessSession's/McpClientSession's own default `responder` (see
 # their docstrings) for every live test that doesn't pin one explicitly.

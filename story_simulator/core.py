@@ -598,20 +598,6 @@ def start_world(session, save_dir: str, scenario_dir: str | None = None) -> str:
     every start_world call would re-merge the same starting entities
     repeatedly.
 
-    The returned message also mentions iacs's own `load_database` tool
-    (mcp__iacs__*, if connected) as an optional extra: pointing it at this
-    exact registry_url lets its deeper introspection (validate_yaml,
-    describe_format, ...) operate on this world instead of iacs's own
-    unrelated example manifest. Not required for ordinary reads any more --
-    view_registry/view_entity (mounted from emc2p's RegistrarSessions,
-    see mcp_server.py) cover that directly, via the same
-    underlying Registrar methods iacs's own tools use, so there's no
-    separate MCP server a host needs to discover just to look something
-    up. Keeping these here rather than only on iacs's separate MCP server
-    matters in practice: a weak model reliably discovers and uses tools
-    already on this server, but rarely discovers or calls a tool on a
-    *separate* MCP server, nudged or not.
-
     Args:
         save_dir: Directory holding (or to hold) this world's save data.
         scenario_dir: Starting scenario to seed a brand-new save_dir from
@@ -652,11 +638,7 @@ def start_world(session, save_dir: str, scenario_dir: str | None = None) -> str:
     registrar_sessions.set_registrar(session, registrar, export_dir=save_dir_path)
     return (
         f"World opened at {save_dir_path}. Component types: {registrar.registry.component_types}. "
-        "Call view_registry or view_entity to see what's there. "
-        f"If iacs's own tools are also available (mcp__iacs__*) and you want its deeper "
-        f"introspection (validate_yaml, describe_format, ...), call its load_database with "
-        f"database_url={registry_url(save_dir_path)!r} to point them at this exact world too -- "
-        f"optional, not required for ordinary reads."
+        "Call view_registry or view_entity to see what's there."
     )
 
 

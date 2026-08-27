@@ -415,10 +415,12 @@ story_simulator_mission:
         - work_state: done
     no_orphaned_modules:
         - description: >
+              Every module in this project should have a real importer.
               story_simulator/mcp_client.py (open_iacs_mcp_session,
-              McpToolSession) has no importer today. Either
-              delete it or repurpose it for ec_defined_agents (an EC-defined
-              agent could plausibly need to talk to iacs-mcp the same way).
+              McpToolSession) had none and, on top of that, existed only to
+              spawn iacs-mcp as a subprocess -- a dev-environment tool this
+              project's own runtime must not depend on -- so it was deleted
+              rather than repurposed.
         - requirement_priority
         - impact:
               type: architecture_clarity
@@ -428,7 +430,7 @@ story_simulator_mission:
                 value: 1
               - type: regression_risk
                 value: 0.1
-        - work_state: new
+        - work_state: done
     config_as_ec_files:
         - description: >
               story_simulator/config.py hardcodes file paths, source

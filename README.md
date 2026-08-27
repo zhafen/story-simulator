@@ -33,10 +33,8 @@ similar) to the server below and talking to it; that client's own replies *are* 
    Each `save_dir` gets its own schema within that database, created automatically on first
    `start_world`.
 2. Configure your MCP-aware client to launch `uv run story-simulator-mcp` (world state +
-   event-loop tools). Optionally, a separately-installed [`iacs`](https://github.com/zhafen/iacs)
-   MCP server (`iacs-mcp`) can be connected alongside it for entity-format guidance —
-   `describe_format`/`validate_yaml` — see [`docs/architecture.md`](docs/architecture.md); it's no
-   longer vendored here since story-simulator only depends on `emc2p`, the generic registry engine.
+   event-loop tools) — see [`docs/architecture.md`](docs/architecture.md). story-simulator only
+   depends on `emc2p`, the generic registry engine; nothing else needs to be running.
 3. Talk to it:
    ```
    you:   I want to play story-simulator. Please start up a world.

@@ -39,7 +39,7 @@ from pathlib import Path
 
 from collections import Counter
 
-from test_human_validated.helpers import LOW_QUALITY_MODEL, HeadlessSession, _load_registrar, _parked_at
+from test_human_validated.helpers import LOW_QUALITY_MODEL, create_session, _load_registrar, _parked_at
 from emc2p.testing.registry_checks import unexpected_components
 
 REPO_ROOT = Path(__file__).parent.parent
@@ -133,7 +133,7 @@ def run_one(approach: str, tmp_dir: Path, model: str = LOW_QUALITY_MODEL) -> tup
     instruction = _APPROACHES[approach]
     # This harness compares how the *connected* model performs a write
     # under each approach -- explicit override of the keyed_subagent default.
-    with HeadlessSession(save_dir, model=model, responder="host") as session:
+    with create_session(save_dir, driver="claude", model=model, responder="host") as session:
         narration = session.send_turn(
             f"Use start_world with save_dir={save_dir} and scenario_dir={SCENARIO_DIR} "
             f"to open a story-simulator world. Then {instruction}"

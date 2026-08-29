@@ -43,7 +43,7 @@ import pytest
 
 from emc2p.testing.expected_fixtures import assert_subset
 from test_human_validated.helpers import (
-    McpClientSession,
+    create_session,
     _assert_write_order,
     _event_states,
     _load_registrar,
@@ -103,9 +103,9 @@ def test_resolves_correctly_via_host_responder(tmp_path: Path):
     save_dir = tmp_path / "test_save"
 
     # This test's whole point is the *connected* model's own reasoning --
-    # explicit override of McpClientSession's keyed_subagent default.
-    with McpClientSession(save_dir, responder="host") as session:
-        print(f"McpClientSession trace: {session.trace_path}")
+    # explicit override of create_session's keyed_subagent default.
+    with create_session(save_dir, responder="host") as session:
+        print(f"agent session trace: {session.trace_path}")
         narration = session.send_turn(
             f"Use start_world with save_dir={save_dir} and scenario_dir={SCENARIO_DIR} "
             f"to open a story-simulator world. Then {_RUN_TO_DONE_INSTRUCTION}"
@@ -134,10 +134,10 @@ def test_resolves_and_persists_via_keyed_subagent(tmp_path: Path):
     """
     save_dir = tmp_path / "test_save"
 
-    # Both timeouts raised well past McpClientSession's own 120s/240s defaults --
+    # Both timeouts raised well past create_session's own 120s/240s defaults --
     # keyed_subagent's own nested DeepSeek rounds cost real time inside each call.
-    with McpClientSession(save_dir, turn_timeout=420, session_timeout=420) as session:  # responder="keyed_subagent", the default
-        print(f"McpClientSession trace: {session.trace_path}")
+    with create_session(save_dir, turn_timeout=420, session_timeout=420) as session:  # responder="keyed_subagent", the default
+        print(f"agent session trace: {session.trace_path}")
         narration = session.send_turn(
             f"Use start_world with save_dir={save_dir} and scenario_dir={SCENARIO_DIR} "
             f"to open a story-simulator world. Then {_DRIVE_TO_DONE_INSTRUCTION}"

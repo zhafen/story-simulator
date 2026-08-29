@@ -672,3 +672,19 @@ project_history:
               schema instead of relying on emc2p's schema-optional
               duck-typing -- the pinned emc2p rev long predated all four
               types moving there.
+    headless_and_mcp_client_session_unified_into_create_session:
+        - description: >
+              tests/test_human_validated/helpers.py's own HeadlessSession/
+              McpClientSession subclasses (each independently fixing up
+              this repo's own .mcp.json/allowed-tools/cwd/per-save
+              extra_env over emc2p's generic constructors) replaced by one
+              create_session(save_dir, driver=...) factory, built on
+              emc2p.testing.agent_session.create_agent_session -- a new
+              module added upstream in emc2p specifically to unify this
+              (a typing.Protocol, AgentSession, plus the driver-dispatch
+              factory itself). Also the first time this repo exposes
+              driver="copilot" (CopilotHeadlessProvider was already fully
+              built in emc2p, just never wired up here) alongside the
+              existing "claude"/"mcp_client" choices, resolved the same
+              (explicit argument > env var > default) way responder
+              already was.

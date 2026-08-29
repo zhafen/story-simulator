@@ -36,7 +36,7 @@ import pytest
 
 from emc2p.testing.expected_fixtures import assert_subset
 from test_human_validated.helpers import (
-    McpClientSession,
+    create_session,
     _assert_write_order,
     _event_states,
     _load_registrar,
@@ -97,14 +97,14 @@ def test_scenario_resolves_correctly(tmp_path: Path):
     save_dir = tmp_path / "test_save"
 
     # This test's whole point is the *connected* model's own reasoning --
-    # explicit override of McpClientSession's keyed_subagent default.
+    # explicit override of create_session's keyed_subagent default.
     #
     # A "host"-responder run driving all six resolve+plan steps itself
     # (twice as many as the race scenario's three events) routinely needs
-    # more than McpClientSession's own 120s/240s defaults, timing out
+    # more than create_session's own 120s/240s defaults, timing out
     # mid-event otherwise -- not on anything about the simulation itself.
-    with McpClientSession(save_dir, responder="host", turn_timeout=420, session_timeout=420) as session:
-        print(f"McpClientSession trace: {session.trace_path}")
+    with create_session(save_dir, responder="host", turn_timeout=420, session_timeout=420) as session:
+        print(f"agent session trace: {session.trace_path}")
         narration = session.send_turn(
             f"Use start_world with save_dir={save_dir} and scenario_dir={SCENARIO_DIR} "
             f"to open a story-simulator world. Then {_RUN_TO_DONE_INSTRUCTION}"

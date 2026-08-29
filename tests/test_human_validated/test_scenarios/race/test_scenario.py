@@ -41,16 +41,36 @@ from pathlib import Path
 
 import pytest
 
+from emc2p.registrar import Registrar
 from emc2p.testing.expected_fixtures import assert_subset
 from test_human_validated.helpers import (
     create_session,
     _assert_write_order,
     _event_states,
     _load_registrar,
-    _placement,
 )
 
 SCENARIO_DIR = Path(__file__).parent
+
+
+def _placement(registrar: Registrar, alias: str) -> int | str | None:
+    """The current `race_placement.value` recorded for an aliased car, or
+    None if it has none yet.
+
+    Returns the raw recorded value uncoerced if it isn't int-like (e.g.
+    a misfire that wrote "1st" instead of 1) so a failing assertion
+    shows what was actually written instead of crashing on a bare `int()` conversion.
+
+    Scenario-specific (race_placement only exists in this scenario), not
+    shared.
+    """
+    value = registrar.get_current_value("race_placement", "value", alias)
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return value
 
 # alias -> expected race_placement.value (1-indexed finishing position).
 EXPECTED_RACE_PLACEMENT = {"car_b": 1, "car_c": 2, "car_a": 3}

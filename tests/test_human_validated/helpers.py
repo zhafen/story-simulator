@@ -233,38 +233,6 @@ def _load_registrar(save_dir: Path, narration: str) -> Registrar:
     return Registrar.load(registry_url(save_dir))
 
 
-def _parked_at(location: str | None, spot: str) -> bool:
-    """Loosely checks a recorded `location` value names `spot` (e.g.
-    "parking_spot_1" or "street"), not any one exact phrasing.
-
-    `location`'s own schema (manifest/builtins.yaml) calls it a "short
-    freeform phrase" -- a model's correct answer can reasonably come out
-    phrased several ways ("parked in
-    parking_spot_1" vs. just "parking_spot_1") -- the model shouldn't
-    have to guess the one exact wording a test hardcodes. Takes the
-    value directly (e.g. from `registrar.get_current_value("location",
-    alias=alias)`) rather than reading it itself.
-    """
-    return location is not None and spot in location
-
-
-def _placement(registrar: Registrar, alias: str) -> int | str | None:
-    """The current `race_placement.value` recorded for an aliased car, or
-    None if it has none yet.
-
-    Returns the raw recorded value uncoerced if it isn't int-like (e.g.
-    a misfire that wrote "1st" instead of 1) so a failing assertion
-    shows what was actually written instead of crashing on a bare `int()` conversion.
-    """
-    value = registrar.get_current_value("race_placement", "value", alias)
-    if value is None:
-        return None
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return value
-
-
 def _event_states(registrar: Registrar) -> dict[str, str]:
     """Map of {event_alias: current event_state.value}, or {} if nothing's been recorded yet."""
     df = safe_view_current(registrar, "event_state.value")

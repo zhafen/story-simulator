@@ -39,10 +39,29 @@ from pathlib import Path
 
 from collections import Counter
 
-from test_human_validated.helpers import LOW_QUALITY_MODEL, create_session, _load_registrar, _parked_at
+from test_human_validated.helpers import LOW_QUALITY_MODEL, create_session, _load_registrar
 from emc2p.testing.registry_checks import unexpected_components
 
 REPO_ROOT = Path(__file__).parent.parent
+
+
+def _parked_at(location: str | None, spot: str) -> bool:
+    """Loosely checks a recorded `location` value names `spot` (e.g.
+    "parking_spot_1" or "street"), not any one exact phrasing.
+
+    `location`'s own schema (manifest/builtins.yaml) calls it a "short
+    freeform phrase" -- a model's correct answer can reasonably come out
+    phrased several ways ("parked in
+    parking_spot_1" vs. just "parking_spot_1") -- the model shouldn't
+    have to guess the one exact wording a test hardcodes. Takes the
+    value directly (e.g. from `registrar.get_current_value("location",
+    alias=alias)`) rather than reading it itself.
+
+    Scenario-specific (this harness's own parking check), not shared --
+    parking_split/test_scenario.py keeps its own copy rather than
+    importing this one.
+    """
+    return location is not None and spot in location
 SCENARIO_DIR = REPO_ROOT / "tests" / "data" / "scenarios" / "location_write_isolated"
 
 # scripts/ isn't a package (no __init__.py, deliberately) -- so this is a

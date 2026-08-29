@@ -40,13 +40,31 @@ from test_human_validated.helpers import (
     _assert_write_order,
     _event_states,
     _load_registrar,
-    _parked_at,
 )
 
 SCENARIO_DIR = Path(__file__).parent
 
+
+def _parked_at(location: str | None, spot: str) -> bool:
+    """Loosely checks a recorded `location` value names `spot` (e.g.
+    "parking_spot_1" or "street"), not any one exact phrasing.
+
+    `location`'s own schema (manifest/builtins.yaml) calls it a "short
+    freeform phrase" -- a model's correct answer can reasonably come out
+    phrased several ways ("parked in
+    parking_spot_1" vs. just "parking_spot_1") -- the model shouldn't
+    have to guess the one exact wording a test hardcodes. Takes the
+    value directly (e.g. from `registrar.get_current_value("location",
+    alias=alias)`) rather than reading it itself.
+
+    Scenario-specific, not shared -- tests/location_write_harness.py
+    keeps its own copy rather than importing this one.
+    """
+    return location is not None and spot in location
+
+
 # alias -> a substring that must appear in that car's recorded
-# location.value (see helpers._parked_at) -- not an exact string, since a
+# location.value (see _parked_at above) -- not an exact string, since a
 # live model's own phrasing of "parked in parking_spot_1" reasonably varies.
 EXPECTED_LOCATION = {
     "car_b": "parking_spot_1",
@@ -80,7 +98,7 @@ _RUN_TO_DONE_INSTRUCTION = (
 
 
 def _check_parking_split(r) -> None:
-    """location is a freeform phrase (see helpers._parked_at) -- a live model's
+    """location is a freeform phrase (see _parked_at above) -- a live model's
     correct answer can reasonably come out phrased several ways, so this checks
     a substring rather than assert_subset's exact match."""
     for alias, spot in EXPECTED_LOCATION.items():

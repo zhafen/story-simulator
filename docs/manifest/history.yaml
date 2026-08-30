@@ -688,3 +688,23 @@ project_history:
               existing "claude"/"mcp_client" choices, resolved the same
               (explicit argument > env var > default) way responder
               already was.
+    parking_and_parking_split_merged_into_one_directory:
+        - description: >
+              test_scenarios/parking/ (the deterministic, no-LLM
+              walkthrough of the original combined-trip scenario) and
+              test_scenarios/parking_split/ (the live walkthrough of the
+              split-into-drive-and-park version) were two separate
+              directories with two separate scenario.yaml files, even
+              though the split version had already superseded the
+              combined one as the scenario actually worth testing live --
+              the deterministic test was a counterpart to a scenario
+              nothing live exercised anymore. Merged into one
+              test_scenarios/parking/ directory sharing one scenario.yaml
+              (the split-events version), with the deterministic
+              walkthrough rewritten against its six events (three drives,
+              three parks) instead of the old three combined trips, and
+              both walkthroughs living in the same test_scenario.py as
+              TestDeterministicWalkthrough/TestLiveWalkthrough -- a live
+              failure and its deterministic counterpart now always
+              compare against the exact same fixture, with no risk of the
+              two silently drifting apart the way the old split let them.

@@ -7,7 +7,7 @@ sibling test module in this tests/test_human_validated/ package. Carries
 no live test of its own: a combined driving+parking scenario resolved as
 one event is deliberately not tested here -- that resolves unreliably in
 a way the split-events structure
-(test_scenarios/parking_split/test_scenario.py) doesn't.
+(test_scenarios/parking/test_scenario.py) doesn't.
 
 There is no in-process narrator to call directly, so a live test needs a
 real client driving this repo's own MCP server -- one of three drivers,

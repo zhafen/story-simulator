@@ -1,7 +1,23 @@
 file_info:
     - description: >
-        Regression fixture for this directory's own test_scenario.py.
-        Three cars drive to a restaurant with only two parking spots.
+        Regression fixture for this directory's own test_scenario.py
+        (both TestDeterministicWalkthrough and TestLiveWalkthrough).
+        Three cars drive to a restaurant with only two parking spots,
+        first-come-first-served; each car's drive and its own parking
+        decision are two separate, pre-planned events (a driving event
+        that ends on arrival, then a parking event that assigns a spot),
+        not bundled into one combined "trip" resolution -- an earlier
+        version of this scenario did bundle them, and this split version
+        superseded it once the split kept the same correctness a combined
+        event lost.
+
+        Each car's parking event is pre-planned to start the moment its
+        own driving event ends, with a short fixed 10-second duration, so
+        pop_event's own mechanical sort (soonest end_time first) still
+        resolves everything in the intended order: car_b drives (end_time
+        1020), car_b parks (1030), car_c drives (1080), car_c parks
+        (1090), car_a drives (1800), car_a parks (1810) -- never a driving
+        and a parking event tied at the same end_time.
 
 restaurant:
     - object:
@@ -38,7 +54,7 @@ car_a:
     - description:
         value: The car for friend A.
 
-car_a_trip:
+car_a_drive:
     - event:
         start_time: 0
         duration: 1800
@@ -48,7 +64,19 @@ car_a_trip:
         - value: car_a
         - value: restaurant
     - description:
-        value: car_a's drive to restaurant and search for parking.
+        value: car_a's drive to the restaurant.
+
+car_a_park:
+    - event:
+        start_time: 1800
+        duration: 10
+    - event_state:
+        value: planned
+    - involved_entity:
+        - value: car_a
+        - value: restaurant
+    - description:
+        value: car_a's parking decision, once it has already arrived.
 
 car_b:
     - object:
@@ -56,7 +84,7 @@ car_b:
     - description:
         value: The car for friend B.
 
-car_b_trip:
+car_b_drive:
     - event:
         start_time: 300
         duration: 720
@@ -66,7 +94,19 @@ car_b_trip:
         - value: car_b
         - value: restaurant
     - description:
-        value: car_b's drive to restaurant and search for parking.
+        value: car_b's drive to the restaurant.
+
+car_b_park:
+    - event:
+        start_time: 1020
+        duration: 10
+    - event_state:
+        value: planned
+    - involved_entity:
+        - value: car_b
+        - value: restaurant
+    - description:
+        value: car_b's parking decision, once it has already arrived.
 
 car_c:
     - object:
@@ -74,7 +114,7 @@ car_c:
     - description:
         value: The car for friend C.
 
-car_c_trip:
+car_c_drive:
     - event:
         start_time: 480
         duration: 600
@@ -84,4 +124,16 @@ car_c_trip:
         - value: car_c
         - value: restaurant
     - description:
-        value: car_c's drive to restaurant and search for parking.
+        value: car_c's drive to the restaurant.
+
+car_c_park:
+    - event:
+        start_time: 1080
+        duration: 10
+    - event_state:
+        value: planned
+    - involved_entity:
+        - value: car_c
+        - value: restaurant
+    - description:
+        value: car_c's parking decision, once it has already arrived.

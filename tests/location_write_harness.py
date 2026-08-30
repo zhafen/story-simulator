@@ -11,9 +11,10 @@ not a regression gate. Run directly:
 Isolates just the write-formatting step itself (see tests/data/scenarios/
 location_write_isolated/scenario.yaml: one car, one already-resolvable
 parking event, one spot) -- separate from arrival-order reasoning
-(tests/test_human_validated/test_race_placement_live.py) or
-driving/parking separation (test_parking_split_live.py in that same
-package), which are already covered elsewhere.
+(tests/test_human_validated/test_scenarios/race/test_scenario.py) or
+driving/parking separation (test_scenarios/parking/test_scenario.py's
+own TestLiveWalkthrough, in that same package), which are already
+covered elsewhere.
 
 Three approaches are compared: "baseline" (today's direct single-shot
 update_registry write), "confirm" (an opt-in preview=True /
@@ -60,8 +61,8 @@ def _parked_at(location: str | None, spot: str) -> bool:
     alias=alias)`) rather than reading it itself.
 
     Scenario-specific (this harness's own parking check), not shared --
-    parking_split/test_scenario.py keeps its own copy rather than
-    importing this one.
+    test_scenarios/parking/test_scenario.py keeps its own copy rather
+    than importing this one.
     """
     return location is not None and spot in location
 SCENARIO_DIR = REPO_ROOT / "tests" / "data" / "scenarios" / "location_write_isolated"

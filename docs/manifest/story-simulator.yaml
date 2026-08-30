@@ -1323,9 +1323,14 @@ story_simulator_mission:
                           actually picks it up -- a file literally named
                           tests.py is silently skipped by normal `pytest`
                           collection, only found when named on the
-                          command line explicitly). parking, parking_split,
-                          and race each have their own directory;
-                          location_write_isolated stays at
+                          command line explicitly). parking and race each
+                          have their own directory (parking's own
+                          test_scenario.py holds both a deterministic and
+                          a live walkthrough class, sharing one
+                          scenario.yaml -- formerly a separate
+                          parking_split directory, merged in once the
+                          split-events version superseded the original
+                          combined-trip one entirely); location_write_isolated stays at
                           tests/data/scenarios/ since it's used by
                           tests/location_write_harness.py, a standalone
                           debug script, not a pytest test case.
@@ -1378,18 +1383,22 @@ story_simulator_mission:
                     - work_state: done
                 scenario_registrar:
                     - description: >
-                          Loads a scenario's registrar after confirming
-                          its save_dir's schema actually exists,
-                          factoring out the boilerplate each scenario's
-                          test_scenario.py would otherwise repeat -- a
-                          fixture in
+                          Formerly a fixture in
                           tests/test_human_validated/conftest.py wrapping
-                          the existing private helper
-                          test_human_validated.helpers._load_registrar
-                          (unchanged; still directly importable too, for
-                          the three call sites that already use it: race's
-                          two tests and parking_split's one).
-                    - location: test_human_validated.conftest.scenario_registrar
+                          a private helper, test_human_validated.helpers.
+                          _load_registrar, that confirmed a save_dir's
+                          schema actually existed before loading it.
+                          Both were removed: the existence check only
+                          ever bought a friendlier error message for the
+                          "the model never actually called start_world"
+                          case, not a different test outcome (a missing
+                          write already reads back as None either way,
+                          which every caller's own check already treats
+                          as a failure), so every scenario's
+                          test_scenario.py now calls
+                          Registrar.load(registry_url(save_dir)) directly
+                          instead.
+                    - location: test_human_validated.helpers
                     - work_state: done
 
 # What satisfies each done (or partially done) requirement. Most solutions

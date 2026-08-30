@@ -87,6 +87,24 @@ it's visually distinguishable from ordinary conversational replies. This
 applies only to the actual narration text, not to out-of-character asides
 or status updates.
 
+## Scope test runs to what changed; don't run the full suite on every edit
+
+The full suite (`uv run pytest -q -m "not live"`) takes several minutes.
+Running it after each small change during iterative debugging repeatedly
+pays that cost for no benefit, since most edits only affect one or two
+test files. While iterating, run just the test file(s) that exercise the
+code you're changing (e.g. `uv run pytest tests/test_core.py -q`),
+narrowing further with `-k` when chasing one failing test. When unsure
+what a change affects, grep for the changed function/class name across
+`tests/` to find the real blast radius rather than defaulting to the full
+suite as a substitute for that. Reserve a full-suite run for right before
+committing, right before pushing, or after touching something with
+genuinely broad reach (a shared helper in `tests/test_human_validated/
+helpers.py`, `emc2p`'s own builtins schema, a base class most tests
+construct through). Live tests (`-m live`) are excluded from CI already
+and cost real API calls -- run them even more sparingly, only when the
+change plausibly affects the live-agent path itself.
+
 ## Reloading `story-simulator-mcp` after editing its code
 
 `.mcp.json` spawns `story-simulator-mcp` once, as a long-lived stdio

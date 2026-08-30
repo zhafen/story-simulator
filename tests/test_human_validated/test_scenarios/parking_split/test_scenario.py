@@ -15,7 +15,8 @@ test_human_validated.py builds on (see that module's own docstring),
 just with a live session standing in for the in-process Hamilton driver
 iacs/emc2p use it for.
 
-The instruction sent below is deliberately generic ("run to done") --
+The session is started with helpers.RUN_TO_DONE_INSTRUCTION, deliberately
+generic ("run to done") and shared rather than redefined per scenario --
 any reasoning a responder needs to resolve a specific event correctly
 (what to look up, what to record, and how) comes from the MCP server's
 own resolve/plan prompts (see `core.resolve_event`/`plan_events`), not
@@ -38,6 +39,7 @@ from emc2p.registrar import Registrar
 from emc2p.testing.expected_fixtures import assert_subset
 from story_simulator.config import registry_url
 from test_human_validated.helpers import (
+    RUN_TO_DONE_INSTRUCTION,
     create_session,
     _assert_write_order,
     _event_states,
@@ -91,12 +93,6 @@ EXPECTED_WRITE_ORDER = {
     "times": {"car_b": 1030, "car_c": 1090, "car_a": 1810},
 }
 
-_RUN_TO_DONE_INSTRUCTION = (
-    "Call advance_simulation and keep answering its prompts (recording each "
-    "decision via update_registry) until its status is \"done\". Don't "
-    "narrate anything back to me."
-)
-
 
 def _check_parking_split(r) -> None:
     """location is a freeform phrase (see _parked_at above) -- a live model's
@@ -126,7 +122,7 @@ def test_scenario_resolves_correctly(tmp_path: Path):
         print(f"agent session trace: {session.trace_path}")
         narration = session.send_turn(
             f"Use start_world with save_dir={save_dir} and scenario_dir={SCENARIO_DIR} "
-            f"to open a story-simulator world. Then {_RUN_TO_DONE_INSTRUCTION}"
+            f"to open a story-simulator world. Then {RUN_TO_DONE_INSTRUCTION}"
         )
         r = Registrar.load(registry_url(save_dir))
 

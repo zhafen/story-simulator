@@ -29,12 +29,13 @@ evidence instead comes from each expected write's own recorded world
 time (helpers._assert_write_order), confirming it was recorded while its
 own event resolved, not retroactively.
 
-Both instructions below are deliberately generic ("run to done") -- any
-reasoning a responder needs to resolve a specific event correctly (what
-to look up, what to record, and how) comes from the MCP server's own
-resolve/plan prompts (see `core.resolve_event`/`plan_events`), not from
-this test smuggling in scenario-specific hints no real deployment would
-provide.
+Both sessions are started with helpers.RUN_TO_DONE_INSTRUCTION/
+DRIVE_TO_DONE_INSTRUCTION, deliberately generic ("run to done") and
+shared rather than redefined per scenario -- any reasoning a responder
+needs to resolve a specific event correctly (what to look up, what to
+record, and how) comes from the MCP server's own resolve/plan prompts
+(see `core.resolve_event`/`plan_events`), not from this test smuggling in
+scenario-specific hints no real deployment would provide.
 """
 
 from pathlib import Path
@@ -45,6 +46,8 @@ from emc2p.registrar import Registrar
 from emc2p.testing.expected_fixtures import assert_subset
 from story_simulator.config import registry_url
 from test_human_validated.helpers import (
+    DRIVE_TO_DONE_INSTRUCTION,
+    RUN_TO_DONE_INSTRUCTION,
     create_session,
     _assert_write_order,
     _event_states,
@@ -99,22 +102,6 @@ def _check_race(r) -> None:
     assert_subset("race_placement", EXPECTED_RACE_PLACEMENT, placements)
 
 
-# Deliberately one open-ended instruction, not one per event -- checks
-# the final result and order, not turn count.
-_RUN_TO_DONE_INSTRUCTION = (
-    "Call advance_simulation and keep answering its prompts (recording each "
-    "decision via update_registry) until its status is \"done\". Don't "
-    "narrate anything back to me."
-)
-
-_DRIVE_TO_DONE_INSTRUCTION = (
-    "Call advance_simulation repeatedly until its status is \"done\". If it ever comes back "
-    "with status \"input_required\", just call it again with the same resume_token and a "
-    "short answer telling it to keep going -- don't try to answer the substance of any "
-    "prompt yourself. Don't narrate anything back to me."
-)
-
-
 @pytest.mark.live
 def test_resolves_correctly_via_host_responder(tmp_path: Path):
     """Run to completion under a live "host"-responder session, then check
@@ -128,7 +115,7 @@ def test_resolves_correctly_via_host_responder(tmp_path: Path):
         print(f"agent session trace: {session.trace_path}")
         narration = session.send_turn(
             f"Use start_world with save_dir={save_dir} and scenario_dir={SCENARIO_DIR} "
-            f"to open a story-simulator world. Then {_RUN_TO_DONE_INSTRUCTION}"
+            f"to open a story-simulator world. Then {RUN_TO_DONE_INSTRUCTION}"
         )
         r = Registrar.load(registry_url(save_dir))
         try:
@@ -160,7 +147,7 @@ def test_resolves_and_persists_via_keyed_subagent(tmp_path: Path):
         print(f"agent session trace: {session.trace_path}")
         narration = session.send_turn(
             f"Use start_world with save_dir={save_dir} and scenario_dir={SCENARIO_DIR} "
-            f"to open a story-simulator world. Then {_DRIVE_TO_DONE_INSTRUCTION}"
+            f"to open a story-simulator world. Then {DRIVE_TO_DONE_INSTRUCTION}"
         )
         r = Registrar.load(registry_url(save_dir))
         try:

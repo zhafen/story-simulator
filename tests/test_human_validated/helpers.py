@@ -211,6 +211,34 @@ def create_session(
     return create_agent_session(driver, **kwargs)
 
 
+# Generic across any scenario -- doesn't name events, components, or
+# outcomes, so it's shared rather than duplicated per scenario the way
+# _parked_at/_placement-style domain-specific checks are (each scenario's
+# own test_scenario.py keeps its own copy of those instead). Deliberately
+# doesn't restate
+# advance_simulation's own mechanics (call with neither/resume_token+answer
+# args, what "done"/"input_required" mean, ...) -- that's already this
+# session's own tool docstring, which a real connected agent reads
+# directly; repeating it here would be the same duplication this
+# constant's own extraction was meant to fix, just moved one level down.
+RUN_TO_DONE_INSTRUCTION = (
+    "Run this scenario to completion via advance_simulation. Don't narrate "
+    "anything back to me."
+)
+
+# Same generic/non-restating rationale as RUN_TO_DONE_INSTRUCTION above,
+# for a keyed_subagent-responder run: the *connected* model's only job is
+# driving advance_simulation to done, not reasoning about any event
+# itself (keyed_subagent already does that in-process) -- the one thing
+# advance_simulation's own docstring can't already say, since it has no
+# notion of who's answering.
+DRIVE_TO_DONE_INSTRUCTION = (
+    "Drive advance_simulation to completion without answering any prompt's "
+    "substance yourself -- just keep going with a short generic answer "
+    "each time. Don't narrate anything back to me."
+)
+
+
 def _event_states(registrar: Registrar) -> dict[str, str]:
     """Map of {event_alias: current event_state.value}, or {} if nothing's been recorded yet."""
     df = safe_view_current(registrar, "event_state.value")

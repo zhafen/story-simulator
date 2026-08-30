@@ -16,11 +16,15 @@ the walkthrough is driven, not which scenario runs):
   this fails too, it's a real bug independent of any model at all.
 - TestLiveWalkthrough: the same scenario driven by a real connected
   model over a real session, checking only *final* registry state (not
-  turn-by-turn) against this module's own EXPECTED_* constants.
+  turn-by-turn) against its own EXPECTED_* class attributes.
 
 Both start from the same scenario.yaml so a live-test failure and its
 deterministic counterpart are always comparing apples to apples -- no
 risk of the two drifting into subtly different fixtures over time.
+
+Each class owns the constants/helpers only it uses (as class attributes/
+methods) rather than sharing a module-level namespace -- only SCENARIO_DIR
+is genuinely shared, since both classes open the same scenario.yaml.
 
 The session in TestLiveWalkthrough is started with
 helpers.RUN_TO_DONE_INSTRUCTION, deliberately generic ("run to done") and
@@ -51,119 +55,6 @@ from test_human_validated.helpers import (
 
 SCENARIO_DIR = Path(__file__).parent
 
-_HOST_FRAMING = (
-    "Decide the answer yourself, standing in for whichever role this call "
-    "needs (a player's own absent character, an NPC, a base-module entity "
-    "whose end_time has been reached, ...) -- don't wait for input and "
-    "don't hand this off."
-)
-
-
-def _parked_at(location: str | None, spot: str) -> bool:
-    """Loosely checks a recorded `location` value names `spot` (e.g.
-    "parking_spot_1" or "street"), not any one exact phrasing.
-
-    `location`'s own schema (manifest/builtins.yaml) calls it a "short
-    freeform phrase" -- a model's correct answer can reasonably come out
-    phrased several ways ("parked in
-    parking_spot_1" vs. just "parking_spot_1") -- the model shouldn't
-    have to guess the one exact wording a test hardcodes. Takes the
-    value directly (e.g. from `registrar.get_current_value("location",
-    alias=alias)`) rather than reading it itself.
-
-    Scenario-specific, not shared -- tests/location_write_harness.py
-    keeps its own copy rather than importing this one.
-    """
-    return location is not None and spot in location
-
-
-# alias -> a substring that must appear in that car's recorded
-# location.value (see _parked_at above) -- not an exact string, since a
-# live model's own phrasing of "parked in parking_spot_1" reasonably varies.
-EXPECTED_LOCATION = {
-    "car_b": "parking_spot_1",
-    "car_c": "parking_spot_2",
-    "car_a": "street",
-}
-
-# alias -> expected event_state.value, once every drive/park event has resolved.
-EXPECTED_EVENT_STATE = {
-    "car_a_drive": "complete",
-    "car_a_park": "complete",
-    "car_b_drive": "complete",
-    "car_b_park": "complete",
-    "car_c_drive": "complete",
-    "car_c_park": "complete",
-}
-
-# Order evidence: each car's location write should be time-stamped with its
-# own *parking* event's end_time (not its driving event's), confirming the
-# spot was assigned once that car's own parking event resolved.
-EXPECTED_WRITE_ORDER = {
-    "component_type": "location",
-    "times": {"car_b": 1030, "car_c": 1090, "car_a": 1810},
-}
-
-# (event_alias, car_alias, outcome text, location written or None if this
-# event shouldn't write one yet, that event's own end_time). Order matches
-# pop_event's own mechanical sort (soonest end_time first): each car's
-# driving event ends before its own parking event starts, and no driving
-# and parking event are ever tied at the same end_time (see scenario.yaml's
-# own file_info for why the timings were chosen that way).
-WALKTHROUGH = [
-    ("car_b_drive", "car_b", "car_b_drive resolved -- car_b arrived.", None, 1020),
-    ("car_b_park", "car_b", "car_b_park resolved -- car_b parked in parking_spot_1.", "parking_spot_1", 1030),
-    ("car_c_drive", "car_c", "car_c_drive resolved -- car_c arrived.", None, 1080),
-    ("car_c_park", "car_c", "car_c_park resolved -- car_c parked in parking_spot_2.", "parking_spot_2", 1090),
-    ("car_a_drive", "car_a", "car_a_drive resolved -- car_a arrived.", None, 1800),
-    ("car_a_park", "car_a", "car_a_park resolved -- car_a parked on the street.", "street", 1810),
-]
-
-
-def _check_parking(r) -> None:
-    """location is a freeform phrase (see _parked_at above) -- a live model's
-    correct answer can reasonably come out phrased several ways, so this checks
-    a substring rather than assert_subset's exact match."""
-    for alias, spot in EXPECTED_LOCATION.items():
-        assert _parked_at(r.get_current_value("location", alias=alias), spot), (
-            f"{alias} should be parked at {spot}"
-        )
-
-
-def _resolve_prompt(alias: str, end_time: float) -> str:
-    return (
-        f"{_HOST_FRAMING}\n\n"
-        f"{alias}'s end_time (world time {end_time:g}) has been reached. "
-        f"Nothing else with an earlier end_time is still unresolved -- if "
-        f"another entity's own event hasn't reached event_state: complete "
-        f"yet (check via view_entity/view_registry, not assumed from its "
-        f"start_time or where it appears in a table), treat it as not "
-        f"having happened yet. Look up whatever you need (view_entity/"
-        f"view_registry, including its involved_entity links) to work out "
-        f"what happens, then "
-        f"record it: {alias}'s own "
-        f"outcome, {alias}'s own event_state (complete if this fully "
-        f"resolves it, interrupted if something cuts it short), and "
-        f"anything it changes about the entities it involves -- write "
-        f"those changes directly onto each affected entity itself, using "
-        f"whichever component type actually fits (view_entity on the "
-        f"component type's own name, e.g. view_entity('location'), shows "
-        f"its field descriptions if you're unsure which one or how to "
-        f"phrase it), not only described in {alias}'s own outcome text -- "
-        f"all via update_registry."
-    )
-
-
-def _plan_prompt(alias: str) -> str:
-    return (
-        f"{_HOST_FRAMING}\n\n"
-        f"Given how {alias} just resolved, does anything new need to "
-        f"happen as a result? If so, create it now: one or more new "
-        f"event entities (their own start_time/duration/event_state/"
-        f"involved_entity) via update_registry. If nothing follows "
-        f"from this, just say so -- no new events needed."
-    )
-
 
 class TestDeterministicWalkthrough:
     """No LLM, no MCP round-trip: drives advance_simulation/update_registry
@@ -175,6 +66,61 @@ class TestDeterministicWalkthrough:
     # round-trips) -- no LLM involved, but not fast enough for the default
     # tier either.
     pytestmark = pytest.mark.slow
+
+    _HOST_FRAMING = (
+        "Decide the answer yourself, standing in for whichever role this call "
+        "needs (a player's own absent character, an NPC, a base-module entity "
+        "whose end_time has been reached, ...) -- don't wait for input and "
+        "don't hand this off."
+    )
+
+    # (event_alias, car_alias, outcome text, location written or None if this
+    # event shouldn't write one yet, that event's own end_time). Order matches
+    # pop_event's own mechanical sort (soonest end_time first): each car's
+    # driving event ends before its own parking event starts, and no driving
+    # and parking event are ever tied at the same end_time (see scenario.yaml's
+    # own file_info for why the timings were chosen that way).
+    WALKTHROUGH = [
+        ("car_b_drive", "car_b", "car_b_drive resolved -- car_b arrived.", None, 1020),
+        ("car_b_park", "car_b", "car_b_park resolved -- car_b parked in parking_spot_1.", "parking_spot_1", 1030),
+        ("car_c_drive", "car_c", "car_c_drive resolved -- car_c arrived.", None, 1080),
+        ("car_c_park", "car_c", "car_c_park resolved -- car_c parked in parking_spot_2.", "parking_spot_2", 1090),
+        ("car_a_drive", "car_a", "car_a_drive resolved -- car_a arrived.", None, 1800),
+        ("car_a_park", "car_a", "car_a_park resolved -- car_a parked on the street.", "street", 1810),
+    ]
+
+    def _resolve_prompt(self, alias: str, end_time: float) -> str:
+        return (
+            f"{self._HOST_FRAMING}\n\n"
+            f"{alias}'s end_time (world time {end_time:g}) has been reached. "
+            f"Nothing else with an earlier end_time is still unresolved -- if "
+            f"another entity's own event hasn't reached event_state: complete "
+            f"yet (check via view_entity/view_registry, not assumed from its "
+            f"start_time or where it appears in a table), treat it as not "
+            f"having happened yet. Look up whatever you need (view_entity/"
+            f"view_registry, including its involved_entity links) to work out "
+            f"what happens, then "
+            f"record it: {alias}'s own "
+            f"outcome, {alias}'s own event_state (complete if this fully "
+            f"resolves it, interrupted if something cuts it short), and "
+            f"anything it changes about the entities it involves -- write "
+            f"those changes directly onto each affected entity itself, using "
+            f"whichever component type actually fits (view_entity on the "
+            f"component type's own name, e.g. view_entity('location'), shows "
+            f"its field descriptions if you're unsure which one or how to "
+            f"phrase it), not only described in {alias}'s own outcome text -- "
+            f"all via update_registry."
+        )
+
+    def _plan_prompt(self, alias: str) -> str:
+        return (
+            f"{self._HOST_FRAMING}\n\n"
+            f"Given how {alias} just resolved, does anything new need to "
+            f"happen as a result? If so, create it now: one or more new "
+            f"event entities (their own start_time/duration/event_state/"
+            f"involved_entity) via update_registry. If nothing follows "
+            f"from this, just say so -- no new events needed."
+        )
 
     def _location(self, save_dir, alias: str) -> str | None:
         """Read `alias`'s current location.value directly from the registry.
@@ -221,7 +167,7 @@ class TestDeterministicWalkthrough:
 
         result = asyncio.run(advance_simulation(ctx))
         assert result["status"] == "input_required"
-        assert result["prompt"] == _resolve_prompt("car_b_drive", end_time=1020)
+        assert result["prompt"] == self._resolve_prompt("car_b_drive", end_time=1020)
 
     def test_full_walkthrough_exact_prompts_and_registry_state(self, tmp_path):
         """Drives all six events to completion with predetermined correct
@@ -231,9 +177,9 @@ class TestDeterministicWalkthrough:
         start_world(str(save_dir), ctx, scenario_dir=str(SCENARIO_DIR))
 
         result = asyncio.run(advance_simulation(ctx))
-        for event_alias, car_alias, outcome, location, end_time in WALKTHROUGH:
+        for event_alias, car_alias, outcome, location, end_time in self.WALKTHROUGH:
             assert result["status"] == "input_required"
-            assert result["prompt"] == _resolve_prompt(event_alias, end_time)
+            assert result["prompt"] == self._resolve_prompt(event_alias, end_time)
             assert result["responder"] == "host"
 
             self._mark_resolved(ctx, event_alias, car_alias, outcome, location)
@@ -249,7 +195,7 @@ class TestDeterministicWalkthrough:
                 advance_simulation(ctx, resume_token=result["resume_token"], answer=f"{event_alias} resolved.")
             )
             assert result["status"] == "input_required"
-            assert result["prompt"] == _plan_prompt(event_alias)
+            assert result["prompt"] == self._plan_prompt(event_alias)
 
             result = asyncio.run(
                 advance_simulation(ctx, resume_token=result["resume_token"], answer="No new events needed.")
@@ -258,16 +204,70 @@ class TestDeterministicWalkthrough:
         assert result == {"status": "done", "narration": "Nothing scheduled."}
 
         # Final state: every car ended up exactly where the puzzle says it should.
-        for event_alias, car_alias, outcome, location, end_time in WALKTHROUGH:
+        for event_alias, car_alias, outcome, location, end_time in self.WALKTHROUGH:
             if location is not None:
                 assert self._location(save_dir, car_alias) == location
 
 
 class TestLiveWalkthrough:
+    # alias -> a substring that must appear in that car's recorded
+    # location.value (see _parked_at below) -- not an exact string, since a
+    # live model's own phrasing of "parked in parking_spot_1" reasonably varies.
+    EXPECTED_LOCATION = {
+        "car_b": "parking_spot_1",
+        "car_c": "parking_spot_2",
+        "car_a": "street",
+    }
+
+    # alias -> expected event_state.value, once every drive/park event has resolved.
+    EXPECTED_EVENT_STATE = {
+        "car_a_drive": "complete",
+        "car_a_park": "complete",
+        "car_b_drive": "complete",
+        "car_b_park": "complete",
+        "car_c_drive": "complete",
+        "car_c_park": "complete",
+    }
+
+    # Order evidence: each car's location write should be time-stamped with its
+    # own *parking* event's end_time (not its driving event's), confirming the
+    # spot was assigned once that car's own parking event resolved.
+    EXPECTED_WRITE_ORDER = {
+        "component_type": "location",
+        "times": {"car_b": 1030, "car_c": 1090, "car_a": 1810},
+    }
+
+    @staticmethod
+    def _parked_at(location: str | None, spot: str) -> bool:
+        """Loosely checks a recorded `location` value names `spot` (e.g.
+        "parking_spot_1" or "street"), not any one exact phrasing.
+
+        `location`'s own schema (manifest/builtins.yaml) calls it a "short
+        freeform phrase" -- a model's correct answer can reasonably come out
+        phrased several ways ("parked in
+        parking_spot_1" vs. just "parking_spot_1") -- the model shouldn't
+        have to guess the one exact wording a test hardcodes. Takes the
+        value directly (e.g. from `registrar.get_current_value("location",
+        alias=alias)`) rather than reading it itself.
+
+        Scenario-specific, not shared -- tests/location_write_harness.py
+        keeps its own copy rather than importing this one.
+        """
+        return location is not None and spot in location
+
+    def _check_parking(self, r) -> None:
+        """location is a freeform phrase (see _parked_at above) -- a live model's
+        correct answer can reasonably come out phrased several ways, so this checks
+        a substring rather than assert_subset's exact match."""
+        for alias, spot in self.EXPECTED_LOCATION.items():
+            assert self._parked_at(r.get_current_value("location", alias=alias), spot), (
+                f"{alias} should be parked at {spot}"
+            )
+
     @pytest.mark.live
     def test_scenario_resolves_correctly(self, tmp_path: Path):
         """Run to completion under a live "host"-responder session, then check
-        final registry state against this module's own EXPECTED_* constants
+        final registry state against this class's own EXPECTED_* attributes
         (location by substring, event_state/write-order generically)."""
         save_dir = tmp_path / "test_save"
 
@@ -287,8 +287,8 @@ class TestLiveWalkthrough:
             r = Registrar.load(registry_url(save_dir))
 
             try:
-                _check_parking(r)
-                assert_subset("event_state", EXPECTED_EVENT_STATE, _event_states(r))
-                _assert_write_order(r, EXPECTED_WRITE_ORDER)
+                self._check_parking(r)
+                assert_subset("event_state", self.EXPECTED_EVENT_STATE, _event_states(r))
+                _assert_write_order(r, self.EXPECTED_WRITE_ORDER)
             except AssertionError as exc:
                 raise AssertionError(f"{exc} -- narration: {narration!r}") from exc

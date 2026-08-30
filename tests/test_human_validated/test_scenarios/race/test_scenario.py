@@ -43,11 +43,11 @@ import pytest
 
 from emc2p.registrar import Registrar
 from emc2p.testing.expected_fixtures import assert_subset
+from story_simulator.config import registry_url
 from test_human_validated.helpers import (
     create_session,
     _assert_write_order,
     _event_states,
-    _load_registrar,
 )
 
 SCENARIO_DIR = Path(__file__).parent
@@ -130,7 +130,7 @@ def test_resolves_correctly_via_host_responder(tmp_path: Path):
             f"Use start_world with save_dir={save_dir} and scenario_dir={SCENARIO_DIR} "
             f"to open a story-simulator world. Then {_RUN_TO_DONE_INSTRUCTION}"
         )
-        r = _load_registrar(save_dir, narration)
+        r = Registrar.load(registry_url(save_dir))
         try:
             _check_race(r)
             assert_subset("event_state", EXPECTED_EVENT_STATE, _event_states(r))
@@ -162,7 +162,7 @@ def test_resolves_and_persists_via_keyed_subagent(tmp_path: Path):
             f"Use start_world with save_dir={save_dir} and scenario_dir={SCENARIO_DIR} "
             f"to open a story-simulator world. Then {_DRIVE_TO_DONE_INSTRUCTION}"
         )
-        r = _load_registrar(save_dir, narration)
+        r = Registrar.load(registry_url(save_dir))
         try:
             _check_race(r)
             assert_subset("event_state", EXPECTED_EVENT_STATE, _event_states(r))

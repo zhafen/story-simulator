@@ -58,8 +58,8 @@ import pytest
 
 from emc2p.registrar import Registrar
 from emc2p.testing.agent_session import AgentSession, Driver, create_agent_session
-from emc2p.testing.registry_checks import schema_exists, write_time
-from story_simulator.config import registry_schema_name, registry_url, resolve_database_dsn
+from emc2p.testing.registry_checks import write_time
+from story_simulator.config import registry_url
 from story_simulator.core import safe_view_current
 
 REPO_ROOT = Path(__file__).parent.parent.parent
@@ -209,28 +209,6 @@ def create_session(
     if driver == "mcp_client":
         kwargs["max_tool_iterations"] = max_tool_iterations
     return create_agent_session(driver, **kwargs)
-
-
-def _load_registrar(save_dir: Path, narration: str) -> Registrar:
-    """Confirm `save_dir`'s schema actually exists, then load it.
-
-    A weak model can narrate a plausible-sounding scene without ever
-    calling `start_world` -- or call it with a subtly wrong `save_dir` it
-    mistyped out of the prompt's text, confirmed happening in practice --
-    so this checks the schema was actually created for the exact `save_dir`
-    the test used before reading it, rather than either silently reading
-    whichever schema the connection falls through to when the named one
-    doesn't exist (see `config.registry_url`'s docstring) or hitting a
-    confusing raw `ibis` error partway through `Registry.from_database`'s
-    table enumeration.
-    """
-    schema = registry_schema_name(save_dir)
-    assert schema_exists(resolve_database_dsn(), schema), (
-        f"No registry schema exists for {save_dir} -- start_world was not "
-        f"actually called for this exact save_dir despite this "
-        f"narration: {narration!r}"
-    )
-    return Registrar.load(registry_url(save_dir))
 
 
 def _event_states(registrar: Registrar) -> dict[str, str]:

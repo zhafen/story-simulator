@@ -18,15 +18,12 @@ from emc2p.registrar import Registrar
 
 NEW_TREE_ENTITY_KEY = "human_validated_test_framework"
 DEPENDENCIES_KEY = "dependencies"
+MANIFEST_PATHS = ["docs/manifest", "story_simulator"]
 
 # Every test here loads a real manifest via Registrar.from_manifest -- the
 # Hamilton driver construction that goes through dominates regardless of
 # manifest size (see pyproject.toml's own `slow` marker docstring).
 pytestmark = pytest.mark.slow
-
-
-def _load_registrar() -> Registrar:
-    return Registrar.from_manifest(["docs/manifest", "story_simulator"])
 
 
 def _resolved_components(registrar: Registrar) -> dict:
@@ -44,7 +41,7 @@ def _resolved_components(registrar: Registrar) -> dict:
 
 
 def test_architecture_manifest_loads():
-    registrar = _load_registrar()
+    registrar = Registrar.from_manifest(MANIFEST_PATHS)
     assert "requirement" in registrar.registry.component_types
     assert "solution" in registrar.registry.component_types
 
@@ -68,7 +65,7 @@ class TestHumanValidatedTestFrameworkDependencies:
         """No dangling `dependence of:` target -- every link a selected
         solution makes to a dependencies: entity must actually resolve to
         that entity, not silently stay null (e.g. from a typo'd name)."""
-        registrar = _load_registrar()
+        registrar = Registrar.from_manifest(MANIFEST_PATHS)
         resolved = _resolved_components(registrar)
         dep_df = resolved["dependence"].to_pandas()
         assert len(dep_df) > 0, "expected at least one dependence relation in the manifest"
@@ -81,7 +78,7 @@ class TestHumanValidatedTestFrameworkDependencies:
     def test_every_dependence_target_is_inside_the_dependencies_subtree(self):
         """A dependence relation should only ever point at an entity under
         .../dependencies/, never somewhere else by mistake."""
-        registrar = _load_registrar()
+        registrar = Registrar.from_manifest(MANIFEST_PATHS)
         resolved = _resolved_components(registrar)
         dep_df = resolved["dependence"].to_pandas()
         dependency_ids = set(self._dependency_paths(registrar))
@@ -92,7 +89,7 @@ class TestHumanValidatedTestFrameworkDependencies:
         """Each dependencies: entity should carry both fields the report's
         Dependencies section renders -- location (the real qualified
         path/module/fixture name) and work_state."""
-        registrar = _load_registrar()
+        registrar = Registrar.from_manifest(MANIFEST_PATHS)
         dependency_ids = set(self._dependency_paths(registrar))
         assert len(dependency_ids) == 4
 

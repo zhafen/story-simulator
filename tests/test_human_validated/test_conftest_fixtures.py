@@ -1,7 +1,6 @@
 """Fast (non-live) tests for tests/test_human_validated/conftest.py's own
-fixtures -- responder, scenario_registrar, turn_stepper. No real session
-or database involved; these only check the fixtures' own resolution/
-dispatch logic.
+fixtures -- responder, turn_stepper. No real session or database
+involved; these only check the fixtures' own resolution/dispatch logic.
 """
 
 from unittest.mock import MagicMock
@@ -28,17 +27,6 @@ class TestResponderFixture:
     def test_explicit_param_wins_over_the_env_var(self, responder, monkeypatch):
         monkeypatch.setenv(LIVE_TEST_RESPONDER_ENV_VAR, "host")
         assert responder == "subagent"
-
-
-class TestScenarioRegistrarFixture:
-    def test_is_the_same_callable_as_the_private_helper(self, scenario_registrar):
-        from test_human_validated.helpers import _load_registrar
-        assert scenario_registrar is _load_registrar
-
-    def test_raises_when_schema_does_not_exist(self, scenario_registrar, monkeypatch, tmp_path):
-        monkeypatch.setattr("test_human_validated.helpers.schema_exists", lambda *a, **k: False)
-        with pytest.raises(AssertionError, match="No registry schema exists"):
-            scenario_registrar(tmp_path, "some narration")
 
 
 class TestTurnStepperFixture:

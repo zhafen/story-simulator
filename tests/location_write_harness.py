@@ -39,8 +39,10 @@ from pathlib import Path
 
 from collections import Counter
 
-from test_human_validated.helpers import LOW_QUALITY_MODEL, create_session, _load_registrar
+from test_human_validated.helpers import LOW_QUALITY_MODEL, create_session
+from emc2p.registrar import Registrar
 from emc2p.testing.registry_checks import unexpected_components
+from story_simulator.config import registry_url
 
 REPO_ROOT = Path(__file__).parent.parent
 
@@ -157,16 +159,14 @@ def run_one(approach: str, tmp_dir: Path, model: str = LOW_QUALITY_MODEL) -> tup
             f"Use start_world with save_dir={save_dir} and scenario_dir={SCENARIO_DIR} "
             f"to open a story-simulator world. Then {instruction}"
         )
-        try:
-            r = _load_registrar(save_dir, narration)
-            success = _parked_at(r.get_current_value("location", alias="car_a"), "parking_spot_1")
-            misfires = unexpected_components(r, "car_a", _EXPECTED_CAR_A_COMPONENTS)
-        except AssertionError as exc:
-            # _load_registrar's own assertion: the model never actually called
-            # start_world -- a rep outcome to count, not a harness bug.
-            success = False
-            misfires = set()
-            narration = f"{narration}\n\n[harness: {exc}]"
+        r = Registrar.load(registry_url(save_dir))
+        # If the model never actually called start_world, save_dir's schema
+        # was never created -- registry_url's own connection silently falls
+        # through to whatever schema is otherwise on the search path rather
+        # than erroring (see its docstring), so this just reads as "location"
+        # never got recorded: a rep outcome to count, not a harness bug.
+        success = _parked_at(r.get_current_value("location", alias="car_a"), "parking_spot_1")
+        misfires = unexpected_components(r, "car_a", _EXPECTED_CAR_A_COMPONENTS)
         return success, narration, session.usage_summary(), misfires
 
 

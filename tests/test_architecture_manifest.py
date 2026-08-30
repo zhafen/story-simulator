@@ -6,6 +6,8 @@ scripts/generate_requirement_tree_report.py does, so a typo or broken
 instead of only surfacing as a silently-empty report section.
 """
 
+import pytest
+
 from emc2p.dataflows.derive.resolve_paths import (
     components_with_resolved_paths,
     fields_of_type_entity_ref,
@@ -16,6 +18,11 @@ from emc2p.registrar import Registrar
 
 NEW_TREE_ENTITY_KEY = "human_validated_test_framework"
 DEPENDENCIES_KEY = "dependencies"
+
+# Every test here loads a real manifest via Registrar.from_manifest -- the
+# Hamilton driver construction that goes through dominates regardless of
+# manifest size (see pyproject.toml's own `slow` marker docstring).
+pytestmark = pytest.mark.slow
 
 
 def _load_registrar() -> Registrar:

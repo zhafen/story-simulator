@@ -47,4 +47,10 @@ include = ["story_simulator*"]
 testpaths = ["tests"]
 markers = [
     "live: tests that call the real Anthropic API (require ANTHROPIC_API_KEY, cost money, excluded from CI)",
+    "slow: tests that open a real (db-backed) world/registry, run the event loop, or otherwise individually take a couple seconds+ -- numerous enough to dominate the full suite's wall time given how integration-heavy this suite is. Excluded by default (see addopts); run everything with `-m \"not live\"`.",
 ]
+# Default `uv run pytest` run: fast, for iterating before a commit.
+# Full run (slow tests included, still what CI runs): `uv run pytest -m "not live"`
+# -- an explicit -m on the command line fully replaces this addopts value,
+# so it isn't additive and doesn't need "or slow" spelled out.
+addopts = ["-m", "not slow and not live"]

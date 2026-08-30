@@ -18,6 +18,8 @@ if this test fails too, it's a real bug independent of any model at all.
 import asyncio
 from pathlib import Path
 
+import pytest
+
 from emc2p.registrar import Registrar
 
 from conftest import _make_ctx, update_registry
@@ -25,6 +27,9 @@ from story_simulator.config import registry_url
 from story_simulator.mcp_server import advance_simulation, start_world
 
 SCENARIO_DIR = Path(__file__).parent
+
+# Both tests here drive a full db-backed scenario walkthrough end-to-end.
+pytestmark = pytest.mark.slow
 
 _HOST_FRAMING = (
     "Decide the answer yourself, standing in for whichever role this call "

@@ -5,12 +5,19 @@ that works with no optional module (character, npc, physics, terrain, spatial) a
 import math
 from unittest.mock import MagicMock
 
+import pytest
+
 from emc2p.mcp_server import SOURCE_KEY
 from emc2p.registrar import Registrar
 
 from story_simulator import core
 from story_simulator.config import MANIFEST_DIR
 from story_simulator.core import pop_event, safe_view_current
+
+# Every test here drives a real Registrar through update()/load_manifest --
+# the Hamilton driver construction that goes through dominates regardless
+# of input size (see pyproject.toml's own `slow` marker docstring).
+pytestmark = pytest.mark.slow
 
 
 def _registrar_from_yaml(yaml_text: str) -> Registrar:

@@ -58,6 +58,8 @@ class TestMcpToolRegistration:
 
 
 class TestStartWorld:
+    pytestmark = pytest.mark.slow
+
     def test_returns_confirmation_string(self, tmp_path):
         ctx = _make_ctx()
         result = start_world(str(tmp_path / "save"), ctx)
@@ -158,6 +160,8 @@ class TestStartWorld:
 
 
 class TestRegistryTools:
+    pytestmark = pytest.mark.slow
+
     def test_get_registrar_errors_before_start_world(self):
         ctx = _make_ctx()
         with pytest.raises(ValueError, match="start_world"):

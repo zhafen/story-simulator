@@ -23,6 +23,11 @@ import pytest
 from conftest import _make_ctx, update_registry
 from story_simulator.mcp_server import advance_simulation, start_world
 
+# Every test here opens a real (db-backed) world and drives the event loop
+# through it -- individually a few seconds, and there are only a handful
+# of pure-logic tests elsewhere to offset that.
+pytestmark = pytest.mark.slow
+
 
 def _world(tmp_path, name="save"):
     """Open a save seeded from nothing -- no player, no default scenario,

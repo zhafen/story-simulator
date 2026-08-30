@@ -87,23 +87,37 @@ it's visually distinguishable from ordinary conversational replies. This
 applies only to the actual narration text, not to out-of-character asides
 or status updates.
 
-## Scope test runs to what changed; don't run the full suite on every edit
+## Three test tiers, by cost
 
-The full suite (`uv run pytest -q -m "not live"`) takes several minutes.
-Running it after each small change during iterative debugging repeatedly
-pays that cost for no benefit, since most edits only affect one or two
-test files. While iterating, run just the test file(s) that exercise the
-code you're changing (e.g. `uv run pytest tests/test_core.py -q`),
-narrowing further with `-k` when chasing one failing test. When unsure
-what a change affects, grep for the changed function/class name across
-`tests/` to find the real blast radius rather than defaulting to the full
-suite as a substitute for that. Reserve a full-suite run for right before
-committing, right before pushing, or after touching something with
-genuinely broad reach (a shared helper in `tests/test_human_validated/
-helpers.py`, `emc2p`'s own builtins schema, a base class most tests
-construct through). Live tests (`-m live`) are excluded from CI already
-and cost real API calls -- run them even more sparingly, only when the
-change plausibly affects the live-agent path itself.
+- `uv run pytest` (default, no flags) -- fast (~1s). This suite is
+  integration-test-heavy by nature (most tests open a real db-backed
+  world/registry or drive the event loop), so most tests are marked
+  `slow` and excluded by default (see the `slow` marker in
+  pyproject.toml) -- only a small pure-logic subset runs here. Use this
+  while iterating before a commit.
+- `uv run pytest -m "not live"` -- the full suite, `slow` tests included
+  but `live` excluded. This is also what CI runs. Run this before merging
+  a PR, or after touching something with genuinely broad reach (a shared
+  helper in `tests/test_human_validated/helpers.py`, `emc2p`'s own
+  builtins schema, a base class most tests construct through). Passing
+  `-m` on the command line fully replaces the default marker filter from
+  `addopts`, so this isn't additive with "not slow and not live" -- it's
+  a separate expression that happens to still exclude live.
+- `uv run pytest -m live` -- the live-model tests, a separate axis from
+  slow/full entirely (real API calls, cost real usage, flaky by nature).
+  Run these deliberately and sparingly, only when the change plausibly
+  affects the live-agent path itself -- never as a side effect of a
+  broader invocation. A bare `uv run pytest` (no `-m`) in an environment
+  with a working API key would otherwise actually execute them; the
+  default `addopts` filter is what keeps that from happening.
+
+**Scope test runs to what changed even within the fast tier; don't run
+the full default suite on every edit either.** While iterating, run just
+the test file(s) that exercise the code you're changing (e.g.
+`uv run pytest tests/test_core.py -q`), narrowing further with `-k` when
+chasing one failing test. When unsure what a change affects, grep for the
+changed function/class name across `tests/` to find the real blast radius
+rather than defaulting to a broader run as a substitute for that.
 
 ## Reloading `story-simulator-mcp` after editing its code
 

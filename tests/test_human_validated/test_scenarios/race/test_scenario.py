@@ -29,13 +29,14 @@ evidence instead comes from each expected write's own recorded world
 time (helpers._assert_write_order), confirming it was recorded while its
 own event resolved, not retroactively.
 
-Both sessions are started with helpers.RUN_TO_DONE_INSTRUCTION/
-DRIVE_TO_DONE_INSTRUCTION, deliberately generic ("run to done") and
-shared rather than redefined per scenario -- any reasoning a responder
-needs to resolve a specific event correctly (what to look up, what to
-record, and how) comes from the MCP server's own resolve/plan prompts
-(see `core.resolve_event`/`plan_events`), not from this test smuggling in
-scenario-specific hints no real deployment would provide.
+Both sessions are started with the same helpers.RUN_TO_DONE_INSTRUCTION,
+deliberately generic ("run to done") and shared rather than redefined per
+scenario or per responder -- any reasoning a responder needs to resolve a
+specific event correctly (what to look up, what to record, and how)
+comes from the MCP server's own resolve/plan prompts (see
+`core.resolve_event`/`plan_events`), not from this test smuggling in
+scenario-specific or responder-specific hints no real deployment would
+provide.
 """
 
 from pathlib import Path
@@ -46,7 +47,6 @@ from emc2p.registrar import Registrar
 from emc2p.testing.expected_fixtures import assert_subset
 from story_simulator.config import registry_url
 from test_human_validated.helpers import (
-    DRIVE_TO_DONE_INSTRUCTION,
     RUN_TO_DONE_INSTRUCTION,
     create_session,
     _assert_write_order,
@@ -147,7 +147,7 @@ def test_resolves_and_persists_via_keyed_subagent(tmp_path: Path):
         print(f"agent session trace: {session.trace_path}")
         narration = session.send_turn(
             f"Use start_world with save_dir={save_dir} and scenario_dir={SCENARIO_DIR} "
-            f"to open a story-simulator world. Then {DRIVE_TO_DONE_INSTRUCTION}"
+            f"to open a story-simulator world. Then {RUN_TO_DONE_INSTRUCTION}"
         )
         r = Registrar.load(registry_url(save_dir))
         try:

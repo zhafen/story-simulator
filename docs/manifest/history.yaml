@@ -708,3 +708,19 @@ project_history:
               failure and its deterministic counterpart now always
               compare against the exact same fixture, with no risk of the
               two silently drifting apart the way the old split let them.
+    test_human_validated_comments_and_docstrings_abbreviated:
+        - description: >
+              tests/test_human_validated/'s own docstrings/comments
+              (conftest.py, helpers.py, test_conftest_fixtures.py, and
+              both test_scenarios/parking/test_scenario.py and
+              test_scenarios/race/test_scenario.py) had grown well past
+              this project's usual style -- some module docstrings ran
+              30+ lines, restating rationale a reader could otherwise
+              trace from the code itself. Trimmed to a stricter,
+              human_validated-only convention: an inline comment is at
+              most two lines, and a docstring is a one-line summary
+              followed by an empty line and at most three more lines.
+              Detail that didn't survive the cut wasn't deleted for its
+              own sake -- it's still recoverable from this file's own
+              earlier entries and from git blame, just no longer
+              duplicated inline for every future reader to wade through.

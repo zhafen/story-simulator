@@ -1,6 +1,6 @@
-"""Fast (non-live) tests for tests/test_human_validated/conftest.py's own
-fixtures -- responder, turn_stepper. No real session or database
-involved; these only check the fixtures' own resolution/dispatch logic.
+"""Fast (non-live) tests for conftest.py's own responder/turn_stepper fixtures.
+
+No real session or database involved -- only fixture resolution/dispatch logic.
 """
 
 from unittest.mock import MagicMock
@@ -16,10 +16,8 @@ class TestResponderFixture:
         assert responder == DEFAULT_LIVE_TEST_RESPONDER
 
     def test_reads_the_env_var_when_no_explicit_param(self, request, monkeypatch):
-        # responder must be fetched *after* setenv, not requested as a
-        # normal parameter -- ordinary fixture params are all resolved
-        # before the test body runs, which would read the env var before
-        # this test ever sets it.
+        # Must fetch responder *after* setenv -- normal fixture params
+        # resolve before the test body runs, too early to see this env var.
         monkeypatch.setenv(LIVE_TEST_RESPONDER_ENV_VAR, "host")
         assert request.getfixturevalue("responder") == "host"
 

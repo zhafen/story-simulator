@@ -1,38 +1,9 @@
-"""Regressions for this directory's own scenario.yaml: three cars drive
-to a restaurant with only two parking spots, first-come-first-served --
-each car's drive and its own parking decision are separate, pre-planned
-events (a driving event that ends on arrival, then a parking event that
-assigns a spot), not bundled into one combined "trip" resolution.
+"""Regressions for this directory's scenario.yaml: three cars compete for two parking spots.
 
-Two classes, along a deliberately different axis from each other (how
-the walkthrough is driven, not which scenario runs):
-
-- TestDeterministicWalkthrough: drives advance_simulation/update_registry
-  directly with hand-scripted "perfect" answers -- no LLM, no MCP
-  round-trip, no cost, no flakiness. Asserts *exact* prompt text,
-  end_time order, and registry state at every step, so a live-test
-  failure (below) can be checked against this first: if this still
-  passes, the mechanism is sound and the live failure is the model; if
-  this fails too, it's a real bug independent of any model at all.
-- TestLiveWalkthrough: the same scenario driven by a real connected
-  model over a real session, checking only *final* registry state (not
-  turn-by-turn) against its own EXPECTED_* class attributes.
-
-Both start from the same scenario.yaml so a live-test failure and its
-deterministic counterpart are always comparing apples to apples -- no
-risk of the two drifting into subtly different fixtures over time.
-
-Each class owns the constants/helpers only it uses (as class attributes/
-methods) rather than sharing a module-level namespace -- only SCENARIO_DIR
-is genuinely shared, since both classes open the same scenario.yaml.
-
-The session in TestLiveWalkthrough is started with
-helpers.RUN_TO_DONE_INSTRUCTION, deliberately generic ("run to done") and
-shared rather than redefined per scenario -- any reasoning a responder
-needs to resolve a specific event correctly (what to look up, what to
-record, and how) comes from the MCP server's own resolve/plan prompts
-(see `core.resolve_event`/`plan_events`), not from this test smuggling in
-scenario-specific hints no real deployment would provide.
+TestDeterministicWalkthrough drives advance_simulation directly with
+scripted answers (no LLM); TestLiveWalkthrough drives the same scenario
+via a real model, checking only final state. Each class owns its own
+EXPECTED_*/constants; only SCENARIO_DIR is shared.
 """
 
 import asyncio
@@ -57,14 +28,13 @@ SCENARIO_DIR = Path(__file__).parent
 
 
 class TestDeterministicWalkthrough:
-    """No LLM, no MCP round-trip: drives advance_simulation/update_registry
-    directly, in-process, with predetermined correct answers. See this
-    module's own docstring for why this exists alongside
-    TestLiveWalkthrough below."""
+    """No LLM, no MCP round-trip -- drives advance_simulation directly with predetermined answers.
 
-    # A real db-backed walkthrough (six events, twelve advance_simulation
-    # round-trips) -- no LLM involved, but not fast enough for the default
-    # tier either.
+    See module docstring for why this exists alongside TestLiveWalkthrough.
+    """
+
+    # A real db-backed walkthrough (six events, twelve round-trips) --
+    # no LLM, but not fast enough for the default tier.
     pytestmark = pytest.mark.slow
 
     _HOST_FRAMING = (
@@ -74,12 +44,8 @@ class TestDeterministicWalkthrough:
         "don't hand this off."
     )
 
-    # (event_alias, car_alias, outcome text, location written or None if this
-    # event shouldn't write one yet, that event's own end_time). Order matches
-    # pop_event's own mechanical sort (soonest end_time first): each car's
-    # driving event ends before its own parking event starts, and no driving
-    # and parking event are ever tied at the same end_time (see scenario.yaml's
-    # own file_info for why the timings were chosen that way).
+    # (event_alias, car_alias, outcome, location written or None, end_time).
+    # Order matches pop_event's sort (soonest end_time first); see scenario.yaml.
     WALKTHROUGH = [
         ("car_b_drive", "car_b", "car_b_drive resolved -- car_b arrived.", None, 1020),
         ("car_b_park", "car_b", "car_b_park resolved -- car_b parked in parking_spot_1.", "parking_spot_1", 1030),
@@ -131,13 +97,10 @@ class TestDeterministicWalkthrough:
         return Registrar.load(registry_url(save_dir)).get_current_value("location", alias=alias)
 
     def _mark_resolved(self, ctx, event_alias: str, car_alias: str, outcome: str, location: str | None) -> None:
-        """The "perfect" answer to a resolve prompt: record the event's own
-        outcome/event_state, and -- only for a parking event, not a driving
-        one -- the car's own location.
+        """The "perfect" answer to a resolve prompt: outcome/event_state, plus location if parking.
 
-        Exactly what a correct responder is asked to do, matching the
-        puzzle's known-correct solution (see this scenario's own
-        description.value).
+        Matches the puzzle's known-correct solution (see this scenario's
+        own description.value).
         """
         location_block = (
             f"\n{car_alias}:\n    - location:\n        value: {location}\n"
@@ -154,12 +117,9 @@ class TestDeterministicWalkthrough:
         )
 
     def test_end_time_order_matches_true_arrival_order(self, tmp_path):
-        """car_b_drive (end_time 1020) must be served before car_b_park
-        (1030), before car_c_drive (1080), before car_c_park (1090),
-        before car_a_drive (1800), before car_a_park (1810).
+        """Confirms car_b_drive resolves before car_b_park, car_c_drive/park, then car_a_drive/park.
 
-        Computed straight from the scenario's own start_time+duration, not
-        trusted from prose -- pinned down here independent of any model.
+        Computed from the scenario's own start_time+duration, independent of any model.
         """
         ctx = _make_ctx()
         save_dir = tmp_path / "save"
@@ -170,8 +130,7 @@ class TestDeterministicWalkthrough:
         assert result["prompt"] == self._resolve_prompt("car_b_drive", end_time=1020)
 
     def test_full_walkthrough_exact_prompts_and_registry_state(self, tmp_path):
-        """Drives all six events to completion with predetermined correct
-        answers, asserting the exact prompt text and registry state at every step."""
+        """Drives all six events to completion, asserting exact prompt text and registry state at each step."""
         ctx = _make_ctx()
         save_dir = tmp_path / "save"
         start_world(str(save_dir), ctx, scenario_dir=str(SCENARIO_DIR))
@@ -210,9 +169,8 @@ class TestDeterministicWalkthrough:
 
 
 class TestLiveWalkthrough:
-    # alias -> a substring that must appear in that car's recorded
-    # location.value (see _parked_at below) -- not an exact string, since a
-    # live model's own phrasing of "parked in parking_spot_1" reasonably varies.
+    # alias -> substring in the car's recorded location.value (see
+    # _parked_at) -- not exact, since a model's phrasing varies.
     EXPECTED_LOCATION = {
         "car_b": "parking_spot_1",
         "car_c": "parking_spot_2",
@@ -229,9 +187,8 @@ class TestLiveWalkthrough:
         "car_c_park": "complete",
     }
 
-    # Order evidence: each car's location write should be time-stamped with its
-    # own *parking* event's end_time (not its driving event's), confirming the
-    # spot was assigned once that car's own parking event resolved.
+    # Order evidence: each location write should be time-stamped with its
+    # own *parking* event's end_time, not its driving event's.
     EXPECTED_WRITE_ORDER = {
         "component_type": "location",
         "times": {"car_b": 1030, "car_c": 1090, "car_a": 1810},
@@ -239,26 +196,15 @@ class TestLiveWalkthrough:
 
     @staticmethod
     def _parked_at(location: str | None, spot: str) -> bool:
-        """Loosely checks a recorded `location` value names `spot` (e.g.
-        "parking_spot_1" or "street"), not any one exact phrasing.
+        """Loosely checks a recorded `location` value names `spot`, not an exact phrasing.
 
-        `location`'s own schema (manifest/builtins.yaml) calls it a "short
-        freeform phrase" -- a model's correct answer can reasonably come out
-        phrased several ways ("parked in
-        parking_spot_1" vs. just "parking_spot_1") -- the model shouldn't
-        have to guess the one exact wording a test hardcodes. Takes the
-        value directly (e.g. from `registrar.get_current_value("location",
-        alias=alias)`) rather than reading it itself.
-
-        Scenario-specific, not shared -- tests/location_write_harness.py
-        keeps its own copy rather than importing this one.
+        Scenario-specific -- location_write_harness.py keeps its own copy
+        rather than importing this one.
         """
         return location is not None and spot in location
 
     def _check_parking(self, r) -> None:
-        """location is a freeform phrase (see _parked_at above) -- a live model's
-        correct answer can reasonably come out phrased several ways, so this checks
-        a substring rather than assert_subset's exact match."""
+        """Checks location by substring (see _parked_at) rather than assert_subset's exact match."""
         for alias, spot in self.EXPECTED_LOCATION.items():
             assert self._parked_at(r.get_current_value("location", alias=alias), spot), (
                 f"{alias} should be parked at {spot}"
@@ -266,18 +212,14 @@ class TestLiveWalkthrough:
 
     @pytest.mark.live
     def test_scenario_resolves_correctly(self, tmp_path: Path):
-        """Run to completion under a live "host"-responder session, then check
-        final registry state against this class's own EXPECTED_* attributes
-        (location by substring, event_state/write-order generically)."""
+        """Runs to completion under a live "host"-responder session, then checks final state."""
         save_dir = tmp_path / "test_save"
 
-        # This test's whole point is the *connected* model's own reasoning --
-        # explicit override of create_session's keyed_subagent default.
+        # This test's point is the *connected* model's reasoning -- explicit
+        # override of create_session's keyed_subagent default.
         #
-        # A "host"-responder run driving all six resolve+plan steps itself
-        # (twice as many as the race scenario's three events) routinely needs
-        # more than create_session's own 120s/240s defaults, timing out
-        # mid-event otherwise -- not on anything about the simulation itself.
+        # Raised timeouts: six resolve+plan steps routinely exceed the
+        # 120s/240s defaults, timing out mid-event otherwise.
         with create_session(save_dir, responder="host", turn_timeout=420, session_timeout=420) as session:
             print(f"agent session trace: {session.trace_path}")
             narration = session.send_turn(

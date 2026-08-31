@@ -14,7 +14,6 @@ from emc2p.registrar import Registrar
 from emc2p.testing.agent_session import AgentSession, Driver, create_agent_session
 from emc2p.testing.registry_checks import write_time
 from story_simulator.config import registry_url
-from story_simulator.core import safe_view_current
 
 REPO_ROOT = Path(__file__).parent.parent.parent
 
@@ -120,7 +119,7 @@ RUN_TO_DONE_INSTRUCTION = (
 
 def _event_states(registrar: Registrar) -> dict[str, str]:
     """Map of {event_alias: current event_state.value}, or {} if nothing's been recorded yet."""
-    df = safe_view_current(registrar, "event_state.value")
+    df = registrar.safe_view_current("event_state.value")
     if df is None:
         return {}
     return dict(zip(df["entity_id.alias"], df["event_state.value"]))

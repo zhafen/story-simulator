@@ -28,7 +28,6 @@ import time
 import urllib.parse
 from pathlib import Path
 
-import pandas as pd
 import psycopg
 import psycopg.sql
 from emc2p.mcp_server import SOURCE_KEY, RegistrarSessions
@@ -53,38 +52,6 @@ WORLD_HISTORY_DIRNAME = "world_history"
 # The single well-known entity `process_event` writes each popped event's
 # end_time onto, as a `world_clock` component -- see `_next_time_stamp`.
 WORLD_CLOCK_ALIAS = "simulation_clock"
-
-
-def safe_view(
-    registrar: Registrar, fields: str | list[str], aliases: str | list[str] | None = None
-) -> pd.DataFrame | None:
-    """Execute `registrar.view(fields, aliases)`, or None if that component type isn't loaded yet."""
-    names = [fields] if isinstance(fields, str) else fields
-    tables = {name.split(".", 1)[0] for name in names}
-    if not tables <= set(registrar.registry.component_types):
-        return None
-    try:
-        return registrar.view(fields, aliases).execute()
-    except KeyError:
-        return None
-
-
-def safe_view_current(
-    registrar: Registrar, fields: str | list[str], aliases: str | list[str] | None = None
-) -> pd.DataFrame | None:
-    """Like `safe_view`, but resolves each field's current row per entity.
-
-    Uses `registrar.view_current`.  A component type with no `time_dimension` field
-    behaves exactly like `safe_view` (every row is "current").
-    """
-    names = [fields] if isinstance(fields, str) else fields
-    tables = {name.split(".", 1)[0] for name in names}
-    if not tables <= set(registrar.registry.component_types):
-        return None
-    try:
-        return registrar.view_current(fields, aliases).execute()
-    except KeyError:
-        return None
 
 
 # Event-driven simulation loop -- one function per box in the turn-anatomy
@@ -116,7 +83,7 @@ def pop_event(registrar: Registrar) -> str | None:
     events = events.dropna(subset=["event.start_time", "event.duration"])
     if events.empty:
         return None
-    states = safe_view_current(registrar, "event_state.value")
+    states = registrar.safe_view_current("event_state.value")
     if states is not None:
         terminal_ids = set(states[states["event_state.value"].isin(_TERMINAL_EVENT_STATES)]["entity_id"])
         events = events[~events["entity_id"].isin(terminal_ids)]
@@ -182,7 +149,7 @@ def _next_time_stamp(registrar: Registrar) -> float:
     order. Falls back to 0.0 if nothing has been popped yet (e.g. a stray
     `update_registry` call before `advance_simulation` is ever run).
     """
-    df = safe_view(registrar, "world_clock.value")
+    df = registrar.safe_view("world_clock.value")
     if df is None or df.empty:
         return 0.0
     return float(df["world_clock.value"].max())

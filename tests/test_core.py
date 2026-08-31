@@ -12,7 +12,7 @@ from emc2p.registrar import Registrar
 
 from story_simulator import core
 from story_simulator.config import MANIFEST_DIR
-from story_simulator.core import pop_event, safe_view_current
+from story_simulator.core import pop_event
 
 # Every test here drives a real Registrar through update()/load_manifest --
 # the Hamilton driver construction that goes through dominates regardless
@@ -144,7 +144,7 @@ def test_update_registry_backfills_time_for_a_scenario_local_time_dimension_fiel
     # that only writes race_placement's value, never redeclaring its schema.
     core.registrar_sessions.update_registry(session, "car_a:\n    - race_placement:\n        value: 1\n")
 
-    df = safe_view_current(registrar, "race_placement.time", aliases="car_a")
+    df = registrar.safe_view_current("race_placement.time", aliases="car_a")
     assert df is not None and not df.empty
     assert not math.isnan(df.iloc[-1]["race_placement.time"])
 

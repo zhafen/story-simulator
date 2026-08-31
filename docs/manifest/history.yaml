@@ -724,3 +724,25 @@ project_history:
               own sake -- it's still recoverable from this file's own
               earlier entries and from git blame, just no longer
               duplicated inline for every future reader to wade through.
+    safe_view_and_safe_view_current_moved_to_emc2p:
+        - description: >
+              story_simulator/core.py's own safe_view/safe_view_current
+              free functions (KeyError-safe wrappers around
+              Registrar.view/view_current, used by pop_event/
+              _next_time_stamp to read a component type that might not
+              exist yet) carried no story-simulator-specific logic at
+              all -- moved upstream to emc2p as Registry.safe_view/
+              safe_view_current (Registrar property forwarding included),
+              with emc2p's own get_current_value rewritten to call
+              safe_view_current internally instead of duplicating its own
+              copy of the same try/except. Every call site here
+              (core.py, tests/test_human_validated/helpers.py,
+              tests/test_core.py, shelved/story_simulator/spatial.py)
+              switched from the free-function form
+              (safe_view_current(registrar, ...)) to the method form
+              (registrar.safe_view_current(...)); the emc2p pin in
+              pyproject.toml's [tool.uv.sources] was bumped to pick up
+              the new methods. See emc2p's own history.yaml entry of the
+              same name for the one behavior simplification made in the
+              move (an empty-but-declared component type now reads back
+              as an empty DataFrame rather than None).

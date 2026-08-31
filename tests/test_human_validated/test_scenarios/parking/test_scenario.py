@@ -191,33 +191,14 @@ class TestLiveWalkthrough:
         "times": {"car_b": 1030, "car_c": 1090, "car_a": 1810},
     }
 
-    @staticmethod
-    def _parked_at(location: str | None, spot: str) -> bool:
-        """Loosely checks a recorded `location` value names `spot`, not an exact phrasing.
-
-        Scenario-specific -- location_write_harness.py keeps its own copy
-        rather than importing this one.
-        """
-        return location is not None and spot in location
-
-    def _check_parking(self, r) -> None:
-        """Checks location by substring (see _parked_at) rather than assert_subset's exact match."""
-        for alias, spot in self.EXPECTED_LOCATION.items():
-            assert self._parked_at(r.get_current_value("location", alias=alias), spot), (
-                f"{alias} should be parked at {spot}"
-            )
-
     @pytest.mark.live
     def test_scenario_resolves_correctly(self, tmp_path: Path):
         """Runs to completion under a live "host"-responder session, then checks final state."""
         save_dir = tmp_path / "test_save"
 
-        # This test's point is the *connected* model's reasoning -- explicit
-        # override of create_session's keyed_subagent default.
-        #
         # Raised timeouts: six resolve+plan steps routinely exceed the
         # 120s/240s defaults, timing out mid-event otherwise.
-        with create_session(save_dir, responder="host", turn_timeout=420, session_timeout=420) as session:
+        with create_session(save_dir, turn_timeout=420, session_timeout=420) as session:
             print(f"agent session trace: {session.trace_path}")
             narration = session.send_turn(
                 f"Use start_world with save_dir={save_dir} and scenario_dir={SCENARIO_DIR} "
@@ -226,7 +207,14 @@ class TestLiveWalkthrough:
             r = Registrar.load(registry_url(save_dir))
 
             try:
-                self._check_parking(r)
+                # Check parking locations along the way
+                for alias, spot in self.EXPECTED_LOCATION.items():
+
+                    location = r.get_current_value("location", alias=alias)
+                    assert location is not None and spot in location, (
+                        f"{alias} should be parked at {spot}"
+                    )
+
                 assert_subset("event_state", self.EXPECTED_EVENT_STATE, _event_states(r))
                 _assert_write_order(r, self.EXPECTED_WRITE_ORDER)
             except AssertionError as exc:

@@ -8,6 +8,7 @@ EXPECTED_*/constants; only SCENARIO_DIR is shared.
 
 import asyncio
 from pathlib import Path
+from typing import ClassVar
 
 import pytest
 
@@ -46,7 +47,7 @@ class TestDeterministicWalkthrough:
 
     # (event_alias, car_alias, outcome, location written or None, end_time).
     # Order matches pop_event's sort (soonest end_time first); see scenario.yaml.
-    WALKTHROUGH = [
+    WALKTHROUGH: ClassVar[list[tuple[str, str, str, str | None, int]]] = [
         ("car_b_drive", "car_b", "car_b_drive resolved -- car_b arrived.", None, 1020),
         ("car_b_park", "car_b", "car_b_park resolved -- car_b parked in parking_spot_1.", "parking_spot_1", 1030),
         ("car_c_drive", "car_c", "car_c_drive resolved -- car_c arrived.", None, 1080),
@@ -171,14 +172,15 @@ class TestDeterministicWalkthrough:
 class TestLiveWalkthrough:
     # alias -> substring in the car's recorded location.value (see
     # _parked_at) -- not exact, since a model's phrasing varies.
-    EXPECTED_LOCATION = {
+    EXPECTED_LOCATION: ClassVar[dict[str, str]] = {
         "car_b": "parking_spot_1",
         "car_c": "parking_spot_2",
         "car_a": "street",
     }
 
     # alias -> expected event_state.value, once every drive/park event has resolved.
-    EXPECTED_EVENT_STATE = {
+    # ClassVar: read-only test data pytest test classes can't set via __init__.
+    EXPECTED_EVENT_STATE: ClassVar[dict[str, str]] = {
         "car_a_drive": "complete",
         "car_a_park": "complete",
         "car_b_drive": "complete",
@@ -189,7 +191,7 @@ class TestLiveWalkthrough:
 
     # Order evidence: each location write should be time-stamped with its
     # own *parking* event's end_time, not its driving event's.
-    EXPECTED_WRITE_ORDER = {
+    EXPECTED_WRITE_ORDER: ClassVar[dict[str, object]] = {
         "component_type": "location",
         "times": {"car_b": 1030, "car_c": 1090, "car_a": 1810},
     }

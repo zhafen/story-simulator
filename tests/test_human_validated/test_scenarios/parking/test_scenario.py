@@ -8,6 +8,7 @@ EXPECTED_*/constants; only SCENARIO_DIR is shared.
 
 import asyncio
 from pathlib import Path
+from textwrap import dedent
 from typing import ClassVar
 
 import pytest
@@ -89,34 +90,6 @@ class TestDeterministicWalkthrough:
             f"from this, just say so -- no new events needed."
         )
 
-    def _location(self, save_dir, alias: str) -> str | None:
-        """Read `alias`'s current location.value directly from the registry.
-
-        Same read path (view_current on a time_dimension'd component) a
-        live test failure needs cross-checking against.
-        """
-        return Registrar.load(registry_url(save_dir)).get_current_value("location", alias=alias)
-
-    def _mark_resolved(self, ctx, event_alias: str, car_alias: str, outcome: str, location: str | None) -> None:
-        """The "perfect" answer to a resolve prompt: outcome/event_state, plus location if parking.
-
-        Matches the puzzle's known-correct solution (see this scenario's
-        own description.value).
-        """
-        location_block = (
-            f"\n{car_alias}:\n    - location:\n        value: {location}\n"
-            if location is not None else ""
-        )
-        update_registry(
-            f"{event_alias}:\n"
-            f"    - outcome:\n"
-            f"        value: {outcome}\n"
-            f"    - event_state:\n"
-            f"        value: complete\n"
-            f"{location_block}",
-            ctx=ctx,
-        )
-
     def test_end_time_order_matches_true_arrival_order(self, tmp_path):
         """Confirms car_b_drive resolves before car_b_park, car_c_drive/park, then car_a_drive/park.
 
@@ -135,6 +108,7 @@ class TestDeterministicWalkthrough:
         ctx = _make_ctx()
         save_dir = tmp_path / "save"
         start_world(str(save_dir), ctx, scenario_dir=str(SCENARIO_DIR))
+        r = Registrar.load(registry_url(save_dir))
 
         result = asyncio.run(advance_simulation(ctx))
         for event_alias, car_alias, outcome, location, end_time in self.WALKTHROUGH:
@@ -142,9 +116,30 @@ class TestDeterministicWalkthrough:
             assert result["prompt"] == self._resolve_prompt(event_alias, end_time)
             assert result["responder"] == "host"
 
-            self._mark_resolved(ctx, event_alias, car_alias, outcome, location)
+            # The "perfect" answer to a resolve prompt: outcome/event_state, plus
+            # location if this is a parking event, matching the puzzle's known-correct solution.
             if location is not None:
-                assert self._location(save_dir, car_alias) == location, (
+                yaml_string = dedent(f"""\
+                    {event_alias}:
+                        - outcome:
+                            value: {outcome}
+                        - event_state:
+                            value: complete
+                    {car_alias}:
+                        - location:
+                            value: {location}
+                    """)
+            else:
+                yaml_string = dedent(f"""\
+                    {event_alias}:
+                        - outcome:
+                            value: {outcome}
+                        - event_state:
+                            value: complete
+                    """)
+            update_registry(yaml_string, ctx=ctx)
+            if location is not None:
+                assert r.get_current_value("location", alias=car_alias) == location, (
                     f"{car_alias}.location should read back exactly what was just "
                     f"written -- if this fails, update_registry's write didn't "
                     f"actually persist/read back, independent of anything a model "
@@ -166,7 +161,7 @@ class TestDeterministicWalkthrough:
         # Final state: every car ended up exactly where the puzzle says it should.
         for event_alias, car_alias, outcome, location, end_time in self.WALKTHROUGH:
             if location is not None:
-                assert self._location(save_dir, car_alias) == location
+                assert r.get_current_value("location", alias=car_alias) == location
 
 
 class TestLiveWalkthrough:

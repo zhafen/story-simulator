@@ -19,15 +19,24 @@ scratch, not a heavyweight process document.
 4. Copy `.env.example` to `.env` if you need any of the variables it
    documents (most local dev doesn't).
 
-If you're actively co-developing emc2p alongside this repo, a local,
-gitignored `uv.toml` (not `pyproject.toml`) can override the pinned
-dependency to a local editable path for faster iteration, e.g.:
-```toml
-[tool.uv.sources]
-emc2p = { path = "../emc2p", editable = true }
+If you're actively co-developing emc2p alongside this repo, don't edit the
+pinned dependency in `pyproject.toml` -- a `uv.toml` override doesn't work
+for this (uv rejects a `sources` table in `uv.toml` outright: "sources is
+only applicable in the context of a project, and should be placed in a
+pyproject.toml file instead"). Instead, layer a local editable install on
+top of the venv `uv sync` already built, after cloning emc2p as a sibling
+of this repo:
 ```
-The committed dependency in `pyproject.toml` stays the pinned git
-revision everyone else (and CI) installs.
+uv sync
+uv pip install -e ../emc2p --no-deps
+```
+Then use `uv run --no-sync ...` (for `pytest`, `story-simulator-mcp`,
+etc.) so uv doesn't resync the venv back to the pinned git revision before
+running -- a plain `uv run` (no `--no-sync`) re-syncs from `uv.lock` first
+and silently reverts the overlay. Edits under `../emc2p` take effect
+immediately, no reinstall needed. To go back to the pinned revision, just
+run `uv sync` (or any plain `uv run`) again; nothing needs manual
+reverting since this never touches `pyproject.toml` or `uv.lock`.
 
 ## Running tests
 

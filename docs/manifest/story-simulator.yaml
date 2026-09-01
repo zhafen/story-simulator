@@ -1401,6 +1401,129 @@ story_simulator_mission:
                     - location: test_human_validated.helpers
                     - work_state: done
 
+    fast_candidate_entity_resolution:
+        data:
+            - description: >
+                  Registry._resolve_aliases (and get_entity_id, and
+                  emc2p.dataflows.derive.resolve_same_as/resolve_paths)
+                  each call emc2p.utils.candidate_entity_ids once per
+                  row/alias in a Python loop, rather than as a single
+                  relational operation. candidate_entity_ids itself
+                  lives in emc2p, not this repo, but the boilerplate/perf
+                  pain that surfaced this requirement was noticed here,
+                  in story-simulator's own call patterns -- matching
+                  scd_time_data's cross-repo framing above.
+            - requirement
+            - requirement_priority
+            - impact:
+                  type: architecture_clarity
+                  value: 0.5
+            - work_state: in progress
+
+        add_batch_relational_resolution:
+            - description: >
+                  Add candidate_entity_ids_batch(user_paths,
+                  entity_id_table) -> dict[str, list[str]] to
+                  emc2p/utils.py -- one candidate list per input ref (not
+                  a flattened union), so per-ref ambiguity/mismatch stays
+                  identifiable. Tiers 1-2 (exact hash, exact alias)
+                  become real relational joins instead of N boolean-mask
+                  scans; tier 3 (substring/path-contains) scopes its
+                  inherently N x M cost to only the refs left unresolved
+                  after tiers 1-2, run once instead of redundantly per
+                  single-ref call. Turn candidate_entity_ids (singular)
+                  into a thin wrapper --
+                  candidate_entity_ids_batch([user_path],
+                  entity_id_table)[user_path] -- keeping existing
+                  signature/tests/callers untouched. Rewrite
+                  Registry._resolve_aliases to call the batch function
+                  once and loop only over the returned dict to warn
+                  exactly as today, one relational pass instead of N.
+                  New direct tests for candidate_entity_ids_batch (each
+                  tier, mixed-tier batch, duplicate refs, empty input);
+                  existing candidate_entity_ids/_resolve_aliases suites
+                  must pass unchanged as proof the wrapper is
+                  behavior-preserving. A raise_on_mismatch option
+                  (instead of warn-only) was considered and explicitly
+                  deferred, not built now.
+            - solution:
+                  selected: true
+            - pro: >
+                  O(N+M) relational joins replace N separate
+                  boolean-mask scans for the exact-hash/exact-alias
+                  tiers -- the same performance shape as perceive's own
+                  left-join-then-filter rewrite (see perceive in
+                  tool_catalog above).
+            - pro: >
+                  candidate_entity_ids keeps its existing signature as a
+                  thin wrapper, so no caller or test needs to change to
+                  pick up the speedup.
+            - con: >
+                  Tier 3 (substring/path-contains) is inherently N x M
+                  and isn't reduced to a plain join -- only scoped to
+                  fewer rows and run once instead of per-call; may still
+                  need pushing down to a real LIKE-based join in DuckDB
+                  if it's the remaining bottleneck (not attempted in
+                  this pass).
+            - work_state: new
+
+        migrate_remaining_per_row_loops:
+            - description: >
+                  resolve_same_as.py's .iterrows() and
+                  resolve_paths.py's .apply(..., axis=1) are two more
+                  per-row candidate_entity_ids call sites, deliberately
+                  left for a follow-up pass rather than this one: each
+                  row needs its own single resolved candidate folded
+                  into a new column, not a flat {ref: candidates} dict,
+                  so migrating them is a separate, smaller change once
+                  the batch function exists.
+            - todo:
+                  value: >
+                      Migrate resolve_same_as.py and resolve_paths.py's
+                      own per-row candidate_entity_ids loops onto
+                      candidate_entity_ids_batch once it exists.
+                  priority: 0.3
+
+        single_alias_usage_survey:
+            - description: >
+                  Open question from this session's review, not yet
+                  investigated: are there real usages of
+                  candidate_entity_ids for a single alias, as opposed to
+                  being called once-per-item inside a loop over many?
+                  Bears on whether keeping a singular wrapper is worth
+                  it at all, versus every caller just using the batch
+                  function directly (even for N=1).
+            - todo:
+                  value: >
+                      Survey every candidate_entity_ids call site
+                      (registry.py's two, resolve_same_as.py,
+                      resolve_paths.py) for whether any calls it for a
+                      genuinely single alias rather than once per
+                      row/item in a loop -- decide whether the singular
+                      wrapper earns its keep.
+                  priority: 0.2
+
+        call_site_formatting_survey:
+            - description: >
+                  Open question from this session's review, not yet
+                  investigated: what is the full spectrum of
+                  formatting/preprocessing applied to
+                  candidate_entity_ids' input and output across all its
+                  callers? E.g. str() coercion, filtering out the
+                  entity's own id from candidates, uniqueness
+                  assumptions, NaN/None handling before the call --
+                  needed so the batched version's contract doesn't
+                  silently drop something a caller currently relies on.
+            - todo:
+                  value: >
+                      Survey candidate_entity_ids' input/output handling
+                      across registry.py's two call sites,
+                      resolve_same_as.py, and resolve_paths.py (str()
+                      coercion, self-id filtering, uniqueness, NaN/None
+                      handling) before finalizing
+                      candidate_entity_ids_batch's contract.
+                  priority: 0.2
+
 # What satisfies each done (or partially done) requirement. Most solutions
 # now live as `__iacs__ = {"solution of": ...}` metadata in Python docstrings.
 

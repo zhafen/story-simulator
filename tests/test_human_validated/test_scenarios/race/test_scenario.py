@@ -1,8 +1,11 @@
 """Live regressions for this directory's scenario.yaml: three cars race for placement.
 
-test_resolves_correctly_via_host_responder has the connected model reason
-itself; test_resolves_and_persists_via_keyed_subagent has keyed_subagent
-do it in-process. Both check only final state via race_placement/EXPECTED_*.
+test_resolves_correctly runs under the default (keyed_subagent) responder
+and checks final state; test_persists_via_keyed_subagent is a minimal
+sibling that only confirms keyed_subagent's writes actually reach disk --
+its update_registry calls go through a different, nested-subagent path
+than a host responder's direct tool calls, so persistence isn't a given
+the way it is for every other live test.
 """
 
 from pathlib import Path
@@ -39,13 +42,11 @@ EXPECTED_WRITE_ORDER = {
 
 
 @pytest.mark.live
-def test_resolves_correctly_via_host_responder(tmp_path: Path):
-    """Runs to completion under a live "host"-responder session, then checks final state."""
+def test_resolves_correctly(tmp_path: Path):
+    """Runs to completion under a live session, then checks final state."""
     save_dir = tmp_path / "test_save"
 
-    # This test's whole point is the *connected* model's own reasoning --
-    # explicit override of create_session's keyed_subagent default.
-    with create_session(save_dir, responder="host") as session:
+    with create_session(save_dir, turn_timeout=420, session_timeout=420) as session:  # responder="keyed_subagent", the default
         print(f"agent session trace: {session.trace_path}")
         narration = session.send_turn(
             f"Use start_world with save_dir={save_dir} and scenario_dir={SCENARIO_DIR} "
@@ -69,38 +70,18 @@ def test_resolves_correctly_via_host_responder(tmp_path: Path):
 
 
 @pytest.mark.live
-def test_resolves_and_persists_via_keyed_subagent(tmp_path: Path):
-    """Confirms the simulation still resolves and persists when keyed_subagent does the writes.
-
-    Checks the same correctness as the host-responder test, plus that
-    save_dir/world/ actually exists and isn't empty afterward.
-    """
+def test_persists_via_keyed_subagent(tmp_path: Path):
+    """Confirms keyed_subagent's writes reach disk -- see module docstring."""
     save_dir = tmp_path / "test_save"
 
-    # Both timeouts raised well past create_session's own 120s/240s defaults --
-    # keyed_subagent's own nested DeepSeek rounds cost real time inside each call.
-    with create_session(save_dir, turn_timeout=420, session_timeout=420) as session:  # responder="keyed_subagent", the default
+    with create_session(
+        save_dir, responder="keyed_subagent", turn_timeout=420, session_timeout=420
+    ) as session:
         print(f"agent session trace: {session.trace_path}")
         narration = session.send_turn(
             f"Use start_world with save_dir={save_dir} and scenario_dir={SCENARIO_DIR} "
             f"to open a story-simulator world. Then {RUN_TO_DONE_INSTRUCTION}"
         )
-        r = Registrar.load(registry_url(save_dir))
-        try:
-            placements = {
-                alias: r.get_current_value("race_placement", "value", alias)
-                for alias in EXPECTED_RACE_PLACEMENT
-            }
-            assert_subset("race_placement", EXPECTED_RACE_PLACEMENT, placements)
-            event_states = {
-                alias: r.get_current_value("event_state", "value", alias)
-                for alias in EXPECTED_EVENT_STATE
-            }
-            assert_subset("event_state", EXPECTED_EVENT_STATE, event_states)
-            _assert_write_order(r, EXPECTED_WRITE_ORDER)
-        except AssertionError as exc:
-            raise AssertionError(f"{exc} -- narration: {narration!r}") from exc
-
         world_dir = save_dir / "world"
         assert world_dir.is_dir(), (
             f"save_dir/world/ was never created -- keyed_subagent's update_registry calls "

@@ -192,7 +192,7 @@ class TestLiveWalkthrough:
 
     @pytest.mark.live
     def test_scenario_resolves_correctly(self, tmp_path: Path):
-        """Runs to completion under a live "host"-responder session, then checks final state."""
+        """Runs to completion under a live session, then checks final state."""
         save_dir = tmp_path / "test_save"
 
         # Raised timeouts: six resolve+plan steps routinely exceed the

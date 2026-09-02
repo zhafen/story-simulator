@@ -23,7 +23,6 @@ from test_human_validated.helpers import (
     RUN_TO_DONE_INSTRUCTION,
     create_session,
     _assert_write_order,
-    _event_states,
 )
 
 SCENARIO_DIR = Path(__file__).parent
@@ -215,7 +214,11 @@ class TestLiveWalkthrough:
                         f"{alias} should be parked at {spot}"
                     )
 
-                assert_subset("event_state", self.EXPECTED_EVENT_STATE, _event_states(r))
+                event_states = {
+                    alias: r.get_current_value("event_state", "value", alias)
+                    for alias in self.EXPECTED_EVENT_STATE
+                }
+                assert_subset("event_state", self.EXPECTED_EVENT_STATE, event_states)
                 _assert_write_order(r, self.EXPECTED_WRITE_ORDER)
             except AssertionError as exc:
                 raise AssertionError(f"{exc} -- narration: {narration!r}") from exc

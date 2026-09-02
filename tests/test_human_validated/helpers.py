@@ -117,14 +117,6 @@ RUN_TO_DONE_INSTRUCTION = (
 )
 
 
-def _event_states(registrar: Registrar) -> dict[str, str]:
-    """Map of {event_alias: current event_state.value}, or {} if nothing's been recorded yet."""
-    df = registrar.safe_view_current("event_state.value")
-    if df is None:
-        return {}
-    return dict(zip(df["entity_id.alias"], df["event_state.value"]))
-
-
 def _assert_write_order(registrar: Registrar, write_order: dict) -> None:
     """Asserts each alias's component was time-stamped with its own expected world time.
 

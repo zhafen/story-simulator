@@ -1,23 +1,23 @@
 file_info:
     - description: >
-        Structural regression fixture for
-        tests/test_human_validated/test_parking_split_live.py
-        (task #65, investigating #57). Splits tests/data/scenarios/parking/
-        scenario.yaml's single combined "trip" event (driving + parking
-        bundled into one resolution) into two separate, pre-planned events
-        per car: a driving event (ends on arrival) and a parking event
-        (spot assignment). Reuses the exact same start_time/duration facts
-        for each car's driving leg as the parking scenario, so arrival
-        order is identical (car_b arrives at 1020, car_c at 1080, car_a at
-        1800); each car's parking event is pre-planned to start the moment
-        its own driving event ends, with a short fixed 10-second duration,
-        so pop_event's own mechanical sort (soonest end_time first) still
-        resolves everything in the intended order: car_b drives, car_b
-        parks, car_c drives, car_c parks, car_a drives, car_a parks --
-        never a driving and a parking event tied at the same end_time.
-        Tests whether first-come-first-served parking still comes out
-        right once driving and parking are no longer bundled into one
-        event's resolution.
+        Regression fixture for this directory's own test_scenario.py
+        (both TestDeterministicWalkthrough and TestLiveWalkthrough).
+        Three cars drive to a restaurant with only two parking spots,
+        first-come-first-served; each car's drive and its own parking
+        decision are two separate, pre-planned events (a driving event
+        that ends on arrival, then a parking event that assigns a spot),
+        not bundled into one combined "trip" resolution -- an earlier
+        version of this scenario did bundle them, and this split version
+        superseded it once the split kept the same correctness a combined
+        event lost.
+
+        Each car's parking event is pre-planned to start the moment its
+        own driving event ends, with a short fixed 10-second duration, so
+        pop_event's own mechanical sort (soonest end_time first) still
+        resolves everything in the intended order: car_b drives (end_time
+        1020), car_b parks (1030), car_c drives (1080), car_c parks
+        (1090), car_a drives (1800), car_a parks (1810) -- never a driving
+        and a parking event tied at the same end_time.
 
 restaurant:
     - object:

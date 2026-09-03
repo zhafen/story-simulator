@@ -72,13 +72,13 @@ cost_budgets:
 story_simulator_mission:
     data:
         - description: To enable players to create and experience self-consistent stories with simulation mechanics handled by AI.
-        - requirement
+        - requirement_priority
     stateless_client:
         - description: >
               Any MCP-aware client can open the same save_dir and see identical
               world state — nothing narratively load-bearing lives only in one
               client's conversation context.
-        - requirement
+        - requirement_priority
         - impact:
               type: reliability
               value: 1
@@ -92,7 +92,7 @@ story_simulator_mission:
               two call sites would hash to two different entity_ids and
               silently fork a duplicate entity instead of updating the
               original.
-        - requirement
+        - requirement_priority
         - impact:
               type: reliability
               value: 0.9
@@ -104,7 +104,7 @@ story_simulator_mission:
               read or write concurrently — rules out a single-file embedded
               database (e.g. DuckDB), which locks out every other connection
               while one process holds it open.
-        - requirement
+        - requirement_priority
         - impact:
               type: reliability
               value: 0.8
@@ -115,7 +115,7 @@ story_simulator_mission:
               localhost-only Postgres that isn't running yet rather than
               failing outright — a deliberately remote or already-configured
               server must never be touched.
-        - requirement
+        - requirement_priority
         - impact:
               type: developer_experience
               value: 0.4
@@ -136,7 +136,7 @@ story_simulator_mission:
               "nothing with an earlier end_time is still unresolved"
               language is the model to follow: a general rule any scenario
               benefits from, not one keyed to a particular entity or story.
-        - requirement
+        - requirement_priority
         - impact:
               type: architecture_clarity
               value: 0.5
@@ -150,7 +150,7 @@ story_simulator_mission:
                   Must seed only an empty save from scenario_dir/DEFAULT_WORLD_DIR
                   once — a resumed save's accumulated registry state must never
                   be re-merged with the starting scenario on reconnect.
-            - requirement
+            - requirement_priority
             - impact:
                   type: reliability
                   value: 0.9
@@ -159,12 +159,11 @@ story_simulator_mission:
             - description: >
                   Markdown dump of every recorded instance of one component
                   type. Delegates to iacs's own Registrar.view_df rather than
-                  reimplementing the read logic -- see docs/manifest/
-                  history.yaml: project_history.
-                  story_simulator_view_tools_reinstated_as_iacs_delegates for
-                  why this is a thin wrapper rather than routed through a
-                  separate iacs-mcp call.
-            - requirement
+                  reimplementing the read logic -- a thin wrapper mounted
+                  directly on this server rather than routed through a
+                  separate iacs-mcp call, so a connected host doesn't need
+                  to discover a second MCP server just to read something.
+            - requirement_priority
             - impact:
                   type: reliability
                   value: 0.6
@@ -174,17 +173,16 @@ story_simulator_mission:
                   Every recorded component instance for one entity, resolved by
                   exact hash, exact alias, or unambiguous path fragment.
                   Delegates to iacs's own Registrar.view_entity rather than
-                  reimplementing the traversal -- see docs/manifest/
-                  history.yaml: project_history.
-                  story_simulator_view_tools_reinstated_as_iacs_delegates.
-            - requirement
+                  reimplementing the traversal -- same thin-wrapper
+                  reasoning as view_registry above.
+            - requirement_priority
             - impact:
                   type: reliability
                   value: 0.6
             - work_state: done
         update_registry:
             - description: Merges entity-first YAML into the registry through the same ETL as save files.
-            - requirement
+            - requirement_priority
             - impact:
                   type: reliability
                   value: 0.9
@@ -192,14 +190,12 @@ story_simulator_mission:
         consolidate_review:
             - description: >
                   Every component type recorded so far, in one call, for the
-                  host to review and consolidate anything wrong -- #76's
+                  host to review and consolidate anything wrong -- a
                   post-write alternative to update_registry's own pre-write
                   preview/confirm flow. Delegates to iacs's own Registrar.
                   summarize_components rather than reimplementing it -- same
-                  reason view_registry/view_entity are thin wrappers (see
-                  docs/manifest/history.yaml: project_history.
-                  story_simulator_view_tools_reinstated_as_iacs_delegates).
-            - requirement
+                  reason view_registry/view_entity are thin wrappers.
+            - requirement_priority
             - impact:
                   type: reliability
                   value: 0.6
@@ -215,28 +211,26 @@ story_simulator_mission:
                   single flat cutoff for every entity — a mountain stays
                   perceptible far beyond a dropped coin, with no artificial
                   floor keeping small objects perceptible regardless of range
-                  (a floor was tried and dropped on review: the formula already
-                  gives even a 0.02m object ~1.9m of visibility distance on its
-                  own). Computed as one relational query (a left join between
+                  (no floor is needed: the formula already gives even a
+                  0.02m object ~1.9m of visibility distance on its own).
+                  Computed as one relational query (a left join between
                   positions and sizes, then a filter) via ibis, not a Python
-                  loop over rows. Fixes a playtesting bug (see
-                  project_history.door_visibility_bug_found_playtesting) where
-                  a 2m door was narrated as visible from ~2km away.
-            - requirement
+                  loop over rows.
+            - requirement_priority
             - impact:
                   type: reliability
                   value: 0.8
             - work_state: done
         generate_terrain:
             - description: One LiteLLM call inventing terrain for a location with none established, consistent with what's already known.
-            - requirement
+            - requirement_priority
             - impact:
                   type: gameplay_richness
                   value: 0.6
             - work_state: done
         resolve_physics:
             - description: One LiteLLM call judging the plausible physical outcome of an action not obviously safe to decide directly.
-            - requirement
+            - requirement_priority
             - impact:
                   type: gameplay_richness
                   value: 0.6
@@ -247,7 +241,7 @@ story_simulator_mission:
                   case with nobody chatting to drive it — via a nested
                   decide-then-(generate_terrain/resolve_physics/update_registry)*
                   loop.
-            - requirement
+            - requirement_priority
             - impact:
                   type: gameplay_richness
                   value: 0.7
@@ -255,19 +249,16 @@ story_simulator_mission:
     seed_yaml_reflects_live_state:
         - description: >
               An agent that reads a save's YAML directly should see current
-              registry state, or at least be clearly warned it can't. Fixed
-              by having every update_registry call (including
-              advance_npc_turn's own internal one) re-export the registry's
-              current state to save_dir/world.yaml, a generated, read-only
-              mirror rewritten in full each turn — the original seed YAML
-              itself is still never touched. See docs/manifest/history.yaml:
-              project_history.seed_yaml_staleness_discovered and
-              .seed_yaml_reflects_live_state_fix_landed for the bug/fix
-              history. Not fully closed: an agent could still default to
-              grepping the frozen seed specifically instead of the live
-              world.yaml, or not know world.yaml exists — see
+              registry state, or at least be clearly warned it can't. Every
+              update_registry call (including advance_npc_turn's own
+              internal one) re-exports the registry's current state to
+              save_dir/world.yaml, a generated, read-only mirror rewritten
+              in full each turn — the original seed YAML itself is still
+              never touched. Not fully closed: an agent could still
+              default to grepping the frozen seed specifically instead of
+              the live world.yaml, or not know world.yaml exists — see
               mcp_instructions_mention_world_yaml.
-        - requirement
+        - requirement_priority
         - impact:
               type: reliability
               value: 0.6
@@ -287,7 +278,7 @@ story_simulator_mission:
               reaches any connected MCP client. Needs a periodic pass, not a
               one-time fix, since CLAUDE.md keeps accumulating this kind of
               knowledge.
-        - requirement
+        - requirement_priority
         - impact:
               type: reliability
               value: 0.3
@@ -305,7 +296,7 @@ story_simulator_mission:
               loader that turns an `agent` entity into an AgentSpec, and an MCP
               tool that dispatches to it. Reserved in manifest/builtins.yaml;
               not read by any code yet.
-        - requirement
+        - requirement_priority
         - impact:
               - type: gameplay_richness
                 value: 0.6
@@ -319,37 +310,26 @@ story_simulator_mission:
         - work_state: new
     world_time_concept:
         - description: >
-              The simulation had no representation of in-fiction elapsed time
-              (day/night, how long a character has walked, the living world's
-              "a year forward" door mechanic) independent of the wall-clock
-              ordering value (_next_turn_stamp) that only existed to resolve
-              which of an entity's position rows is current.
+              The simulation has no representation of in-fiction elapsed
+              time (day/night, how long a character has walked, the living
+              world's "a year forward" door mechanic) beyond the plain
+              world-time axis described below.
 
               Position/state/location's ordering field is `time` (in seconds
               since world creation), sourced from whichever `event` was most
               recently popped -- see core._next_time_stamp and
-              single_ordering_vocabulary. The old next_due-based mechanism
-              this paragraph used to describe is gone entirely
-              (manifest/builtins.yaml's next_due component was dead schema,
-              removed); still no day/night cycle or calendar, and "how long
-              has X been walking" is answerable from `time` deltas but
-              nothing surfaces it yet.
+              single_ordering_vocabulary. Still no day/night cycle or
+              calendar, and "how long has X been walking" is answerable
+              from `time` deltas but nothing surfaces it yet.
 
-              Resolved on 2026-08-19 (docs/manifest/history.yaml:
-              project_history.world_clock_persisted): world time used to be
-              purely in-process, session-scoped memory (_current_world_time),
-              not a registry entity, so it reset on *every* idle-triggered
-              MCP disconnect (a routine, expected event per CLAUDE.md's own
-              recovery guidance), not just a crash -- risking a
-              silently-stale read if an update_registry call landed in the
-              narrow reconnect window before the next event pop. Now a
-              `world_clock` component (manifest/builtins.yaml) on a fixed
-              entity, read via `core._next_time_stamp(registrar)`, so it
-              survives a reconnect the same way every other piece of world
-              state already does. What remains open here is the day/night
-              cycle/calendar/elapsed-time-surfacing scope only, not this
-              persistence gap.
-        - requirement
+              World time itself is a `world_clock` component
+              (manifest/builtins.yaml) on a fixed entity, read via
+              `core._next_time_stamp(registrar)` -- a registry entity, not
+              process memory scoped to one MCP session, so it survives a
+              reconnect the same way every other piece of world state
+              already does. What remains open here is the day/night
+              cycle/calendar/elapsed-time-surfacing scope only.
+        - requirement_priority
         - impact:
               type: gameplay_richness
               value: 0.2
@@ -365,7 +345,7 @@ story_simulator_mission:
               behavior, and a realistic multi-tool-call play session, should
               have real-model (@pytest.mark.live) coverage, not just
               tool-level tests against a mocked LLM.
-        - requirement
+        - requirement_priority
         - impact:
               type: reliability
               value: 0.6
@@ -380,10 +360,10 @@ story_simulator_mission:
               provider relies on that provider's own standard env-var discovery;
               there's no general per-user, per-provider credential story yet.
 
-              Sharpened 2026-08-16: today every API key (any provider) is
-              stored the same way regardless of who's running the server --
-              a plain process environment variable, read straight off the
-              host. Before designing the per-provider story above, assess
+              Today every API key (any provider) is stored the same way
+              regardless of who's running the server -- a plain process
+              environment variable, read straight off the host. Before
+              designing the per-provider story above, assess
               whether that storage mechanism itself is still right once
               this isn't just one developer's local env: is a bare env var
               adequate for a shared/hosted deployment (Epic E's stranger-
@@ -393,7 +373,7 @@ story_simulator_mission:
               D's "no secrets committed" / "auth/session-isolation
               documented" release-checklist bullets and Epic E's
               auth-token-to-save_dir design either way.
-        - requirement
+        - requirement_priority
         - impact:
               - type: gameplay_richness
                 value: 0.2
@@ -405,10 +385,10 @@ story_simulator_mission:
         - work_state: new
     position_render_tool:
         - description: >
-              The pre-rebuild VisualizerSystem's SVG position plot has no
-              equivalent MCP tool today — a connected agent can't currently get
-              a rendered top-down view of the world, only text.
-        - requirement
+              No MCP tool renders a top-down view of the world today —
+              a connected agent can't currently get a rendered position
+              plot, only text.
+        - requirement_priority
         - impact:
               type: gameplay_richness
               value: 0.5
@@ -425,7 +405,7 @@ story_simulator_mission:
               run_dataflow("audit.requirement_coverage")/("audit.traceability")
               can check the project's own design and resolved_impact_cost can
               rank open work instead of re-deriving priorities from memory.
-        - requirement
+        - requirement_priority
         - impact:
               type: architecture_clarity
               value: 0.8
@@ -435,12 +415,13 @@ story_simulator_mission:
         - work_state: done
     no_orphaned_modules:
         - description: >
+              Every module in this project should have a real importer.
               story_simulator/mcp_client.py (open_iacs_mcp_session,
-              McpToolSession) has had no importer since the turn-pipeline
-              removal (acb2956) deleted the Archivist that used it. Either
-              delete it or repurpose it for ec_defined_agents (an EC-defined
-              agent could plausibly need to talk to iacs-mcp the same way).
-        - requirement
+              McpToolSession) had none and, on top of that, existed only to
+              spawn iacs-mcp as a subprocess -- a dev-environment tool this
+              project's own runtime must not depend on -- so it was deleted
+              rather than repurposed.
+        - requirement_priority
         - impact:
               type: architecture_clarity
               value: 0.4
@@ -449,18 +430,15 @@ story_simulator_mission:
                 value: 1
               - type: regression_risk
                 value: 0.1
-        - work_state: new
+        - work_state: done
     config_as_ec_files:
         - description: >
               story_simulator/config.py hardcodes file paths, source
               identifiers, and other project constants in Python rather than
               letting a world-author override them via EC data. Evaluate
               moving as much of that config as reasonably can be into EC
-              files instead. Migrated 2026-08-13 from a loose
-              `__iacs__ = {"todo": ...}` marker in config.py itself, so this
-              backlog note isn't split across code docstrings and the
-              manifest.
-        - requirement
+              files instead.
+        - requirement_priority
         - impact:
               type: developer_experience
               value: 0.2
@@ -477,14 +455,8 @@ story_simulator_mission:
               core.py. Evaluate whether the event loop deserves a more
               deliberate structure (a class, a dataclass-based state object,
               an explicit stage protocol) as more modules start hooking into
-              it, instead of a flat function bag. Migrated 2026-08-13 from a
-              loose `__iacs__ = {"todo": ...}` marker in core.py itself
-              (which also carries `"solution of":
-              story_simulator_mission.stateless_client` -- that part stays
-              in the code, only the todo note moved here). Function names
-              updated 2026-08-16 to match the event-entity rework
-              (predict_next_event/push_event no longer exist).
-        - requirement
+              it, instead of a flat function bag.
+        - requirement_priority
         - impact:
               type: architecture_clarity
               value: 0.3
@@ -499,58 +471,47 @@ story_simulator_mission:
             - description: >
                   Review of every slowly-changing-dimension/time-ordering
                   object across iacs (the general mechanism) and
-                  story-simulator (position/state/next_due/clock), prompted
-                  by real duplication found while adding next_due/clock this
-                  session: a tie-breaking bug traced to iacs's own
-                  Registry.merge/view_current (see
-                  deterministic_current_resolution) -- and while scoping a
-                  fix, four near-identical turn/time field blocks (position,
-                  state, next_due, clock) turned up along the way (see
-                  single_ordering_vocabulary). Related to world_time_concept
-                  (a still-open sibling requirement asking for a genuine
-                  in-fiction-time axis distinct from mere row-ordering) --
-                  next_due/clock are this session's first attempt at that
-                  axis, not a replacement for evaluating it properly.
+                  story-simulator (position/state/next_due/clock): four
+                  near-identical turn/time field blocks (position, state,
+                  next_due, clock) repeat almost the same schema (see
+                  single_ordering_vocabulary), and Registry.merge/
+                  view_current has a tie-breaking gap on shared
+                  time_dimension values (see
+                  deterministic_current_resolution). Related to
+                  world_time_concept (a still-open sibling requirement
+                  asking for a genuine in-fiction-time axis distinct from
+                  mere row-ordering) -- next_due/clock are a first attempt
+                  at that axis, not a replacement for evaluating it
+                  properly.
 
-                  Impact estimates below were lowered on 2026-08-13: a
-                  working solution (zhafen/iacs#94's `_seq_{field}` fix)
-                  already resolves the concrete tie-breaking bug that made
-                  this cluster urgent, even though it isn't merged yet. What
-                  remains open here is naming/architecture cleanup, not an
-                  active correctness gap -- kept in this manifest rather
-                  than pulled into a GitHub issue, since it's no longer
-                  actively worked at that urgency.
+                  What remains open here is naming/architecture cleanup,
+                  not an active correctness gap: zhafen/iacs#94's
+                  `_seq_{field}` fix already resolves the concrete
+                  tie-breaking bug that made this cluster urgent, even
+                  though it isn't merged yet.
         deterministic_current_resolution:
             - description: >
                   Two rows sharing the same time_dimension value must still
                   resolve to exactly one deterministic "current" row --
-                  Registry.view_current's row_number() window previously
-                  broke ties arbitrarily (backend-dependent), confirmed
-                  failing this session (a second update_registry call in
-                  the same in-world "turn" silently lost to the first).
+                  Registry.view_current's row_number() window can otherwise
+                  break ties arbitrarily (backend-dependent), silently
+                  losing a second update_registry call in the same
+                  in-world "turn" to the first.
 
-                  A `type: time_dimension` shorthand field type was tried
-                  first (zhafen/iacs#93) but abandoned -- extra schema-
-                  language complexity for a small boilerplate savings, and
-                  inaccurate (it hardcoded int, but some time_dimension
-                  fields are legitimately float). It also didn't even touch
-                  tie-breaking; that gap sat undiscovered in this
-                  requirement's own "done" status until directly reproduced.
-
-                  Fixed for real via zhafen/iacs#94 (open, not yet merged):
-                  a `_seq_{field}` write-order column, scoped only to
+                  Fix (via zhafen/iacs#94, open, not yet merged): a
+                  `_seq_{field}` write-order column, scoped only to
                   component types with a time_dimension field, that
                   Registry.merge assigns to genuinely-new rows (identified
                   via a set difference on every other column, matching the
                   existing union/distinct dedup) and never rewrites once
                   assigned. Registry._current_table breaks a tie via
                   `_seq_{field}` (most-recent-write wins) when present.
-                  Known gap, not fixed: a cold reload from an exported save
-                  reassigns fresh sequence numbers from scratch rather than
-                  truly persisting write order across a session boundary --
-                  good enough for the concrete bug (a tie within one
-                  continuous session), not a complete fix.
-            - requirement
+                  Known gap: a cold reload from an exported save reassigns
+                  fresh sequence numbers from scratch rather than truly
+                  persisting write order across a session boundary -- good
+                  enough for a tie within one continuous session, not a
+                  complete fix.
+            - requirement_priority
             - impact:
                   type: reliability
                   value: 0.3
@@ -558,22 +519,19 @@ story_simulator_mission:
         single_ordering_vocabulary:
             - description: >
                   One name, one schema shape, for "the field that orders
-                  which row is current" -- position.turn/state.turn/
-                  next_due.turn used `turn`, iacs's own description.time
-                  used `time`, and each of the three story-simulator blocks
-                  repeated the same ~6-line description/type/nullable/
-                  time_dimension declaration almost word for word.
+                  which row is current" across position/state/next_due/
+                  clock's `time` field (matching iacs's own
+                  description.time) -- each block still repeats the same
+                  ~6-line description/type/nullable/time_dimension
+                  declaration by hand.
 
-                  Naming half done: position/state/next_due were renamed to
-                  `time`, matching iacs's own description.time, so it's one
-                  name everywhere now. The schema-shape half (a shorthand
-                  field type so a component author writes one line instead
-                  of six) was tried as `type: time_dimension`
-                  (zhafen/iacs#93) and abandoned -- extra schema-language
-                  complexity for a small saving, and inaccurate (hardcoded
-                  int, but time is legitimately float here). The three
-                  blocks still repeat the boilerplate by hand.
-            - requirement
+                  A `type: time_dimension` shorthand field type (candidate
+                  solution reusable_time_dimension_field_type,
+                  zhafen/iacs#93) would collapse that to one line, but
+                  needs to support both int and float -- not every
+                  time_dimension field is an int -- to be worth the added
+                  schema-language complexity.
+            - requirement_priority
             - impact:
                   type: architecture_clarity
                   value: 0.2
@@ -586,10 +544,9 @@ story_simulator_mission:
                   iacs's own "which columns are infrastructure, not user
                   data" concept is defined twice, independently:
                   registry.py's _TABLE_META_COLS and export_manifest.py's
-                  _METADATA_COLS. Both needed the same _seq addition by hand
-                  this session -- exactly the kind of drift risk a single
+                  _METADATA_COLS -- exactly the kind of drift risk a single
                   source of truth would prevent.
-            - requirement
+            - requirement_priority
             - impact:
                   type: architecture_clarity
                   value: 0.2
@@ -601,13 +558,11 @@ story_simulator_mission:
             - work_state: new
         honest_function_responsibilities:
             - description: >
-                  story_simulator.core.advance_clock (moved from
-                  story_simulator.spatial when the base event-loop kernel
-                  was split out) reads next_due AND writes the world_clock
-                  entity under a name that only advertises reading -- a
-                  caller checking "what does this function do" from its
-                  name alone would miss the write.
-            - requirement
+                  story_simulator.core.advance_clock reads next_due AND
+                  writes the world_clock entity under a name that only
+                  advertises reading -- a caller checking "what does this
+                  function do" from its name alone would miss the write.
+            - requirement_priority
             - impact:
                   type: architecture_clarity
                   value: 0.15
@@ -625,13 +580,13 @@ story_simulator_mission:
                       entry here stays work_state: new until one is picked.
             keep_current_design:
                 - description: >
-                      Do nothing further -- ship this session's `_seq` fix
-                      as-is and leave the rest.
+                      Do nothing further -- ship the `_seq` fix as-is and
+                      leave the rest.
 
-                      PROS: already implemented and fully tested (367 iacs +
-                      55 story-simulator tests green); zero further
-                      engineering cost; every component's schema stays
-                      fully self-contained and explicit, nothing "magic".
+                      PROS: already implemented and fully tested; zero
+                      further engineering cost; every component's schema
+                      stays fully self-contained and explicit, nothing
+                      "magic".
 
                       CONS: the duplication that prompted this review is
                       still there -- four near-copy-pasted turn blocks, two
@@ -764,8 +719,8 @@ story_simulator_mission:
                       independently.
 
                       PROS: directly fixes the exact two-lists-out-of-sync
-                      pain hit this session; small, low-risk, no schema or
-                      behavior change.
+                      pain this cluster identified; small, low-risk, no
+                      schema or behavior change.
 
                       CONS: export_manifest.py's list has one entry
                       (is_primary) registry.py's doesn't -- needs a small
@@ -782,6 +737,792 @@ story_simulator_mission:
                       - type: regression_risk
                         value: 0.1
                 - work_state: new
+
+    live_testing_framework:
+        data:
+            - description: >
+                  Seven concrete requirements for what the live-testing
+                  solution (tests/test_human_validated/ in this repo,
+                  emc2p.testing/emc2p.testing.expected_fixtures upstream) must
+                  actually guarantee.
+
+                  Sibling to live_model_test_coverage (a still-open, more
+                  general "have real-model coverage at all" requirement) --
+                  this subtree is about the shape of the testing solution
+                  itself, not just whether coverage exists.
+
+                  requirements/ and candidate_solutions/ are kept at the same
+                  nesting depth deliberately -- a requirement only carries
+                  impact (what it's worth once satisfied), never cost: we don't
+                  know what satisfying an abstract requirement costs in the
+                  abstract, only what a specific solution costs. A solution
+                  only carries cost (what it costs to build/adopt), never
+                  impact: a solution's impact IS the impact of whichever
+                  requirement(s) it satisfies (its own `solution of` links),
+                  not a separate number to invent per solution.
+        requirements:
+            data:
+                - description: >
+                      The seven requirements themselves.
+
+                      See the impact/cost split explained on
+                      live_testing_framework's own description above.
+            scenario_variety:
+                - description: >
+                      Must enable testing a variety of scenarios -- adding a
+                      new scenario shouldn't require new test-harness code,
+                      just new data.
+
+                      Mostly true today: a new scenario is just a new
+                      manifest-style scenario_dir plus its own expected.py;
+                      iacs's own example_dirs() parametrization and this repo's
+                      Case list (test_scenario_resolution.py) both add a
+                      scenario as a few lines, not a new file.
+                - requirement_priority
+                - impact:
+                      type: reliability
+                      value: 0.4
+                - work_state: in progress
+            live_agent_behavior_check:
+                - description: >
+                      Must enable testing how an agent performs live for a
+                      given scenario -- a real model, over a real MCP
+                      round-trip, reasoning about the scenario itself, not a
+                      mocked LLM.
+
+                      Live today via McpClientSession/HeadlessSession
+                      (emc2p.testing) and @pytest.mark.live tests, but
+                      responder="subagent" isolation is unverified (see the
+                      TODO in story_simulator/resolve.py's
+                      _frame_for_responder).
+                - requirement_priority
+                - impact:
+                      type: reliability
+                      value: 0.6
+                - work_state: in progress
+            deterministic_machinery_check:
+                - description: >
+                      Must enable testing how the simulation machinery itself
+                      works for a given scenario by accepting pre-determined
+                      static input -- isolating "does the mechanism work" from
+                      "does the model reason correctly", with no LLM and no
+                      cost.
+
+                      Done for one scenario (test_car_parking_deterministic.py,
+                      hand-scripted answers driven directly through
+                      advance_simulation/update_registry), but not yet folded
+                      into the same Case/expected.py framework
+                      scenario_variety's other solutions use.
+                - requirement_priority
+                - impact:
+                      type: reliability
+                      value: 0.5
+                - work_state: in progress
+            switchable_test_agent:
+                - description: >
+                      Must allow the agent executing the process to be switched
+                      to and from a CLI from the host (e.g. claude) or a keyed
+                      subagent, for now depending on static parameters.
+
+                      No requirement yet that this be chosen dynamically
+                      mid-run. Done via HeadlessSession (spawns `claude -p` as
+                      a real subprocess) versus McpClientSession's own
+                      `responder` construction-time argument
+                      ("host"/"subagent"/"keyed_subagent", see
+                      story_simulator.keyed_subagent) -- both a static,
+                      per-session choice, matching what's asked for here.
+                - requirement_priority
+                - impact:
+                      - type: reliability
+                        value: 0.3
+                      - type: developer_experience
+                        value: 0.2
+                - work_state: in progress
+            centralized_scenario_authoring:
+                - description: >
+                      HIGHEST PRIORITY. Must allow the human creators to easily
+                      lay out a scenario, the expected values, and test
+                      parameters side by side in one centralized location.
+
+                      Humans need to look at what the scenario is and what they
+                      expect to come of it together, not reconstruct that
+                      pairing by reading several files. Not done today: a
+                      scenario's manifest (tests/data/scenarios/<name>/), its
+                      expected.py
+                      (tests/test_human_validated/expected/<name>.py), and its
+                      test parameters (responder, timeouts, turn instructions
+                      -- test_scenario_resolution.py's Case list) are three
+                      separate locations in two different formats (YAML data,
+                      Python data/code).
+                - requirement_priority
+                - impact:
+                      - type: developer_experience
+                        value: 0.9
+                      - type: architecture_clarity
+                        value: 0.4
+                - work_state: new
+            stepwise_or_completion_execution:
+                - description: >
+                      Must allow running to completion or turn by turn, for a
+                      given scenario -- derived from
+                      centralized_scenario_authoring.
+
+                      If humans lay out a scenario/expected-values/parameters
+                      together, one of those parameters should be able to say
+                      "stop and check after each turn" instead of only "run
+                      everything, check the end state". Run-to-completion is
+                      done (every current live test sends one open-ended
+                      instruction); turn-by-turn against this same framework is
+                      not implemented yet.
+                - requirement_priority
+                - impact:
+                      - type: reliability
+                        value: 0.3
+                      - type: gameplay_richness
+                        value: 0.2
+                - work_state: in progress
+            machinery_lives_in_emc2p:
+                - description: >
+                      Base machinery must live in emc2p; story-simulator should
+                      contain minimal additions built on top, or no additions
+                      at all, just scenario definitions.
+
+                      Partially true today: emc2p.testing's own
+                      expected_fixtures, headless_session, mcp_client_session,
+                      and registry_checks modules are all generic upstream
+                      infrastructure, but
+                      story_simulator.keyed_subagent (the actual keyed-subagent
+                      tool-calling dispatch) and every Case/instruction/checks
+                      definition in test_scenario_resolution.py are
+                      story-simulator-local Python, not just scenario data.
+                - requirement_priority
+                - impact:
+                      - type: architecture_clarity
+                        value: 0.5
+                      - type: developer_experience
+                        value: 0.2
+                - work_state: in progress
+        candidate_solutions:
+            data:
+                - description: >
+                      Design options against the seven requirements above --
+                      both already-implemented and still-possible ones.
+
+                      Scored with the same cost vocabulary as everywhere else
+                      in this manifest (no impact here -- see
+                      live_testing_framework's own description for why) plus
+                      plain pro/con bare tags (one per point), rather than
+                      weighted consideration/consideration_rating axes: a
+                      weighted weight*rating formula can produce a sign that
+                      doesn't match a point's own actual meaning (e.g. a
+                      clearly negative point scoring as a net "pro" because
+                      its axis and rating happen to multiply positive).
+                      Every entry stays work_state: new, same convention as
+                      scd_time_data.candidate_solutions above: "new" marks a
+                      candidate not yet formally settled on, independent of
+                      whether it happens to already be implemented.
+            mcp_client_session_live_driver:
+                - description: >
+                      HeadlessSession (a real `claude -p` subprocess) and
+                      McpClientSession (any litellm model) as the two
+                      live-agent drivers.
+
+                      McpClientSession's own `responder` construction-time
+                      argument (via emc2p.agents.tool_calling_loop) picks
+                      host/subagent/keyed_subagent.
+                - solution of: story_simulator_mission.live_testing_framework.requirements.live_agent_behavior_check
+                - solution of: story_simulator_mission.live_testing_framework.requirements.switchable_test_agent
+                - cost:
+                      type: engineering_hours
+                      value: 0
+                - pro: Already implemented and exercised by every current live test.
+                - pro: Works with any litellm-supported model, not just Claude; responder is a clean static per-session parameter, matching switchable_test_agent's "static parameters" framing exactly.
+                - con: Answers labeled "subagent" aren't verified to have actually come from an isolated call (open TODO in resolve.py).
+                - con: Two separate session classes to choose between rather than one; switching responder mid-run isn't possible.
+                - work_state: new
+                - code_example:
+                      language: python
+                      value: |
+                          # Already how every live test picks its agent driver.
+                          session = McpClientSession(
+                              model="claude-sonnet-5",
+                              responder="subagent",  # or "host" / "keyed_subagent"
+                          )
+                          # HeadlessSession is the other driver: a real `claude -p`
+                          # subprocess instead of a litellm-backed model call.
+                          session = HeadlessSession(cwd=scenario_dir)
+            expected_fixtures_manifest_framework:
+                - description: >
+                      emc2p.testing.expected_fixtures plus the
+                      scenario_dir/expected.py directory-pairing convention,
+                      shared by iacs, emc2p, and story-simulator.
+
+                      Provides example_dirs, assert_subset, and
+                      ExpectedValueChecker as the actual comparison machinery.
+                - solution of: story_simulator_mission.live_testing_framework.requirements.scenario_variety
+                - solution of: story_simulator_mission.live_testing_framework.requirements.machinery_lives_in_emc2p
+                - solution of: story_simulator_mission.live_testing_framework.requirements.centralized_scenario_authoring
+                - cost:
+                      type: engineering_hours
+                      value: 0
+                - pro: Already implemented and exercised by the current scenario_variety/machinery_lives_in_emc2p solutions.
+                - pro: Base comparison machinery genuinely lives in emc2p, not just story-simulator.
+                - con: For story-simulator specifically, "paired" still means two separate files/directories a human opens one after the other, not one place; test parameters (responder, timeouts, turn instructions) live in a third location (Python).
+                - work_state: new
+                - code_example:
+                      language: python
+                      value: |
+                          # emc2p.testing.expected_fixtures
+                          for scenario_dir, expected in example_dirs(EXAMPLES_ROOT):
+                              registry = run_scenario(scenario_dir)
+                              checker = ExpectedValueChecker(registry)
+                              assert_subset(checker, expected.EXPECTED)
+            deterministic_hand_scripted_harness:
+                - description: >
+                      test_car_parking_deterministic.py's own approach: drive
+                      advance_simulation/update_registry directly, in-process,
+                      with hand-written "perfect" answers.
+
+                      No LLM, no MCP round-trip, no cost.
+                - solution of: story_simulator_mission.live_testing_framework.requirements.deterministic_machinery_check
+                - cost:
+                      type: engineering_hours
+                      value: 0
+                - pro: Already implemented and exercised today.
+                - pro: Fully deterministic and fast; isolates mechanism bugs from model-reasoning failures exactly as deterministic_machinery_check asks; checks exact prompt text and resume_token bookkeeping a live test can't easily assert on.
+                - con: One bespoke test function per scenario today, not wired into the shared Case/expected.py framework.
+                - work_state: new
+                - code_example:
+                      language: python
+                      value: |
+                          # test_car_parking_deterministic.py's own shape.
+                          registrar = Registrar.from_manifest([scenario_dir])
+                          registrar.update({"description": [...]})  # hand-written "perfect" turn
+                          registry = advance_simulation(registrar, instruction="park the car")
+                          assert registry.get("state").execute()["value"].iloc[-1] == "parked"
+            hand_scripted_harness_for_everything:
+                - description: >
+                      Possible, not yet built: generalizes
+                      deterministic_hand_scripted_harness beyond
+                      deterministic-only scenarios and replaces expected.py
+                      entirely. One hand-written test function per scenario
+                      holds everything expected.py currently holds --
+                      scenario setup, turn instructions, and checks
+                      together, in plain Python. No Case/CASES list, no
+                      separate data file, no parametrize decorator.
+                - solution of: story_simulator_mission.live_testing_framework.requirements.centralized_scenario_authoring
+                - solution of: story_simulator_mission.live_testing_framework.requirements.stepwise_or_completion_execution
+                - solution of: story_simulator_mission.live_testing_framework.requirements.deterministic_machinery_check
+                - solution of: story_simulator_mission.live_testing_framework.requirements.live_agent_behavior_check
+                - cost:
+                      type: engineering_hours
+                      value: 6
+                - pro: Pure Python -- no new DSL/data format to design, parse, or learn; reuses the language everyone already knows.
+                - pro: Self-evident and easy to read -- the whole scenario's logic sits in one function, nothing to cross-reference.
+                - con: A scenario's test function can grow very large as more turns/checks are added, with nothing forcing it to stay organized.
+                - work_state: new
+                - code_example:
+                      language: python
+                      value: |
+                          # Pseudocode: one hand-written function replaces Case + expected.py.
+                          def test_car_parking(session):
+                              registry = session.start_world(scenario_dir="data/scenario_seeds/parking_lot")
+                              registry = session.advance(registry, "drive to the spot")
+                              registry = session.advance(registry, "park the car")
+                              assert registry.get("state").execute()["value"].iloc[-1] == "parked"
+        human_validated_test_framework:
+            data:
+                - solution
+                - description: >
+                      Redesign of this same solution using an alternating
+                      nested requirement/solution tree (matching iacs's own
+                      have_a_good_scoring_system sketch) instead of the
+                      mirrored requirements:/candidate_solutions: trees
+                      above: this solution nests the requirement(s) it
+                      still needs to fill, and each requirement nests its
+                      own candidate solutions, one of which eventually gets
+                      selected: true.
+
+                      The requirements below are the same seven already
+                      established above (still accurate) plus one new one
+                      (readability). Their candidate solutions are
+                      described fresh here, not yet reconciled with the
+                      requirements:/candidate_solutions: trees above, which
+                      are kept as source material to fold into this one.
+            scenario_variety:
+                - description: >
+                      Must enable testing a variety of scenarios -- adding a
+                      new scenario shouldn't require new test-harness code,
+                      just new data.
+
+                      Mostly true today: a new scenario is just a new
+                      manifest-style scenario_dir plus its own expected.py;
+                      iacs's own example_dirs() parametrization and this repo's
+                      Case list (test_scenario_resolution.py) both add a
+                      scenario as a few lines, not a new file.
+                - requirement
+                - requirement_priority
+                - impact:
+                      type: reliability
+                      value: 0.4
+                - work_state: in progress
+            live_agent_behavior_check:
+                data:
+                    - description: >
+                          Must enable testing how an agent performs live for a
+                          given scenario -- a real model, over a real MCP
+                          round-trip, reasoning about the scenario itself, not a
+                          mocked LLM.
+
+                          Live today via McpClientSession/HeadlessSession
+                          (emc2p.testing) and @pytest.mark.live tests, but
+                          responder="subagent" isolation is unverified (see the
+                          TODO in story_simulator/resolve.py's
+                          _frame_for_responder).
+                    - requirement
+                    - requirement_priority
+                    - impact:
+                          type: reliability
+                          value: 0.6
+                    - work_state: in progress
+                live_agent_fixtures:
+                    - description: >
+                          Live-agent tests written inline as regular
+                          Python code, directly against
+                          test_human_validated.helpers.McpClientSession/
+                          HeadlessSession -- already thin enough
+                          (McpClientSession(save_dir)/HeadlessSession(save_dir))
+                          that no separate fixtures module is needed on
+                          top, rather than a Case/CASES parametrized
+                          list.
+                    - solution
+                    - selected: true
+            deterministic_machinery_check:
+                data:
+                    - description: >
+                          Must enable testing how the simulation machinery itself
+                          works for a given scenario by accepting pre-determined
+                          static input -- isolating "does the mechanism work" from
+                          "does the model reason correctly", with no LLM and no
+                          cost.
+
+                          Done for one scenario (test_car_parking_deterministic.py,
+                          hand-scripted answers driven directly through
+                          advance_simulation/update_registry), but not yet folded
+                          into the same Case/expected.py framework
+                          scenario_variety's other solutions use.
+                    - requirement
+                    - requirement_priority
+                    - impact:
+                          type: reliability
+                          value: 0.5
+                    - work_state: in progress
+                plain_python_test_files:
+                    - description: >
+                          Plain Python test files -- ordinary test functions
+                          driving advance_simulation/update_registry
+                          directly, no Case/CASES list, no data format, no
+                          separate fixtures module either: write each
+                          scenario's deterministic test the same way
+                          test_scenarios/parking/test_scenario.py already
+                          does.
+                          (As with hand_scripted_harness_for_everything
+                          above -- same idea, scoped here specifically to
+                          the deterministic case.)
+                    - solution
+                    - selected: true
+            switchable_test_agent:
+                data:
+                    - description: >
+                          Must allow the agent executing the process to be switched
+                          to and from a CLI from the host (e.g. claude) or a keyed
+                          subagent, for now depending on static parameters.
+
+                          No requirement yet that this be chosen dynamically
+                          mid-run. Done via HeadlessSession (spawns `claude -p` as
+                          a real subprocess) versus McpClientSession's own
+                          `responder` construction-time argument
+                          ("host"/"subagent"/"keyed_subagent", see
+                          story_simulator.keyed_subagent) -- both a static,
+                          per-session choice, matching what's asked for here.
+                    - requirement
+                    - requirement_priority
+                    - impact:
+                          - type: reliability
+                            value: 0.3
+                          - type: developer_experience
+                            value: 0.2
+                    - work_state: in progress
+                agent_switching_fixtures:
+                    - description: >
+                          Fixtures in emc2p exposing the responder choice
+                          (host/subagent/keyed_subagent) as a plain fixture
+                          parameter, rather than something wired into a
+                          Case/CASES list.
+                    - solution
+                    - selected: true
+                    - dependence of: dependencies.responder
+            centralized_scenario_authoring:
+                data:
+                    - description: >
+                          HIGHEST PRIORITY. Must allow the human creators to easily
+                          lay out a scenario, the expected values, and test
+                          parameters side by side in one centralized location.
+
+                          Humans need to look at what the scenario is and what they
+                          expect to come of it together, not reconstruct that
+                          pairing by reading several files. Not done today: a
+                          scenario's manifest (tests/data/scenarios/<name>/), its
+                          expected.py
+                          (tests/test_human_validated/expected/<name>.py), and its
+                          test parameters (responder, timeouts, turn instructions
+                          -- test_scenario_resolution.py's Case list) are three
+                          separate locations in two different formats (YAML data,
+                          Python data/code).
+                    - requirement
+                    - requirement_priority
+                    - impact:
+                          - type: developer_experience
+                            value: 0.9
+                          - type: architecture_clarity
+                            value: 0.4
+                    - work_state: new
+                single_scenarios_and_tests_directories:
+                    - description: >
+                          A single easy-to-locate directory for the scenarios,
+                          and a single easy-to-locate directory for the
+                          tests, both inside test_human_validated/. The
+                          current solution.
+                    - solution
+                    - solution of: human_validated_test_framework.scenario_variety
+                    - work_state: done
+                per_scenario_directory_with_tests_and_yaml:
+                    - description: >
+                          Inside test_human_validated/, a test_scenarios/
+                          directory with one directory per scenario, each
+                          holding a tests.py (or similarly named) file
+                          alongside its own scenario.yaml.
+                    - solution
+                    - solution of: human_validated_test_framework.scenario_variety
+                    - work_state: new
+                    - selected: true
+                    - dependence of: dependencies.test_scenarios
+            stepwise_or_completion_execution:
+                data:
+                    - description: >
+                          Must allow running to completion or turn by turn, for a
+                          given scenario -- derived from
+                          centralized_scenario_authoring.
+
+                          If humans lay out a scenario/expected-values/parameters
+                          together, one of those parameters should be able to say
+                          "stop and check after each turn" instead of only "run
+                          everything, check the end state". Run-to-completion is
+                          done (every current live test sends one open-ended
+                          instruction); turn-by-turn against this same framework is
+                          not implemented yet.
+                    - requirement
+                    - requirement_priority
+                    - impact:
+                          - type: reliability
+                            value: 0.3
+                          - type: gameplay_richness
+                            value: 0.2
+                    - work_state: in progress
+                story_simulator_turn_fixtures:
+                    - description: >
+                          Fixtures for turn-by-turn/stepwise execution live
+                          in story-simulator itself, not emc2p -- turns/steps
+                          are a story-simulator-specific data format, not a
+                          generic emc2p concern.
+                    - solution
+                    - selected: true
+                    - dependence of: dependencies.turn_stepper
+            avoid_duplicated_machinery:
+                data:
+                    - description: >
+                          Machinery that's going to be reused across
+                          scenarios/tests must live in one central
+                          location, not be duplicated across call sites.
+                    - requirement
+                    - requirement_priority
+                    - impact:
+                          - type: architecture_clarity
+                            value: 0.5
+                          - type: developer_experience
+                            value: 0.2
+                    - work_state: in progress
+                everything_lives_in_emc2p:
+                    - description: >
+                          All reused machinery, including turn/step
+                          fixtures, lives in emc2p.
+                    - solution
+                split_fixtures_between_emc2p_and_story_simulator:
+                    - description: >
+                          turn_stepper and scenario_registrar are
+                          story-simulator-local: turn_stepper works with
+                          this project's own turn/step data format, and
+                          scenario_registrar needs story_simulator.config's
+                          schema/URL resolution. responder is the one
+                          genuine split -- the generic (explicit-param
+                          > env-var > default) resolution now lives in
+                          emc2p.testing.responder_fixture.make_responder_fixture,
+                          with only the actual env var name/default
+                          (which itself feeds
+                          test_human_validated.helpers's own
+                          STORY_SIM_RESPONDER mechanism) staying
+                          story-simulator-local, supplied where this
+                          project's own conftest.py calls that factory.
+                    - solution
+                    - selected: true
+                    - dependence of: dependencies.responder
+                    - dependence of: dependencies.turn_stepper
+                    - dependence of: dependencies.scenario_registrar
+            intuitive_language:
+                data:
+                    - description: >
+                          The syntax test code is written in must
+                          be easy to read and intuitive, not a
+                          project-specific data format someone has to learn.
+                    - requirement
+                    - requirement_priority
+                native_python_test_format:
+                    - description: Native Python standard test format.
+                    - solution
+                    - selected: true
+                    - dependence of: dependencies.test_scenarios
+            concise_code:
+                data:
+                    - description: >
+                          Test code must be concise, not full of
+                          repeated boilerplate.
+                    - requirement
+                    - requirement_priority
+                shared_pytest_fixtures:
+                    - description: Fixtures to minimize repeated code.
+                    - solution
+                    - selected: true
+                    - dependence of: dependencies.scenario_registrar
+            dependencies:
+                data:
+                    - description: >
+                          The concrete entities that need to be built to
+                          realize the solutions selected above -- referenced
+                          from those solutions via `dependence of:`
+                          relations. Gathered here as siblings, not nested
+                          under any one solution, because more than one
+                          solution can depend on the same entity (see each
+                          entity's own description for which).
+                test_scenarios:
+                    - description: >
+                          One directory per scenario, each holding its own
+                          scenario.yaml alongside a test_scenario.py
+                          written as plain pytest test functions (named
+                          "test_scenario.py", not "tests.py", so pytest's
+                          own default test_*.py collection pattern
+                          actually picks it up -- a file literally named
+                          tests.py is silently skipped by normal `pytest`
+                          collection, only found when named on the
+                          command line explicitly). parking and race each
+                          have their own directory (parking's own
+                          test_scenario.py holds both a deterministic and
+                          a live walkthrough class, sharing one
+                          scenario.yaml -- formerly a separate
+                          parking_split directory, merged in once the
+                          split-events version superseded the original
+                          combined-trip one entirely); location_write_isolated stays at
+                          tests/data/scenarios/ since it's used by
+                          tests/location_write_harness.py, a standalone
+                          debug script, not a pytest test case.
+                    - location: tests/test_human_validated/test_scenarios/
+                    - work_state: done
+                responder:
+                    - description: >
+                          Exposes the responder choice (host/subagent/
+                          keyed_subagent) as a plain, parametrizable
+                          pytest fixture, in
+                          tests/test_human_validated/conftest.py. Not an
+                          emc2p-generic McpClientSession/HeadlessSession
+                          constructor argument (those classes take no
+                          such argument):
+                          test_human_validated.helpers._session_extra_env
+                          already resolves a responder value (explicit
+                          argument, else STORY_SIM_LIVE_TEST_RESPONDER,
+                          else DEFAULT_LIVE_TEST_RESPONDER) into a
+                          STORY_SIM_RESPONDER env var. The fixture itself
+                          is built via
+                          emc2p.testing.responder_fixture.make_responder_fixture
+                          (that same explicit-param/env-var/default
+                          resolution generalized there, since any
+                          downstream project's own live-test suite needs
+                          the identical shape) -- this project's own
+                          conftest.py just supplies its own env var
+                          name/default, parametrizing per-test via
+                          `@pytest.mark.parametrize("responder", [...],
+                          indirect=True)` rather than only being able to
+                          flip the whole suite's default through the env
+                          var.
+                    - location: test_human_validated.conftest.responder
+                    - work_state: done
+                turn_stepper:
+                    - description: >
+                          Turn-by-turn (stepwise) test execution and
+                          assertions, alongside today's run-to-completion
+                          tests, in
+                          tests/test_human_validated/conftest.py: sends
+                          each turn in a list one at a time, running an
+                          optional check after every step. Lives in
+                          story-simulator itself, not emc2p -- turns/
+                          steps are a story-simulator-specific data
+                          format. Not yet exercised by an actual live
+                          scenario test (that's separate, larger work --
+                          picking a scenario and writing the live test
+                          itself), but the fixture itself is built and
+                          unit-tested.
+                    - location: test_human_validated.conftest.turn_stepper
+                    - work_state: done
+                scenario_registrar:
+                    - description: >
+                          Formerly a fixture in
+                          tests/test_human_validated/conftest.py wrapping
+                          a private helper, test_human_validated.helpers.
+                          _load_registrar, that confirmed a save_dir's
+                          schema actually existed before loading it.
+                          Both were removed: the existence check only
+                          ever bought a friendlier error message for the
+                          "the model never actually called start_world"
+                          case, not a different test outcome (a missing
+                          write already reads back as None either way,
+                          which every caller's own check already treats
+                          as a failure), so every scenario's
+                          test_scenario.py now calls
+                          Registrar.load(registry_url(save_dir)) directly
+                          instead.
+                    - location: test_human_validated.helpers
+                    - work_state: done
+
+    fast_candidate_entity_resolution:
+        data:
+            - description: >
+                  Registry._resolve_aliases (and get_entity_id, and
+                  emc2p.dataflows.derive.resolve_same_as/resolve_paths)
+                  each call emc2p.utils.candidate_entity_ids once per
+                  row/alias in a Python loop, rather than as a single
+                  relational operation. candidate_entity_ids itself
+                  lives in emc2p, not this repo, but the boilerplate/perf
+                  pain that surfaced this requirement was noticed here,
+                  in story-simulator's own call patterns -- matching
+                  scd_time_data's cross-repo framing above.
+            - requirement
+            - requirement_priority
+            - impact:
+                  type: architecture_clarity
+                  value: 0.5
+            - work_state: in progress
+
+        add_batch_relational_resolution:
+            - description: >
+                  Add candidate_entity_ids_batch(user_paths,
+                  entity_id_table) -> dict[str, list[str]] to
+                  emc2p/utils.py -- one candidate list per input ref (not
+                  a flattened union), so per-ref ambiguity/mismatch stays
+                  identifiable. Tiers 1-2 (exact hash, exact alias)
+                  become real relational joins instead of N boolean-mask
+                  scans; tier 3 (substring/path-contains) scopes its
+                  inherently N x M cost to only the refs left unresolved
+                  after tiers 1-2, run once instead of redundantly per
+                  single-ref call. Turn candidate_entity_ids (singular)
+                  into a thin wrapper --
+                  candidate_entity_ids_batch([user_path],
+                  entity_id_table)[user_path] -- keeping existing
+                  signature/tests/callers untouched. Rewrite
+                  Registry._resolve_aliases to call the batch function
+                  once and loop only over the returned dict to warn
+                  exactly as today, one relational pass instead of N.
+                  New direct tests for candidate_entity_ids_batch (each
+                  tier, mixed-tier batch, duplicate refs, empty input);
+                  existing candidate_entity_ids/_resolve_aliases suites
+                  must pass unchanged as proof the wrapper is
+                  behavior-preserving. A raise_on_mismatch option
+                  (instead of warn-only) was considered and explicitly
+                  deferred, not built now.
+            - solution:
+                  selected: true
+            - pro: >
+                  O(N+M) relational joins replace N separate
+                  boolean-mask scans for the exact-hash/exact-alias
+                  tiers -- the same performance shape as perceive's own
+                  left-join-then-filter rewrite (see perceive in
+                  tool_catalog above).
+            - pro: >
+                  candidate_entity_ids keeps its existing signature as a
+                  thin wrapper, so no caller or test needs to change to
+                  pick up the speedup.
+            - con: >
+                  Tier 3 (substring/path-contains) is inherently N x M
+                  and isn't reduced to a plain join -- only scoped to
+                  fewer rows and run once instead of per-call; may still
+                  need pushing down to a real LIKE-based join in DuckDB
+                  if it's the remaining bottleneck (not attempted in
+                  this pass).
+            - work_state: new
+
+        migrate_remaining_per_row_loops:
+            - description: >
+                  resolve_same_as.py's .iterrows() and
+                  resolve_paths.py's .apply(..., axis=1) are two more
+                  per-row candidate_entity_ids call sites, deliberately
+                  left for a follow-up pass rather than this one: each
+                  row needs its own single resolved candidate folded
+                  into a new column, not a flat {ref: candidates} dict,
+                  so migrating them is a separate, smaller change once
+                  the batch function exists.
+            - todo:
+                  value: >
+                      Migrate resolve_same_as.py and resolve_paths.py's
+                      own per-row candidate_entity_ids loops onto
+                      candidate_entity_ids_batch once it exists.
+                  priority: 0.3
+
+        single_alias_usage_survey:
+            - description: >
+                  Open question from this session's review, not yet
+                  investigated: are there real usages of
+                  candidate_entity_ids for a single alias, as opposed to
+                  being called once-per-item inside a loop over many?
+                  Bears on whether keeping a singular wrapper is worth
+                  it at all, versus every caller just using the batch
+                  function directly (even for N=1).
+            - todo:
+                  value: >
+                      Survey every candidate_entity_ids call site
+                      (registry.py's two, resolve_same_as.py,
+                      resolve_paths.py) for whether any calls it for a
+                      genuinely single alias rather than once per
+                      row/item in a loop -- decide whether the singular
+                      wrapper earns its keep.
+                  priority: 0.2
+
+        call_site_formatting_survey:
+            - description: >
+                  Open question from this session's review, not yet
+                  investigated: what is the full spectrum of
+                  formatting/preprocessing applied to
+                  candidate_entity_ids' input and output across all its
+                  callers? E.g. str() coercion, filtering out the
+                  entity's own id from candidates, uniqueness
+                  assumptions, NaN/None handling before the call --
+                  needed so the batched version's contract doesn't
+                  silently drop something a caller currently relies on.
+            - todo:
+                  value: >
+                      Survey candidate_entity_ids' input/output handling
+                      across registry.py's two call sites,
+                      resolve_same_as.py, and resolve_paths.py (str()
+                      coercion, self-id filtering, uniqueness, NaN/None
+                      handling) before finalizing
+                      candidate_entity_ids_batch's contract.
+                  priority: 0.2
 
 # What satisfies each done (or partially done) requirement. Most solutions
 # now live as `__iacs__ = {"solution of": ...}` metadata in Python docstrings.

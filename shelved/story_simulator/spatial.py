@@ -20,7 +20,7 @@ import yaml
 from emc2p.registrar import Registrar
 
 from story_simulator import game_config
-from story_simulator.core import due_by_entity, merge_yaml_string, safe_view, safe_view_current
+from story_simulator.core import due_by_entity, merge_yaml_string
 
 
 def latest_positions(registrar: Registrar) -> pd.DataFrame:
@@ -162,7 +162,7 @@ def sync_active_tags(registrar: Registrar, active_aliases: set[str]) -> None:
 
 def memory_aliases(registrar: Registrar, owner_alias: str) -> set[str]:
     """Return every alias `owner_alias` has ever perceived (see `record_memory`)."""
-    df = safe_view(registrar, "memory.value")
+    df = registrar.safe_view("memory.value")
     if df is None:
         return set()
     owner_id = registrar.get_entity_id(owner_alias)
@@ -175,8 +175,9 @@ def record_memory(registrar: Registrar, owner_alias: str, perceived_aliases: set
     """Merge `perceived_aliases` into `owner_alias`'s permanent `memory` relation.
 
     Unlike `active`, `memory` is never cleared — a character's memory only
-    grows. Re-merging an already-known alias is a harmless no-op (iacs
-    dedupes exact repeats), so this is safe to call every time `perceive` runs.
+    grows. Re-merging an already-known alias is a harmless no-op (emc2p's
+    own Registry.merge dedupes exact repeats), so this is safe to call
+    every time `perceive` runs.
     """
     if not perceived_aliases:
         return
@@ -205,11 +206,11 @@ def entity_descriptions(registrar: Registrar, aliases: set[str]) -> str:
         return ""
 
     parts_by_alias: dict[str, list[str]] = {}
-    desc_df = safe_view_current(registrar, "description.value")
+    desc_df = registrar.safe_view_current("description.value")
     if desc_df is not None:
         for _, row in desc_df[desc_df["entity_id"].isin(entity_ids)].iterrows():
             parts_by_alias.setdefault(row["entity_id.alias"], []).append(str(row["description.value"]))
-    state_df = safe_view_current(registrar, "state.value")
+    state_df = registrar.safe_view_current("state.value")
     if state_df is not None:
         for _, row in state_df[state_df["entity_id"].isin(entity_ids)].iterrows():
             parts_by_alias.setdefault(row["entity_id.alias"], []).append(f"(state: {row['state.value']})")
@@ -219,7 +220,7 @@ def entity_descriptions(registrar: Registrar, aliases: set[str]) -> str:
 
 def active_aliases(registrar: Registrar) -> set[str]:
     """Return the aliases of every entity currently tagged `active`."""
-    df = safe_view(registrar, "active")
+    df = registrar.safe_view("active")
     if df is None:
         return set()
     return set(df["entity_id.alias"])
@@ -234,7 +235,7 @@ def character_interaction_type(registrar: Registrar, alias: str) -> str | None:
     entity_id = registrar.get_entity_id(alias)
     if entity_id is None:
         return None
-    df = safe_view(registrar, "character.interaction_type")
+    df = registrar.safe_view("character.interaction_type")
     if df is None:
         return None
     match = df[df["entity_id"] == entity_id]

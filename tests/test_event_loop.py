@@ -23,6 +23,11 @@ import pytest
 from conftest import _make_ctx, update_registry
 from story_simulator.mcp_server import advance_simulation, start_world
 
+# Every test here opens a real (db-backed) world and drives the event loop
+# through it -- individually a few seconds, and there are only a handful
+# of pure-logic tests elsewhere to offset that.
+pytestmark = pytest.mark.slow
+
 
 def _world(tmp_path, name="save"):
     """Open a save seeded from nothing -- no player, no default scenario,
@@ -164,15 +169,12 @@ def test_plan_step_creates_a_new_event_that_gets_picked_up_next(tmp_path):
 
 
 def test_world_time_persists_across_a_reconnect(tmp_path):
-    """The bug this guards against: world time used to be purely
-    in-process, session-scoped memory (core._current_world_time).
-
-    So it reset to 0.0 on every reconnect -- even an idle-triggered MCP
-    disconnect, which CLAUDE.md documents as routine, not just a crash --
-    even though the world itself (Postgres) had already moved forward. A
-    fresh session opening the same save_dir must see world time where the
-    old session left it, not back at 0.0 (see docs/manifest/history.yaml:
-    project_history.world_clock_persisted).
+    """World time must survive a reconnect: a fresh session opening the
+    same save_dir sees world time where the old session left it, not back
+    at 0.0, even across an idle-triggered MCP disconnect (which CLAUDE.md
+    documents as routine, not just a crash) -- because the world itself
+    (Postgres) has already moved forward regardless of any one process's
+    own in-memory state.
     """
     from story_simulator import core
     from story_simulator.core import _next_time_stamp

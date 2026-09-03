@@ -1,5 +1,5 @@
-"""Diagnostic harness for #73: compares different approaches to
-recording a car's `location` once parked.
+"""Diagnostic harness comparing different approaches to recording a
+car's `location` once parked.
 
 Measures failure RATE across many reps per approach rather than a
 single pass/fail. Deliberately NOT a pytest test (no @pytest.mark.live
@@ -11,20 +11,21 @@ not a regression gate. Run directly:
 Isolates just the write-formatting step itself (see tests/data/scenarios/
 location_write_isolated/scenario.yaml: one car, one already-resolvable
 parking event, one spot) -- separate from arrival-order reasoning
-(tests/test_human_validated/test_race_placement_live.py) or
-driving/parking separation (test_parking_split_live.py in that same
-package), which are already covered elsewhere.
+(tests/test_human_validated/test_scenarios/race/test_scenario.py) or
+driving/parking separation (test_scenarios/parking/test_scenario.py's
+own TestLiveWalkthrough, in that same package), which are already
+covered elsewhere.
 
 Three approaches are compared: "baseline" (today's direct single-shot
-update_registry write), "confirm" (#74's opt-in preview=True /
+update_registry write), "confirm" (an opt-in preview=True /
 confirm_token round trip -- write, review what it's about to commit
 against what's already there, then confirm or correct BEFORE committing),
-and "consolidate" (#76's post-write alternative -- write normally, then
+and "consolidate" (a post-write alternative -- write normally, then
 call consolidate_review to see everything recorded so far and fix
 anything wrong AFTER committing). All three share the same run/
 measurement machinery below; only the instruction text differs.
 
-#83: every rep also records which component type(s) car_a actually got
+Every rep also records which component type(s) car_a actually got
 written to beyond what a correct run produces (_EXPECTED_CAR_A_COMPONENTS)
 -- e.g. `parent` instead of `location` -- so a run's printed summary names
 what a wrong write actually contained, not just that `location` came up
@@ -39,10 +40,31 @@ from pathlib import Path
 
 from collections import Counter
 
-from test_human_validated.helpers import LOW_QUALITY_MODEL, HeadlessSession, _load_registrar, _parked_at
+from test_human_validated.helpers import LOW_QUALITY_MODEL, create_session
+from emc2p.registrar import Registrar
 from emc2p.testing.registry_checks import unexpected_components
+from story_simulator.config import registry_url
 
 REPO_ROOT = Path(__file__).parent.parent
+
+
+def _parked_at(location: str | None, spot: str) -> bool:
+    """Loosely checks a recorded `location` value names `spot` (e.g.
+    "parking_spot_1" or "street"), not any one exact phrasing.
+
+    `location`'s own schema (manifest/builtins.yaml) calls it a "short
+    freeform phrase" -- a model's correct answer can reasonably come out
+    phrased several ways ("parked in
+    parking_spot_1" vs. just "parking_spot_1") -- the model shouldn't
+    have to guess the one exact wording a test hardcodes. Takes the
+    value directly (e.g. from `registrar.get_current_value("location",
+    alias=alias)`) rather than reading it itself.
+
+    Scenario-specific (this harness's own parking check), not shared --
+    test_scenarios/parking/test_scenario.py keeps its own copy rather
+    than importing this one.
+    """
+    return location is not None and spot in location
 SCENARIO_DIR = REPO_ROOT / "tests" / "data" / "scenarios" / "location_write_isolated"
 
 # scripts/ isn't a package (no __init__.py, deliberately) -- so this is a
@@ -80,7 +102,7 @@ _BASELINE_INSTRUCTION = (
     "Don't narrate anything back to me."
 )
 
-# #74's preview/confirm alternative: write with preview=True first,
+# The preview/confirm alternative: write with preview=True first,
 # check the returned review against what was intended before confirming.
 _CONFIRM_INSTRUCTION = (
     "Call advance_simulation and answer its prompts (resolve, then plan) until its "
@@ -95,7 +117,7 @@ _CONFIRM_INSTRUCTION = (
     "Don't narrate anything back to me."
 )
 
-# #76's post-write alternative: write normally (no confirmation step),
+# The post-write alternative: write normally (no confirmation step),
 # then call consolidate_review to see everything and fix anything wrong.
 _CONSOLIDATE_INSTRUCTION = (
     "Call advance_simulation and answer its prompts (resolve, then plan) until its "
@@ -120,34 +142,32 @@ def run_one(approach: str, tmp_dir: Path, model: str = LOW_QUALITY_MODEL) -> tup
 
     Returns (success, narration, usage, misfires) -- narration kept for
     diagnosing failures after the fact, not just the pass/fail count;
-    usage (see HeadlessSession.usage_summary) kept so #75's cost
-    comparison isn't limited to whichever approach happens to get run
+    usage (see HeadlessSession.usage_summary) kept so a cost comparison
+    across approaches isn't limited to whichever one happens to get run
     last; misfires (see unexpected_components) names which component(s)
-    car_a actually got written to beyond what a correct run produces --
-    #83, collected every rep (not just failures) since a false positive
-    here is itself useful signal. `model` defaults to this harness's
-    usual weak-model target, but #85 needs a stronger-model comparison
-    point (Sonnet vs. Haiku spend on the identical task) -- see --model.
+    car_a actually got written to beyond what a correct run produces,
+    collected every rep (not just failures) since a false positive here
+    is itself useful signal. `model` defaults to this harness's usual
+    weak-model target, but a stronger-model comparison point (Sonnet vs.
+    Haiku spend on the identical task) is also useful -- see --model.
     """
     save_dir = tmp_dir / "save"
     instruction = _APPROACHES[approach]
     # This harness compares how the *connected* model performs a write
     # under each approach -- explicit override of the keyed_subagent default.
-    with HeadlessSession(save_dir, model=model, responder="host") as session:
+    with create_session(save_dir, driver="claude", model=model, responder="host") as session:
         narration = session.send_turn(
             f"Use start_world with save_dir={save_dir} and scenario_dir={SCENARIO_DIR} "
             f"to open a story-simulator world. Then {instruction}"
         )
-        try:
-            r = _load_registrar(save_dir, narration)
-            success = _parked_at(r.get_current_value("location", alias="car_a"), "parking_spot_1")
-            misfires = unexpected_components(r, "car_a", _EXPECTED_CAR_A_COMPONENTS)
-        except AssertionError as exc:
-            # _load_registrar's own assertion: the model never actually called
-            # start_world -- a rep outcome to count, not a harness bug.
-            success = False
-            misfires = set()
-            narration = f"{narration}\n\n[harness: {exc}]"
+        r = Registrar.load(registry_url(save_dir))
+        # If the model never actually called start_world, save_dir's schema
+        # was never created -- registry_url's own connection silently falls
+        # through to whatever schema is otherwise on the search path rather
+        # than erroring (see its docstring), so this just reads as "location"
+        # never got recorded: a rep outcome to count, not a harness bug.
+        success = _parked_at(r.get_current_value("location", alias="car_a"), "parking_spot_1")
+        misfires = unexpected_components(r, "car_a", _EXPECTED_CAR_A_COMPONENTS)
         return success, narration, session.usage_summary(), misfires
 
 

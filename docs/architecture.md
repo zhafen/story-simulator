@@ -33,29 +33,26 @@ is a separate, unsolved problem, deliberately out of scope here.
 flowchart LR
     Human(("Human player")) <--> Client["MCP-aware chat client<br/>(the narrator/game master)"]
     Client -- "start_world, advance_simulation,<br/>view_registry, view_entity,<br/>update_registry" --> Server["story-simulator-mcp"]
-    Client -- "describe_format,<br/>validate_yaml (optional: load_database)" --> Iacs["iacs-mcp"]
     Server -- "reads/writes" --> DB[("registry database<br/>(one schema per save_dir)")]
 ```
 
 For a human player, narration is just the connected agent's own replies —
 nothing in story-simulator narrates *for* it. `view_registry`/`view_entity`
-are story-simulator's own tools, but delegate internally to iacs's own
+are story-simulator's own tools, but delegate internally to emc2p's own
 `Registrar.view_df`/`view_entity` methods against the same registrar object
 `start_world` already opened — a single in-process call, not a second MCP
-round-trip. `iacs-mcp` (attached alongside, unmodified in this flow) stays
-the format/validation reference — `describe_format`/`validate_yaml` — since
-those don't need the live registry at all; its own `load_database` tool
-can optionally point its deeper introspection tools at this exact world
-too, but nothing on the ordinary read path depends on a host discovering
-and calling it. Two earlier iterations tried routing all reads through
-`iacs-mcp` instead (once via a nudge, once by removing story-simulator's
-own tools outright) — reverted after live evidence that a connected host
-reliably discovers and uses tools on the server it's already talking to,
-but never once discovered or called a tool on a separate one (see
-`docs/manifest/history.yaml`: `project_history.
+round-trip. An earlier iteration tried routing all reads through a
+separate `iacs-mcp` server instead (once via a nudge, once by removing
+story-simulator's own tools outright) — reverted after live evidence that
+a connected host reliably discovers and uses tools on the server it's
+already talking to, but never once discovered or called a tool on a
+separate one (see `docs/manifest/history.yaml`: `project_history.
 iacs_mcp_pointed_at_live_registry_for_component_discovery`,
 `project_history.story_simulator_view_tools_removed_in_favor_of_iacs`, and
 `project_history.story_simulator_view_tools_reinstated_as_iacs_delegates`).
+`iacs` remains part of this project's own development environment (its
+architecture-review/manifest tooling, e.g. the diagram generation below)
+but is not attached to, or needed by, an actual played session.
 
 > **Character/NPC/terrain/physics/spatial-perception tools are currently
 > shelved** (`perceive`, `advance_npc_turn`, `generate_terrain`,
@@ -174,7 +171,3 @@ command's raw output (safe to overwrite wholesale on every regenerate);
 commentary about it lives here instead, precisely so regenerating never
 clobbers hand-written explanation the way mixing the two in one file
 would.
-`mcp_client.py` has no edges in that diagram because none of its own
-entities have a docstring yet (see `load_python`'s own docstring for why
-undocumented code is excluded rather than shown as noise) — it isn't
-disconnected from the real system, just from what's currently documented.

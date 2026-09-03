@@ -5,12 +5,19 @@ that works with no optional module (character, npc, physics, terrain, spatial) a
 import math
 from unittest.mock import MagicMock
 
+import pytest
+
 from emc2p.mcp_server import SOURCE_KEY
 from emc2p.registrar import Registrar
 
 from story_simulator import core
 from story_simulator.config import MANIFEST_DIR
-from story_simulator.core import pop_event, safe_view_current
+from story_simulator.core import pop_event
+
+# Every test here drives a real Registrar through update()/load_manifest --
+# the Hamilton driver construction that goes through dominates regardless
+# of input size (see pyproject.toml's own `slow` marker docstring).
+pytestmark = pytest.mark.slow
 
 
 def _registrar_from_yaml(yaml_text: str) -> Registrar:
@@ -54,11 +61,7 @@ def test_pop_event_returns_soonest_end_time():
 
 def test_pop_event_excludes_events_missing_start_time_or_duration():
     """An event not yet fully scheduled (either field still null) isn't a
-    candidate.
-
-    Unlike the next_due mechanism this replaces, where an entity with no
-    row at all simply wasn't a candidate -- here the row exists
-    (event_state may say "not started") but the timing is incomplete.
+    candidate, even if its event_state row already exists (e.g. "not started").
     """
     registrar = _registrar_from_yaml(
         "scheduled_event:\n"
@@ -103,7 +106,7 @@ def test_update_registry_backfills_time_for_a_scenario_local_time_dimension_fiel
     the scenario's own seed YAML, not manifest/builtins.yaml), must still
     get backfilled on a *later* update_registry write that doesn't
     redeclare it -- mirroring race_placement.time in
-    tests/data/scenarios/race/scenario.yaml, only ever loaded at
+    tests/test_human_validated/test_scenarios/race/scenario.yaml, only ever loaded at
     start_world time, not by every later per-turn write.
     """
     save_dir = tmp_path / "test_save"
@@ -141,7 +144,7 @@ def test_update_registry_backfills_time_for_a_scenario_local_time_dimension_fiel
     # that only writes race_placement's value, never redeclaring its schema.
     core.registrar_sessions.update_registry(session, "car_a:\n    - race_placement:\n        value: 1\n")
 
-    df = safe_view_current(registrar, "race_placement.time", aliases="car_a")
+    df = registrar.safe_view_current("race_placement.time", aliases="car_a")
     assert df is not None and not df.empty
     assert not math.isnan(df.iloc[-1]["race_placement.time"])
 

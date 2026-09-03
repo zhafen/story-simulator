@@ -9,7 +9,7 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "emc2p[agents,mcp]",
+    "emc2p[agents,mcp,testing]",
     "matplotlib>=3.11.0",
     "mcp>=1.28.1",
     "psycopg[binary]>=3.2",
@@ -23,12 +23,21 @@ dependencies = [
 # already covered by this project's own bare `mcp` dependency above,
 # but declared explicitly too since mcp_server.py now imports
 # emc2p.mcp_server directly, not just incidentally sharing the package.
+# Its "testing" extra is likewise just documentation here (this project
+# already depends on pytest directly), declared so tests/test_human_validated
+# reusing emc2p.testing.expected_fixtures reads as an intentional dependency.
 
 [project.scripts]
 story-simulator-mcp = "story_simulator.mcp_server:main"
 
 [tool.uv.sources]
-emc2p = { path = "emc2p", editable = true }
+# emc2p used to be vendored as a git submodule at ./emc2p purely so a
+# single-repo-attached session could reach its source for editable local
+# dev -- no longer needed now that multiple repos can be attached
+# directly. Pinned by commit (not branch) so this is a real, reproducible
+# version pin, bumped explicitly the same way the submodule pointer used
+# to be.
+emc2p = { git = "https://github.com/zhafen/emc2p", rev = "33d257e2f2e16fec18bdd8e8b04b912d59f57428" }
 
 [tool.setuptools.packages.find]
 where = ["."]
@@ -38,4 +47,10 @@ include = ["story_simulator*"]
 testpaths = ["tests"]
 markers = [
     "live: tests that call the real Anthropic API (require ANTHROPIC_API_KEY, cost money, excluded from CI)",
+    "slow: tests that open a real (db-backed) world/registry, run the event loop, or otherwise individually take a couple seconds+ -- numerous enough to dominate the full suite's wall time given how integration-heavy this suite is. Excluded by default (see addopts); run everything with `-m \"not live\"`.",
 ]
+# Default `uv run pytest` run: fast, for iterating before a commit.
+# Full run (slow tests included, still what CI runs): `uv run pytest -m "not live"`
+# -- an explicit -m on the command line fully replaces this addopts value,
+# so it isn't additive and doesn't need "or slow" spelled out.
+addopts = ["-m", "not slow and not live"]

@@ -583,3 +583,166 @@ project_history:
               entirely -- a genuine simplification the "no backward
               compatibility to preserve yet" mandate made possible to
               reach for instead of a workaround.
+    test_human_validated_migrated_to_emc2p_shared_framework:
+        - description: >
+              test_race_placement_live.py and test_parking_split_live.py
+              were two near-identical live test modules, one per scenario.
+              Consolidated into tests/test_human_validated/
+              test_scenario_resolution.py: a Case dataclass (scenario_dir,
+              instruction, checks callable, timeouts) and a CASES list, one
+              parametrized test function -- this project's own
+              "transformation" step is headless-session turns against a
+              live MCP server, not an in-process function call, so it
+              couldn't reuse emc2p's expected_fixtures wholesale the way
+              iacs did, but load_expected()/_assert_write_order() were
+              factored into helpers.py against the same expected.py
+              convention. test_race_placement_via_keyed_subagent.py (a
+              third variant -- keyed_subagent, not the connected model,
+              doing the resolve/plan reasoning) was updated to reuse
+              _assert_write_order rather than duplicating it a third time.
+    emc2p_submodule_dropped_for_pinned_git_dependency:
+        - description: >
+              emc2p was vendored as a git submodule at ./emc2p purely so a
+              single-repo-attached Claude Code session could reach its
+              source for editable local dev -- no longer needed once
+              multiple repos could be attached to one session directly.
+              Replaced with a plain pinned dependency in pyproject.toml's
+              [tool.uv.sources] (commit SHA, not branch, bumped explicitly
+              the same way the submodule pointer used to be); CONTRIBUTING.md
+              documents a gitignored, uncommitted uv.toml override to a
+              local editable path for fast co-development iteration.
+              check-submodule-pointers.sh and its pre-commit hook, both
+              submodule-specific, were deleted rather than adapted.
+    live_testing_framework_solution_architecture_modeled:
+        - description: >
+              docs/manifest/story-simulator.yaml gained a
+              story_simulator_mission.live_testing_framework subtree
+              modeling the live-testing solution decision itself as a
+              requirement/solution architecture: 7 numbered requirements
+              (scenario variety, live agent behavior checking,
+              deterministic machinery checking, a switchable test agent,
+              centralized scenario authoring -- called out as highest
+              priority, stepwise-or-completion execution, machinery living
+              in emc2p), 5 consideration axes (already_implemented,
+              reuse_and_generality, human_authoring_experience,
+              coverage_completeness, engineering_risk -- the only
+              negative-weight one), and 8 candidate solutions (4 already
+              implemented, 4 possible), each rated per axis via
+              consideration_rating.
+
+              scripts/find_live_testing_solution_covers.py reads this data
+              straight from the registry (no hand-maintained list) to find
+              every solution combination covering all 7 requirements, the
+              minimal ones among them, and each minimal combination's total
+              cost/weighted consideration value.
+              scripts/generate_live_testing_report.py renders a
+              requirement-first HTML view of the same data (which
+              solutions satisfy each requirement, expandable to show
+              pros/cons) -- requirement-first rather than solution-first
+              on purpose, see prioritization_reflections.yaml's fourth
+              installment. Iterated twice on what to show for each pro/con:
+              first a major-pro/minor-pro/.../major-con categorical
+              "effect" field, dropped after proving confusing rather than
+              clarifying in practice; landed on showing the raw
+              weight/rating/contribution numbers instead, Pro/Con labeled
+              by the contribution's sign. Later given a real visual
+              identity (IBM Plex Mono/Sans, a warm-neutral palette with
+              teal as the sole accent) and a --fragment output mode for
+              publishing directly as a Claude Artifact.
+    prioritization_reflections_journal_started:
+        - description: >
+              docs/manifest/prioritization_reflections.yaml: a running
+              journal of zhafen's own thinking-out-loud about
+              prioritization and solution architecture, prompted directly
+              by the live_testing_framework work above. Dated installments
+              of one ongoing monologue -- kept separate from
+              story-simulator.yaml the same way this file is, so it isn't
+              scanned into audit.traceability/audit.requirement_coverage.
+    requirement_renamed_to_requirement_priority:
+        - description: >
+              Followed emc2p's own rename (see emc2p's history.yaml):
+              requirement became the inverse relation of solution there,
+              so this project's own "- requirement" tags (all 37 of them,
+              docs/manifest/story-simulator.yaml) and
+              find_live_testing_solution_covers.py's matching
+              registrar.get() call were renamed to requirement_priority to
+              follow. Also the first time this project's own manifest
+              usage of consideration/consideration_rating/
+              requirement_priority/solution got a real, validated emc2p
+              schema instead of relying on emc2p's schema-optional
+              duck-typing -- the pinned emc2p rev long predated all four
+              types moving there.
+    headless_and_mcp_client_session_unified_into_create_session:
+        - description: >
+              tests/test_human_validated/helpers.py's own HeadlessSession/
+              McpClientSession subclasses (each independently fixing up
+              this repo's own .mcp.json/allowed-tools/cwd/per-save
+              extra_env over emc2p's generic constructors) replaced by one
+              create_session(save_dir, driver=...) factory, built on
+              emc2p.testing.agent_session.create_agent_session -- a new
+              module added upstream in emc2p specifically to unify this
+              (a typing.Protocol, AgentSession, plus the driver-dispatch
+              factory itself). Also the first time this repo exposes
+              driver="copilot" (CopilotHeadlessProvider was already fully
+              built in emc2p, just never wired up here) alongside the
+              existing "claude"/"mcp_client" choices, resolved the same
+              (explicit argument > env var > default) way responder
+              already was.
+    parking_and_parking_split_merged_into_one_directory:
+        - description: >
+              test_scenarios/parking/ (the deterministic, no-LLM
+              walkthrough of the original combined-trip scenario) and
+              test_scenarios/parking_split/ (the live walkthrough of the
+              split-into-drive-and-park version) were two separate
+              directories with two separate scenario.yaml files, even
+              though the split version had already superseded the
+              combined one as the scenario actually worth testing live --
+              the deterministic test was a counterpart to a scenario
+              nothing live exercised anymore. Merged into one
+              test_scenarios/parking/ directory sharing one scenario.yaml
+              (the split-events version), with the deterministic
+              walkthrough rewritten against its six events (three drives,
+              three parks) instead of the old three combined trips, and
+              both walkthroughs living in the same test_scenario.py as
+              TestDeterministicWalkthrough/TestLiveWalkthrough -- a live
+              failure and its deterministic counterpart now always
+              compare against the exact same fixture, with no risk of the
+              two silently drifting apart the way the old split let them.
+    test_human_validated_comments_and_docstrings_abbreviated:
+        - description: >
+              tests/test_human_validated/'s own docstrings/comments
+              (conftest.py, helpers.py, test_conftest_fixtures.py, and
+              both test_scenarios/parking/test_scenario.py and
+              test_scenarios/race/test_scenario.py) had grown well past
+              this project's usual style -- some module docstrings ran
+              30+ lines, restating rationale a reader could otherwise
+              trace from the code itself. Trimmed to a stricter,
+              human_validated-only convention: an inline comment is at
+              most two lines, and a docstring is a one-line summary
+              followed by an empty line and at most three more lines.
+              Detail that didn't survive the cut wasn't deleted for its
+              own sake -- it's still recoverable from this file's own
+              earlier entries and from git blame, just no longer
+              duplicated inline for every future reader to wade through.
+    safe_view_and_safe_view_current_moved_to_emc2p:
+        - description: >
+              story_simulator/core.py's own safe_view/safe_view_current
+              free functions (KeyError-safe wrappers around
+              Registrar.view/view_current, used by pop_event/
+              _next_time_stamp to read a component type that might not
+              exist yet) carried no story-simulator-specific logic at
+              all -- moved upstream to emc2p as Registry.safe_view/
+              safe_view_current (Registrar property forwarding included),
+              with emc2p's own get_current_value rewritten to call
+              safe_view_current internally instead of duplicating its own
+              copy of the same try/except. Every call site here
+              (core.py, tests/test_human_validated/helpers.py,
+              tests/test_core.py, shelved/story_simulator/spatial.py)
+              switched from the free-function form
+              (safe_view_current(registrar, ...)) to the method form
+              (registrar.safe_view_current(...)); the emc2p pin in
+              pyproject.toml's [tool.uv.sources] was bumped to pick up
+              the new methods. See emc2p's own history.yaml entry of the
+              same name for the one behavior simplification made in the
+              move (an empty-but-declared component type now reads back
+              as an empty DataFrame rather than None).

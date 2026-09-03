@@ -6,31 +6,28 @@ scratch, not a heavyweight process document.
 
 ## Dev setup
 
-1. Clone with submodules (the registry engine, [`emc2p`](emc2p), is a git
-   submodule):
-   ```
-   git clone --recurse-submodules <repo-url>
-   # or, if already cloned:
-   git submodule update --init --recursive
-   ```
+1. Clone normally -- no submodules. The registry engine, [`emc2p`](https://github.com/zhafen/emc2p),
+   is a plain pinned dependency (`[tool.uv.sources]` in `pyproject.toml`),
+   not vendored in this repo's own tree.
 2. Install dependencies with [uv](https://docs.astral.sh/uv/):
    ```
    uv sync
    ```
-3. Enable the repo's git hooks (checked into `.githooks/`, not the default
-   `.git/hooks/`, so this is a one-time opt-in per clone):
-   ```
-   git config core.hooksPath .githooks
-   ```
-   The pre-commit hook runs `scripts/check-submodule-pointers.sh`, which
-   catches an `emc2p` pointer bump that's actually a rewind, or one that
-   points at a commit only present locally -- see that script's own
-   comments for the PR it was written in response to.
-4. Have a Postgres instance reachable -- see the README's Quick start for
+3. Have a Postgres instance reachable -- see the README's Quick start for
    the default DSN and how to point elsewhere with
    `STORY_SIM_DATABASE_DSN`.
-5. Copy `.env.example` to `.env` if you need any of the variables it
+4. Copy `.env.example` to `.env` if you need any of the variables it
    documents (most local dev doesn't).
+
+If you're actively co-developing emc2p alongside this repo, a local,
+gitignored `uv.toml` (not `pyproject.toml`) can override the pinned
+dependency to a local editable path for faster iteration, e.g.:
+```toml
+[tool.uv.sources]
+emc2p = { path = "../emc2p", editable = true }
+```
+The committed dependency in `pyproject.toml` stays the pinned git
+revision everyone else (and CI) installs.
 
 ## Running tests
 
@@ -61,13 +58,12 @@ code under `shelved/`, which isn't collected by default (see
 - Branch off `main`, open a PR back into it. The PR template pre-fills the
   sections reviewers will look for (summary, key changes, test plan).
 - CI (`.github/workflows/ci.yml`) runs the test suite against a real
-  Postgres service container, plus the submodule-pointer check on every
-  PR -- both need to pass before merging.
-- If a PR touches `emc2p`, double-check the submodule pointer is actually
-  moving forward (an ancestor of the old commit is a rewind, not an
-  update) and that the target commit is pushed to `emc2p`'s own remote --
-  the pre-commit hook and CI both check this, but it's easy to trip if
-  you're working across both repos at once.
+  Postgres service container -- needs to pass before merging.
+- If a PR bumps the pinned `emc2p` revision (`[tool.uv.sources]` in
+  `pyproject.toml`), double-check the target commit is actually pushed to
+  `emc2p`'s own remote and moving forward, not a rewind -- `uv lock` will
+  fail outright if the commit isn't reachable, but it won't catch a
+  rewind on its own.
 - See [`docs/architecture.md`](docs/architecture.md) for how the pieces
   fit together, and [`CLAUDE.md`](CLAUDE.md) for conventions specific to
   AI-assisted sessions working in this repo (branch/session-recovery

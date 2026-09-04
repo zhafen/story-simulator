@@ -72,7 +72,40 @@ cost_budgets:
 story_simulator_mission:
     data:
         - description: To enable players to create and experience self-consistent stories with simulation mechanics handled by AI.
-        - requirement_priority
+        - requirement
+    freely_adventure_through_stories:
+        data:
+            - requirement
+        story_simulator:
+            data:
+                - description: Our solution for free adventure through stories.
+                - solution
+            freely_interface_with_world:
+                data:
+                    - description: >
+                        The user needs to be able to freely experience and interact with
+                        their character's surroundings.
+                experience_surrroundings:
+                    - requirement
+                input_actions:
+                    - requirement
+                resolve_actions:
+                    - requirement
+            stories_exist_in_world:
+                data:
+                    - description: >
+                        Stories must be embedded in the world for the user to experience.
+                    - requirement
+                emergent_story:
+                    - description: Story naturally emerges from characters and setting.
+                    - solution
+                authored_story:
+                    - desciption: >
+                        The story is embedded in the world in the form of chains of
+                        events that are anticipated to happen.
+                    - solution
+
+unsorted_requirements_and_solutions:
     stateless_client:
         - description: >
               Any MCP-aware client can open the same save_dir and see identical

@@ -208,6 +208,7 @@ class TestLiveWalkthrough:
             save_dir, turn_timeout=420, session_timeout=420, subagent_time_budget_seconds=90
         ) as session:
             print(f"agent session trace: {session.trace_path}")
+            live_trial.id = str(session.trace_path)
             narration = session.send_turn(
                 f"Use start_world with save_dir={save_dir} and scenario_dir={SCENARIO_DIR} "
                 f"to open a story-simulator world. Then {RUN_TO_DONE_INSTRUCTION}"

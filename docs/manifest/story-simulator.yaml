@@ -66,9 +66,6 @@ cost_budgets:
                   wrong (weighted heavier than plain time cost).
               normalized_value_per_unit: 2
 
-# story_simulator_mission is the tree root; every requirement in the
-# project is a descendant of it. `requirement` is a bare tag.
-
 story_simulator_mission:
     data:
         - description: To enable players to create and experience self-consistent stories with simulation mechanics handled by AI.

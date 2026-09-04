@@ -439,7 +439,7 @@ async def _run_event_loop(
     *,
     resume_alias: str | None = None,
     replay: TurnReplay | None = None,
-) -> tuple[str | None, TurnReplay | None, str, str | None]:
+) -> tuple[str | None, TurnReplay | None, str, str | None, bool]:
     """The Event-driven simulation subgraph itself: Pop event -> Valid? ->
     Process event, looping until it pauses or the queue empties.
 
@@ -473,12 +473,16 @@ async def _run_event_loop(
     *before* `process_event` in this function's own source order too, not
     just at runtime for the common case.
 
-    Returns (alias, replay, prompt, responder): `alias`/`replay`/`responder`
-    are None only when the queue is empty (nothing left to stash);
-    otherwise `alias`/`replay` are exactly what `advance_simulation` needs
-    to encode into a `resume_token` for resuming this same pause point, and
-    `responder` ("host" or "subagent", never "human" -- see
-    `resolve_event`) says who it's asking.
+    Returns (alias, replay, prompt, responder, is_checkpoint): `alias`/
+    `replay`/`responder` are None only when the queue is empty (nothing
+    left to stash); otherwise `alias`/`replay` are exactly what
+    `advance_simulation` needs to encode into a `resume_token` for
+    resuming this same pause point, and `responder` ("host" or "subagent",
+    never "human" -- see `resolve_event`) says who it's asking.
+    `is_checkpoint` (always False when the queue emptied) is
+    `NeedsExternalInput.is_checkpoint` passed through -- see that
+    attribute's own docstring for why `_wrap_loop_result`/`_resolve_args`
+    need to know.
     """
     if resume_alias is not None:
         assert replay is not None
@@ -494,7 +498,7 @@ async def _run_event_loop(
         if alias is None:
             alias = pop_event(registrar)
             if alias is None:
-                return None, None, "Nothing scheduled.", None
+                return None, None, "Nothing scheduled.", None, False
             if not is_event_valid(registrar, alias):
                 alias = None
                 continue
@@ -502,13 +506,13 @@ async def _run_event_loop(
         try:
             await process_event(registrar, alias, replay, session)
         except NeedsExternalInput as e:
-            return alias, replay, e.prompt, e.responder
+            return alias, replay, e.prompt, e.responder, e.is_checkpoint
         # No exception: both resolve and plan answered fully -- reset alias
         # to force a fresh pop next iteration.
         alias = None
 
 
-def _encode_token(alias: str, answers: list[str]) -> str:
+def _encode_token(alias: str, answers: list[str], is_checkpoint: bool = False) -> str:
     """Serialize a paused turn's resumption state into an opaque token.
 
     Self-contained, not a lookup key into server memory -- the host
@@ -517,14 +521,23 @@ def _encode_token(alias: str, answers: list[str]) -> str:
     fresh one after a restart) can resume identically. No `_pending_turns`-
     style session dict needed, matching this module's own
     `stateless_client` mandate (see the `__iacs__` marker at the top).
+
+    `is_checkpoint`, omitted when False (so an ordinary pause's token is
+    unchanged from before this field existed), marks a
+    "keyed_subagent"-budget check-in pause specifically -- see
+    `NeedsExternalInput.is_checkpoint`. `_resolve_args` reads it back to
+    keep the check-in's own "continue"/"stop" reply out of the answer bank.
     """
-    payload = json.dumps({"alias": alias, "answers": answers}).encode()
-    return base64.urlsafe_b64encode(payload).decode()
+    payload: dict[str, object] = {"alias": alias, "answers": answers}
+    if is_checkpoint:
+        payload["is_checkpoint"] = True
+    payload_bytes = json.dumps(payload).encode()
+    return base64.urlsafe_b64encode(payload_bytes).decode()
 
 
-def _decode_token(resume_token: str) -> tuple[str, list[str]]:
+def _decode_token(resume_token: str) -> tuple[str, list[str], bool]:
     payload = json.loads(base64.urlsafe_b64decode(resume_token.encode()))
-    return payload["alias"], payload["answers"]
+    return payload["alias"], payload["answers"], payload.get("is_checkpoint", False)
 
 
 def _resolve_args(resume_token: str | None, answer: str | None) -> tuple[str | None, TurnReplay | None]:
@@ -535,11 +548,27 @@ def _resolve_args(resume_token: str | None, answer: str | None) -> tuple[str | N
         return None, None
     if answer is None:
         raise ValueError("resume_token given without an answer.")
-    alias, prior_answers = _decode_token(resume_token)
+    alias, prior_answers, is_checkpoint = _decode_token(resume_token)
+    if is_checkpoint:
+        # `answer` here is the host's reply to a "keyed_subagent" budget
+        # check-in ("continue"/"stop"), not game content -- the judgment
+        # call that check-in interrupted was never actually asked, so
+        # there's nothing of `answer`'s to fold into the bank. Discarding
+        # it and resuming with `prior_answers` unchanged lets that same
+        # call be attempted again fresh, with a new budget, instead of the
+        # check-in reply masquerading as its answer (the bug this
+        # `is_checkpoint` plumbing exists to prevent).
+        return alias, TurnReplay(answers=prior_answers)
     return alias, TurnReplay(answers=[*prior_answers, answer])
 
 
-def _wrap_loop_result(alias: str | None, replay: TurnReplay | None, prompt: str, responder: str | None) -> dict:
+def _wrap_loop_result(
+    alias: str | None,
+    replay: TurnReplay | None,
+    prompt: str,
+    responder: str | None,
+    is_checkpoint: bool = False,
+) -> dict:
     """Shared result shape for `advance_simulation`."""
     if alias is None:
         return {"status": "done", "narration": prompt}
@@ -547,7 +576,7 @@ def _wrap_loop_result(alias: str | None, replay: TurnReplay | None, prompt: str,
         "status": "input_required",
         "prompt": prompt,
         "responder": responder,
-        "resume_token": _encode_token(alias, replay.answers),
+        "resume_token": _encode_token(alias, replay.answers, is_checkpoint),
     }
 
 
@@ -650,7 +679,7 @@ async def advance_simulation(session, resume_token: str | None = None, answer: s
     """
     registrar = registrar_sessions.get_registrar(session)
     resume_alias, replay = _resolve_args(resume_token, answer)
-    alias, replay, prompt, responder = await _run_event_loop(
+    alias, replay, prompt, responder, is_checkpoint = await _run_event_loop(
         registrar, session, resume_alias=resume_alias, replay=replay
     )
-    return _wrap_loop_result(alias, replay, prompt, responder)
+    return _wrap_loop_result(alias, replay, prompt, responder, is_checkpoint)

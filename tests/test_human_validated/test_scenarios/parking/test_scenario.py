@@ -196,8 +196,17 @@ class TestLiveWalkthrough:
         save_dir = tmp_path / "test_save"
 
         # Raised timeouts: six resolve+plan steps routinely exceed the
-        # 120s/240s defaults, timing out mid-event otherwise.
-        with create_session(save_dir, turn_timeout=420, session_timeout=420) as session:
+        # 120s/240s defaults, timing out mid-event otherwise. Raised
+        # subagent_time_budget_seconds too, well past the production
+        # default's 30s (itself sized for a real Claude Code CLI session's
+        # ~60s per-MCP-tool-call ceiling, which this harness's own
+        # driver="mcp_client" doesn't share -- see create_session's
+        # docstring): fewer "keyed_subagent" budget check-ins needed to
+        # finish this six-event scenario, each one an MCP round-trip this
+        # test's 420s turn_timeout can otherwise absorb without trouble.
+        with create_session(
+            save_dir, turn_timeout=420, session_timeout=420, subagent_time_budget_seconds=90
+        ) as session:
             print(f"agent session trace: {session.trace_path}")
             narration = session.send_turn(
                 f"Use start_world with save_dir={save_dir} and scenario_dir={SCENARIO_DIR} "

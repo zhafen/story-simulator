@@ -56,20 +56,25 @@ _DEFAULT_MODEL_BY_DRIVER: dict[Driver, str | None] = {
 }
 
 
-def _session_extra_env(save_dir: Path, responder: str | None) -> dict[str, str]:
+def _session_extra_env(
+    save_dir: Path, responder: str | None, subagent_time_budget_seconds: float | None
+) -> dict[str, str]:
     """Env vars every driver's spawned server needs: save_dir's schema and responder.
 
     See LIVE_TEST_RESPONDER_ENV_VAR's docstring for responder resolution.
     """
     if responder is None:
         responder = os.environ.get(LIVE_TEST_RESPONDER_ENV_VAR, DEFAULT_LIVE_TEST_RESPONDER)
-    return {
+    env = {
         # Tells this repo's own Stop hooks that this subprocess is
         # automated, not an interactive session a nudge can derail.
         "STORY_SIM_HEADLESS_TEST": "1",
         "IACS_DATABASE_URL": registry_url(save_dir),
         "STORY_SIM_RESPONDER": responder,
     }
+    if subagent_time_budget_seconds is not None:
+        env["STORY_SIM_SUBAGENT_TIME_BUDGET_SECONDS"] = str(subagent_time_budget_seconds)
+    return env
 
 
 def create_session(
@@ -81,12 +86,27 @@ def create_session(
     turn_timeout: float = 240,
     session_timeout: float = 120,
     max_tool_iterations: int = DEFAULT_LIVE_TEST_MAX_TOOL_ITERATIONS,
+    subagent_time_budget_seconds: float | None = None,
 ) -> AgentSession:
     """story-simulator's live-test session factory over create_agent_session.
 
     `driver`/`model`/`responder` resolve as explicit arg > env var > default.
     `responder` defaults to "keyed_subagent"; pass "host" to exercise the
     connected model's own reasoning.
+
+    `subagent_time_budget_seconds`, left at its own production default
+    (`config.DEFAULT_KEYED_SUBAGENT_TIME_BUDGET_SECONDS`, 30s -- deliberately
+    short there, to stay well under a real Claude Code CLI session's own
+    ~60s per-MCP-tool-call timeout) unless given, overrides
+    `STORY_SIM_SUBAGENT_TIME_BUDGET_SECONDS` for this session's spawned
+    server only. This test harness's own `driver="mcp_client"` has no such
+    ~60s ceiling (`turn_timeout`/`session_timeout` above are its actual
+    bound), so a scenario needing several "keyed_subagent" budget check-ins
+    to finish can raise this instead of just accepting more check-ins --
+    each one is now a same-cost no-op resume rather than free (still one
+    more MCP round-trip), now that the check-in's own resume no longer
+    risks corrupting whichever judgment call it interrupted (see
+    `story_simulator.resolve.NeedsExternalInput.is_checkpoint`).
     """
     if driver is None:
         driver = os.environ.get(LIVE_TEST_DRIVER_ENV_VAR, DEFAULT_LIVE_TEST_DRIVER)
@@ -99,7 +119,7 @@ def create_session(
         allowed_tools=_ALLOWED_TOOLS,
         cwd=REPO_ROOT,
         model=model,
-        extra_env=_session_extra_env(save_dir, responder),
+        extra_env=_session_extra_env(save_dir, responder, subagent_time_budget_seconds),
         trace_dir=LIVE_TRACE_DIR,
         turn_timeout=turn_timeout,
         session_timeout=session_timeout,

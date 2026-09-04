@@ -11,5 +11,6 @@ uv.toml
 render.svg
 /data/sandbox/
 /.live_test_traces/
+/.live_trial_results/
 /.keyed_subagent_usage.jsonl
 /.write_call_trace.jsonl

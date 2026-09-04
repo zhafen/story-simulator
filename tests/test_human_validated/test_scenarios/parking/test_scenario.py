@@ -191,7 +191,7 @@ class TestLiveWalkthrough:
     }
 
     @pytest.mark.live
-    def test_scenario_resolves_correctly(self, tmp_path: Path):
+    def test_scenario_resolves_correctly(self, tmp_path: Path, live_trial):
         """Runs to completion under a live session, then checks final state."""
         save_dir = tmp_path / "test_save"
 

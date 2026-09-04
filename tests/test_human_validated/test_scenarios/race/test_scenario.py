@@ -42,7 +42,7 @@ EXPECTED_WRITE_ORDER = {
 
 
 @pytest.mark.live
-def test_resolves_correctly(tmp_path: Path):
+def test_resolves_correctly(tmp_path: Path, live_trial):
     """Runs to completion under a live session, then checks final state."""
     save_dir = tmp_path / "test_save"
 
@@ -70,7 +70,7 @@ def test_resolves_correctly(tmp_path: Path):
 
 
 @pytest.mark.live
-def test_persists_via_keyed_subagent(tmp_path: Path):
+def test_persists_via_keyed_subagent(tmp_path: Path, live_trial):
     """Confirms keyed_subagent's writes reach disk -- see module docstring."""
     save_dir = tmp_path / "test_save"
 

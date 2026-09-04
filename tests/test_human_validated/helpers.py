@@ -21,6 +21,14 @@ REPO_ROOT = Path(__file__).parent.parent.parent
 # lands here, one file per session -- not just the final narrated result.
 LIVE_TRACE_DIR = REPO_ROOT / ".live_test_traces"
 
+# Wired into emc2p.testing.live_trial.make_live_trial_fixture (see
+# conftest.py) -- how many times a test requesting the `live_trial`
+# fixture reruns, and where each run's own CSV row (commit/passed/
+# error_log/timestamp) lands. Defaults to 1 (today's plain single-run
+# behavior) when unset; set STORY_SIM_LIVE_TRIALS=N to run N trials.
+LIVE_TRIAL_ENV_VAR = "STORY_SIM_LIVE_TRIALS"
+LIVE_TRIAL_RESULTS_DIR = REPO_ROOT / ".live_trial_results"
+
 # Cheapest Claude model -- these tools must hold up under a bad model.
 # Only used by driver="claude"; mcp_client uses DEFAULT_LIVE_TEST_MODEL.
 LOW_QUALITY_MODEL = "claude-haiku-4-5-20251001"

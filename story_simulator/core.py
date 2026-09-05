@@ -479,10 +479,8 @@ async def _run_event_loop(
     `advance_simulation` needs to encode into a `resume_token` for
     resuming this same pause point, and `responder` ("host" or "subagent",
     never "human" -- see `resolve_event`) says who it's asking.
-    `is_checkpoint` (always False when the queue emptied) is
-    `NeedsExternalInput.is_checkpoint` passed through -- see that
-    attribute's own docstring for why `_wrap_loop_result`/`_resolve_args`
-    need to know.
+    `is_checkpoint` passes through `NeedsExternalInput.is_checkpoint`
+    (False when the queue emptied) -- see that attribute's docstring.
     """
     if resume_alias is not None:
         assert replay is not None
@@ -522,11 +520,8 @@ def _encode_token(alias: str, answers: list[str], is_checkpoint: bool = False) -
     style session dict needed, matching this module's own
     `stateless_client` mandate (see the `__iacs__` marker at the top).
 
-    `is_checkpoint`, omitted when False (so an ordinary pause's token is
-    unchanged from before this field existed), marks a
-    "keyed_subagent"-budget check-in pause specifically -- see
-    `NeedsExternalInput.is_checkpoint`. `_resolve_args` reads it back to
-    keep the check-in's own "continue"/"stop" reply out of the answer bank.
+    `is_checkpoint` (omitted when False) marks a keyed_subagent budget
+    check-in pause -- see `NeedsExternalInput.is_checkpoint`.
     """
     payload: dict[str, object] = {"alias": alias, "answers": answers}
     if is_checkpoint:
@@ -550,14 +545,8 @@ def _resolve_args(resume_token: str | None, answer: str | None) -> tuple[str | N
         raise ValueError("resume_token given without an answer.")
     alias, prior_answers, is_checkpoint = _decode_token(resume_token)
     if is_checkpoint:
-        # `answer` here is the host's reply to a "keyed_subagent" budget
-        # check-in ("continue"/"stop"), not game content -- the judgment
-        # call that check-in interrupted was never actually asked, so
-        # there's nothing of `answer`'s to fold into the bank. Discarding
-        # it and resuming with `prior_answers` unchanged lets that same
-        # call be attempted again fresh, with a new budget, instead of the
-        # check-in reply masquerading as its answer (the bug this
-        # `is_checkpoint` plumbing exists to prevent).
+        # `answer` is the check-in's own reply, not game content -- discard
+        # it so the interrupted call retries fresh instead of banking it.
         return alias, TurnReplay(answers=prior_answers)
     return alias, TurnReplay(answers=[*prior_answers, answer])
 

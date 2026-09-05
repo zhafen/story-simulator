@@ -21,11 +21,8 @@ REPO_ROOT = Path(__file__).parent.parent.parent
 # lands here, one file per session -- not just the final narrated result.
 LIVE_TRACE_DIR = REPO_ROOT / ".live_test_traces"
 
-# Wired into emc2p.testing.live_trial.make_live_trial_fixture (see
-# conftest.py) -- how many times a test requesting the `live_trial`
-# fixture reruns, and where each run's own CSV row (commit/passed/
-# error_log/timestamp) lands. Defaults to 1 (today's plain single-run
-# behavior) when unset; set STORY_SIM_LIVE_TRIALS=N to run N trials.
+# Wired into emc2p.testing.live_trial (see conftest.py): how many times
+# a live_trial test reruns, and where each trial's CSV row lands.
 LIVE_TRIAL_ENV_VAR = "STORY_SIM_LIVE_TRIALS"
 LIVE_TRIAL_RESULTS_DIR = REPO_ROOT / ".live_trial_results"
 
@@ -102,19 +99,10 @@ def create_session(
     `responder` defaults to "keyed_subagent"; pass "host" to exercise the
     connected model's own reasoning.
 
-    `subagent_time_budget_seconds`, left at its own production default
-    (`config.DEFAULT_KEYED_SUBAGENT_TIME_BUDGET_SECONDS`, 30s -- deliberately
-    short there, to stay well under a real Claude Code CLI session's own
-    ~60s per-MCP-tool-call timeout) unless given, overrides
-    `STORY_SIM_SUBAGENT_TIME_BUDGET_SECONDS` for this session's spawned
-    server only. This test harness's own `driver="mcp_client"` has no such
-    ~60s ceiling (`turn_timeout`/`session_timeout` above are its actual
-    bound), so a scenario needing several "keyed_subagent" budget check-ins
-    to finish can raise this instead of just accepting more check-ins --
-    each one is now a same-cost no-op resume rather than free (still one
-    more MCP round-trip), now that the check-in's own resume no longer
-    risks corrupting whichever judgment call it interrupted (see
-    `story_simulator.resolve.NeedsExternalInput.is_checkpoint`).
+    `subagent_time_budget_seconds` overrides
+    `STORY_SIM_SUBAGENT_TIME_BUDGET_SECONDS` for this session only
+    (default: the 30s production value, sized for a real Claude Code CLI
+    session's own tool-call ceiling -- this harness's `mcp_client` driver has none).
     """
     if driver is None:
         driver = os.environ.get(LIVE_TEST_DRIVER_ENV_VAR, DEFAULT_LIVE_TEST_DRIVER)

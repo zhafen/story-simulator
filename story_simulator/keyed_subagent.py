@@ -46,12 +46,8 @@ REPO_ROOT = Path(__file__).parent.parent
 # usage.json -- multiple concurrent MCP subprocesses may write here. Gitignored.
 USAGE_LOG_PATH = REPO_ROOT / ".keyed_subagent_usage.jsonl"
 
-# TEMPORARY diagnostic instrumentation for #55's write-accuracy investigation
-# -- captures each update_registry call this responder makes (the judgment
-# prompt it was answering, the registry state just before the write, and the
-# write's own yaml_string) so a live-test failure's actual misfire can be
-# inspected after the fact instead of re-derived from final-state diffs
-# alone. Gitignored; safe to delete once the misfire pattern is captured.
+# TEMPORARY diagnostic instrumentation (#70): logs each update_registry
+# call (prompt, prior state, args, result) for post-hoc misfire debugging.
 WRITE_TRACE_LOG_PATH = REPO_ROOT / ".write_call_trace.jsonl"
 
 

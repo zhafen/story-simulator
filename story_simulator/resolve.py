@@ -105,13 +105,9 @@ class NeedsExternalInput(Exception):
     returned result so whichever host answers it knows what's actually
     being asked of it.
 
-    `is_checkpoint` marks the one pause that isn't a real judgment ask:
-    "keyed_subagent" checking in with the host once its own time budget
-    runs out (see `TurnReplay.resolve`). That pause's own "answer" (the
-    host's "continue"/"stop" reply) is never game content and must never
-    be folded into `TurnReplay.answers` as if it were -- `core.py`'s
-    resume plumbing (`_resolve_args`/`_encode_token`/`_decode_token`)
-    reads this flag to keep the two apart.
+    `is_checkpoint` marks keyed_subagent's own budget check-in pause (see
+    `TurnReplay.resolve`) -- its reply is never game content, so `core.py`'s
+    resume plumbing must not fold it into `TurnReplay.answers`.
     """
 
     def __init__(self, prompt: str, responder: str, is_checkpoint: bool = False):
@@ -182,23 +178,14 @@ class TurnReplay:
 
     async def resolve(self, request: JudgmentRequest, *, responder: str, session=None) -> str:
         if responder == "keyed_subagent":
-            # Cache check first, and -- unlike the deadline check below --
-            # not gated on it: a call this replay already has a real answer
-            # for must keep replaying fast regardless of budget.
+            # Cache check first, not gated on budget: an already-answered
+            # call must keep replaying fast regardless of the deadline.
             i = self.call_index
             if i < len(self.answers):
                 self.call_index += 1
                 return self.answers[i]
-            # About to make a genuinely new keyed_subagent call: budget
-            # check first, since keyed_subagent never pauses on its own, so
-            # with nothing bounding it, a call can chain unboundedly many
-            # round-trips. Deliberately does NOT consume `call_index` or
-            # append anything to `self.answers` -- this pause isn't this
-            # call's answer, just a "not yet" -- so a resume re-attempts
-            # this exact same call fresh (with a new budget) instead of
-            # treating the host's check-in reply as if it were this call's
-            # actual judgment content (see `is_checkpoint` on
-            # `NeedsExternalInput`, and `core._resolve_args`).
+            # A new call: check budget first. Doesn't consume call_index/
+            # answers, so a resume retries this same call fresh (is_checkpoint).
             if self.deadline is not None and time.monotonic() >= self.deadline:
                 checkin_prompt = (
                     "The \"keyed_subagent\" responder has reached its time budget "

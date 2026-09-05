@@ -25,11 +25,8 @@ from test_human_validated.helpers import (
 # name/default are story-simulator-specific.
 responder = make_responder_fixture(LIVE_TEST_RESPONDER_ENV_VAR, DEFAULT_LIVE_TEST_RESPONDER)
 
-# A live test taking `live_trial` as a parameter reruns
-# STORY_SIM_LIVE_TRIALS times (default 1), each run's own pass/fail
-# recorded to .live_trial_results/<test name>.csv. pytest_generate_tests
-# must be assigned under that exact name for pytest to discover it as a
-# hook -- see make_live_trial_fixture's own docstring.
+# live_trial reruns STORY_SIM_LIVE_TRIALS times (default 1), recording
+# each run's pass/fail to .live_trial_results/<test name>.csv.
 live_trial, pytest_generate_tests = make_live_trial_fixture(
     results_dir=LIVE_TRIAL_RESULTS_DIR, repo_root=REPO_ROOT, env_var=LIVE_TRIAL_ENV_VAR
 )

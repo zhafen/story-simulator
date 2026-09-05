@@ -116,17 +116,10 @@ def test_keyed_subagent_checks_in_once_deadline_passes(monkeypatch):
 def test_checkpoint_pause_leaves_call_index_untouched_for_resume(monkeypatch):
     """Regression for the bug this module's `is_checkpoint` plumbing fixes.
 
-    Before the fix, a deadline check-in consumed the same `call_index`
-    slot as the judgment call it interrupted; resuming then fed the
-    host's "continue" reply into that call as if it were the real
-    answer, so keyed_subagent was never actually asked again -- silently
-    corrupting that event's resolution and leaving it eligible to be
-    popped and re-paused forever (see story-simulator#70's investigation).
-
-    Simulates one resume cycle directly against `TurnReplay`, without
-    `core.py`'s token plumbing: a fresh (unexpired) deadline after the
-    pause must let the SAME call actually reach keyed_subagent, not
-    short-circuit to a cached non-answer.
+    A deadline check-in used to consume the interrupted call's own
+    `call_index` slot, so resuming fed the host's "continue" reply into
+    it as if it were the real answer -- keyed_subagent was never asked
+    again. Confirms a resume instead retries the same call fresh.
     """
     calls = []
 
@@ -149,10 +142,8 @@ def test_checkpoint_pause_leaves_call_index_untouched_for_resume(monkeypatch):
     assert replay.answers == []
     assert replay.call_index == 0
 
-    # Resuming (per core._resolve_args's is_checkpoint branch) discards the
-    # check-in's own "continue" reply rather than appending it -- simulated
-    # here by just giving the same replay object a fresh budget, exactly as
-    # core._run_event_loop does on every call, resumed or not.
+    # Resuming discards the check-in's reply (core._resolve_args);
+    # simulated here via a fresh deadline, as every call gets on resume.
     replay.deadline = time.monotonic() + 30
     result = asyncio.run(
         replay.resolve(
@@ -185,11 +176,8 @@ def test_keyed_subagent_within_budget_still_answers_inline(monkeypatch):
 
 
 def test_resolve_args_discards_checkpoint_answer_instead_of_banking_it():
-    """`core._resolve_args`'s own half of the `is_checkpoint` fix: resuming
-    a checkpoint pause must not fold the host's "continue" reply into the
-    answer bank `TurnReplay` replays from -- see
-    `test_checkpoint_pause_leaves_call_index_untouched_for_resume` above
-    for `TurnReplay`'s own half.
+    """`_resolve_args`'s half of the `is_checkpoint` fix: a checkpoint's
+    "continue" reply must not enter `TurnReplay`'s answer bank.
     """
     from story_simulator.core import _encode_token, _resolve_args
 

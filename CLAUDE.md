@@ -79,6 +79,22 @@ specific action before it happens, the same way a force-push or a
 destructive git operation would. If you conclude a PR needs to merge to
 resolve something, say so and wait — don't do it and report it after.
 
+## Commit and push immediately, don't batch or wait for a prompt
+
+Commit (and push) each meaningful change as soon as it's made, rather
+than batching several turns' edits together or waiting for explicit
+go-ahead first. Work here now happens primarily in ephemeral cloud/remote
+sessions, not long-running local ones, so uncommitted work risks being
+lost outright when a container is reclaimed. Diff-based tooling is also
+keyed off git's own state and can go blind to batched changes: e.g.
+`.claude/hooks/stop-docstring-check.sh` inspects `git diff HEAD` plus
+untracked files at turn-end, which has nothing left to flag once a
+turn's edits are already committed — `.claude/hooks/check-docstring-staged.sh`
+(checking `git diff --cached` right before the commit) exists specifically
+to cover that gap, but a hook needing a second, earlier-firing copy of
+itself to survive batching is itself a sign that batching is the wrong
+default here.
+
 ## Prefix in-world narration with `> narrator:`
 
 When narrating a turn's outcome directly to the player (step 3 of the

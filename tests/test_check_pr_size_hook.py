@@ -1,5 +1,5 @@
-"""Regression coverage for scripts/check-pr-size.sh (also .githooks/pre-commit
-and .githooks/pre-push, both of which just call it).
+"""Regression coverage for scripts/check-pr-size.sh (also .githooks/pre-commit,
+which just calls it).
 
 Runs the real script as a subprocess against a throwaway git repo, the
 same pattern tests/test_session_checkin_hook.py already uses for

@@ -1,16 +1,14 @@
-#!/bin/bash
-# PreToolUse(git commit|git push) nudge: this repo's PRs have grown too
-# large in practice (see PR #66), so warn -- non-blocking -- when the
+#!/usr/bin/env bash
+# git pre-commit hook: warn -- non-blocking -- when the
 # branch's diff vs its base crosses a size threshold, prompting a check
-# on whether the remaining work still belongs in this PR.
+# on whether the remaining work still belongs in this PR. Lives here
+# (agent-independent) rather than in .claude/hooks/ so it runs for any
+# commit regardless of what made it, not just a Claude Code session.
 set -euo pipefail
 
 MAX_LINES=400
 MAX_FILES=15
 
-if ! git rev-parse --git-dir >/dev/null 2>&1; then
-  exit 0
-fi
 repo_root=$(git rev-parse --show-toplevel)
 cd "$repo_root"
 
@@ -47,8 +45,7 @@ total_files=$((committed_files + staged_files))
 total_lines=$((committed_add + committed_del + staged_add + staged_del))
 
 if (( total_files > MAX_FILES || total_lines > MAX_LINES )); then
-  msg="This branch's diff vs ${base} is now ~${total_lines} lines across ${total_files} files (threshold: ${MAX_LINES} lines / ${MAX_FILES} files). Before continuing: does everything in this diff still belong in one PR, or should the next chunk of work move to its own branch/PR?"
-  jq -n --arg msg "$msg" '{hookSpecificOutput: {hookEventName: "PreToolUse", permissionDecision: "allow", additionalContext: $msg}}'
+  echo "This branch's diff vs ${base} is now ~${total_lines} lines across ${total_files} files (threshold: ${MAX_LINES} lines / ${MAX_FILES} files). Before continuing: does everything in this diff still belong in one PR, or should the next chunk of work move to its own branch/PR?" >&2
 fi
 
 exit 0

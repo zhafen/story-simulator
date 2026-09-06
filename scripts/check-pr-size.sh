@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# git hook (pre-commit and pre-push): warn -- non-blocking -- when the
+# git pre-commit hook: warn -- non-blocking -- when the
 # branch's diff vs its base crosses a size threshold, prompting a check
 # on whether the remaining work still belongs in this PR. Lives here
 # (agent-independent) rather than in .claude/hooks/ so it runs for any
-# commit/push regardless of what made it, not just a Claude Code session.
+# commit regardless of what made it, not just a Claude Code session.
 set -euo pipefail
 
 MAX_LINES=400

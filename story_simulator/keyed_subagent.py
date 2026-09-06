@@ -30,6 +30,8 @@ its own to make a two-round-trip preview/confirm flow meaningful.
 
 from __future__ import annotations
 
+import json
+import time as _time
 from pathlib import Path
 from typing import Any
 
@@ -44,6 +46,18 @@ REPO_ROOT = Path(__file__).parent.parent
 # usage.json -- multiple concurrent MCP subprocesses may write here. Gitignored.
 USAGE_LOG_PATH = REPO_ROOT / ".keyed_subagent_usage.jsonl"
 
+# TEMPORARY diagnostic instrumentation (#70): logs each update_registry
+# call (prompt, prior state, args, result) for post-hoc misfire debugging.
+WRITE_TRACE_LOG_PATH = REPO_ROOT / ".write_call_trace.jsonl"
+
+
+def _log_write_call(record: dict[str, Any]) -> None:
+    try:
+        with WRITE_TRACE_LOG_PATH.open("a") as f:
+            f.write(json.dumps(record, default=str) + "\n")
+    except Exception:  # noqa: BLE001 -- diagnostic-only, never break the actual call
+        pass
+
 
 async def call_keyed_subagent(prompt: str, session: Any) -> str:
     """Answer one already-framed judgment prompt via `keyed_subagent_model()`,
@@ -57,10 +71,33 @@ async def call_keyed_subagent(prompt: str, session: Any) -> str:
     `TurnReplay.resolve` (see that module) so `dispatch()`'s calls below
     land on this exact world's already-open registrar, not a fresh one.
     """
+
+    def _dispatch(name: str, arguments: dict[str, Any]) -> str:
+        if name != "update_registry":
+            return core.registrar_sessions.dispatch(session, name, arguments)
+
+        registrar = core.registrar_sessions.get_registrar(session)
+        registry_before = registrar.summarize_components()
+        record: dict[str, Any] = {
+            "timestamp": _time.time(),
+            "prompt": prompt,
+            "arguments": arguments,
+            "registry_before": registry_before,
+        }
+        try:
+            result = core.registrar_sessions.dispatch(session, name, arguments)
+        except Exception as exc:  # noqa: BLE001 -- log then let the caller's own handling see it
+            record["error"] = str(exc)
+            _log_write_call(record)
+            raise
+        record["result"] = result
+        _log_write_call(record)
+        return result
+
     return await run_tool_calling_loop(
         prompt,
         model=keyed_subagent_model(),
-        dispatch=lambda name, arguments: core.registrar_sessions.dispatch(session, name, arguments),
+        dispatch=_dispatch,
         tools=REGISTRAR_TOOL_SPECS,
         usage_log_path=USAGE_LOG_PATH,
     )

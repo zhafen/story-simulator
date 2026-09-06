@@ -21,6 +21,11 @@ REPO_ROOT = Path(__file__).parent.parent.parent
 # lands here, one file per session -- not just the final narrated result.
 LIVE_TRACE_DIR = REPO_ROOT / ".live_test_traces"
 
+# Wired into emc2p.testing.live_trial (see conftest.py): how many times
+# a live_trial test reruns, and where each trial's CSV row lands.
+LIVE_TRIAL_ENV_VAR = "STORY_SIM_LIVE_TRIALS"
+LIVE_TRIAL_RESULTS_DIR = REPO_ROOT / ".live_trial_results"
+
 # Cheapest Claude model -- these tools must hold up under a bad model.
 # Only used by driver="claude"; mcp_client uses DEFAULT_LIVE_TEST_MODEL.
 LOW_QUALITY_MODEL = "claude-haiku-4-5-20251001"
@@ -56,20 +61,25 @@ _DEFAULT_MODEL_BY_DRIVER: dict[Driver, str | None] = {
 }
 
 
-def _session_extra_env(save_dir: Path, responder: str | None) -> dict[str, str]:
+def _session_extra_env(
+    save_dir: Path, responder: str | None, subagent_time_budget_seconds: float | None
+) -> dict[str, str]:
     """Env vars every driver's spawned server needs: save_dir's schema and responder.
 
     See LIVE_TEST_RESPONDER_ENV_VAR's docstring for responder resolution.
     """
     if responder is None:
         responder = os.environ.get(LIVE_TEST_RESPONDER_ENV_VAR, DEFAULT_LIVE_TEST_RESPONDER)
-    return {
+    env = {
         # Tells this repo's own Stop hooks that this subprocess is
         # automated, not an interactive session a nudge can derail.
         "STORY_SIM_HEADLESS_TEST": "1",
         "IACS_DATABASE_URL": registry_url(save_dir),
         "STORY_SIM_RESPONDER": responder,
     }
+    if subagent_time_budget_seconds is not None:
+        env["STORY_SIM_SUBAGENT_TIME_BUDGET_SECONDS"] = str(subagent_time_budget_seconds)
+    return env
 
 
 def create_session(
@@ -81,12 +91,18 @@ def create_session(
     turn_timeout: float = 240,
     session_timeout: float = 120,
     max_tool_iterations: int = DEFAULT_LIVE_TEST_MAX_TOOL_ITERATIONS,
+    subagent_time_budget_seconds: float | None = None,
 ) -> AgentSession:
     """story-simulator's live-test session factory over create_agent_session.
 
     `driver`/`model`/`responder` resolve as explicit arg > env var > default.
     `responder` defaults to "keyed_subagent"; pass "host" to exercise the
     connected model's own reasoning.
+
+    `subagent_time_budget_seconds` overrides
+    `STORY_SIM_SUBAGENT_TIME_BUDGET_SECONDS` for this session only
+    (default: the 30s production value, sized for a real Claude Code CLI
+    session's own tool-call ceiling -- this harness's `mcp_client` driver has none).
     """
     if driver is None:
         driver = os.environ.get(LIVE_TEST_DRIVER_ENV_VAR, DEFAULT_LIVE_TEST_DRIVER)
@@ -99,7 +115,7 @@ def create_session(
         allowed_tools=_ALLOWED_TOOLS,
         cwd=REPO_ROOT,
         model=model,
-        extra_env=_session_extra_env(save_dir, responder),
+        extra_env=_session_extra_env(save_dir, responder, subagent_time_budget_seconds),
         trace_dir=LIVE_TRACE_DIR,
         turn_timeout=turn_timeout,
         session_timeout=session_timeout,

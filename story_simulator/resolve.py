@@ -104,12 +104,17 @@ class NeedsExternalInput(Exception):
     itself) -- carried through to `core.advance_simulation`'s
     returned result so whichever host answers it knows what's actually
     being asked of it.
+
+    `is_checkpoint` marks keyed_subagent's own budget check-in pause (see
+    `TurnReplay.resolve`) -- its reply is never game content, so `core.py`'s
+    resume plumbing must not fold it into `TurnReplay.answers`.
     """
 
-    def __init__(self, prompt: str, responder: str):
+    def __init__(self, prompt: str, responder: str, is_checkpoint: bool = False):
         super().__init__(prompt)
         self.prompt = prompt
         self.responder = responder
+        self.is_checkpoint = is_checkpoint
 
 
 def _frame_for_responder(request: JudgmentRequest, responder: str) -> str:
@@ -172,24 +177,28 @@ class TurnReplay:
     deadline: float | None = None
 
     async def resolve(self, request: JudgmentRequest, *, responder: str, session=None) -> str:
-        i, self.call_index = self.call_index, self.call_index + 1
-        if i < len(self.answers):
-            return self.answers[i]
         if responder == "keyed_subagent":
-            # Budget check first: keyed_subagent never pauses on its own,
-            # so with nothing bounding it, a call can chain unboundedly many round-trips.
+            # Cache check first, not gated on budget: an already-answered
+            # call must keep replaying fast regardless of the deadline.
+            i = self.call_index
+            if i < len(self.answers):
+                self.call_index += 1
+                return self.answers[i]
+            # A new call: check budget first. Doesn't consume call_index/
+            # answers, so a resume retries this same call fresh (is_checkpoint).
             if self.deadline is not None and time.monotonic() >= self.deadline:
                 checkin_prompt = (
                     "The \"keyed_subagent\" responder has reached its time budget "
                     "for this advance_simulation call without needing your input on "
                     "anything -- it's been answering judgment calls on its own. "
-                    f"{self.call_index - 1} judgment call(s) already answered this way "
+                    f"{i} judgment call(s) already answered this way "
                     "so far this call (already reflected in the registry). Call "
                     "advance_simulation again with the same resume_token to keep the "
                     "simulation running from exactly where it left off, or stop here "
                     "if this is a reasonable checkpoint."
                 )
-                raise NeedsExternalInput(prompt=checkin_prompt, responder="host")
+                raise NeedsExternalInput(prompt=checkin_prompt, responder="host", is_checkpoint=True)
+            self.call_index += 1
             # No NeedsExternalInput here -- nothing external to wait on. Framed
             # the same way "host" is, since that's about how the model should behave.
             from story_simulator.keyed_subagent import call_keyed_subagent
@@ -197,6 +206,9 @@ class TurnReplay:
             answer = await call_keyed_subagent(_frame_for_responder(request, "host"), session)
             self.answers.append(answer)
             return answer
+        i, self.call_index = self.call_index, self.call_index + 1
+        if i < len(self.answers):
+            return self.answers[i]
         if responder in ("human", "subagent", "host"):
             raise NeedsExternalInput(prompt=_frame_for_responder(request, responder), responder=responder)
         raise ValueError(f"unknown responder {responder!r}")

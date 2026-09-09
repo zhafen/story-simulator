@@ -168,9 +168,11 @@ async def advance_simulation(ctx: Context, resume_token: str | None = None, answ
     to delegate to an isolated subagent if it's "subagent" -- either way,
     record it yourself via update_registry (there's no structured return
     value this tool applies on your behalf), then call again with that
-    exact `resume_token` and your `answer` -- no separate tool, and no
-    server-side state to lose: `resume_token` carries everything needed to
-    resume, so it survives an MCP disconnect/reconnect between calls too.
+    exact `resume_token` and your `answer` -- no separate tool. There's no
+    *process* state to lose either: `resume_token` is just the paused
+    event's own alias, and its actual resumption state lives in the
+    registry, so this survives an MCP disconnect/reconnect between calls,
+    or even a fresh subprocess after a restart.
 
     Args:
         resume_token: The `resume_token` from this session's last

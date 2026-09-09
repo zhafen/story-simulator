@@ -20,7 +20,6 @@ __iacs__ = {
     "solution of": "story_simulator_mission.stateless_client",
 }
 
-import base64
 import json
 import shutil
 import subprocess
@@ -30,6 +29,7 @@ from pathlib import Path
 
 import psycopg
 import psycopg.sql
+import yaml
 from emc2p.mcp_server import SOURCE_KEY, RegistrarSessions
 from emc2p.registrar import Registrar
 
@@ -510,32 +510,62 @@ async def _run_event_loop(
         alias = None
 
 
-def _encode_token(alias: str, answers: list[str], is_checkpoint: bool = False) -> str:
-    """Serialize a paused turn's resumption state into an opaque token.
+def _save_pending(registrar: Registrar, alias: str, answers: list[str], is_checkpoint: bool = False) -> str:
+    """Persist a paused turn's resumption state into the registry, keyed to `alias`.
 
-    Self-contained, not a lookup key into server memory -- the host
-    round-trips this same string back via `advance_simulation`'s own
-    `resume_token` argument, so whichever subprocess decodes it (even a
-    fresh one after a restart) can resume identically. No `_pending_turns`-
-    style session dict needed, matching this module's own
-    `stateless_client` mandate (see the `__iacs__` marker at the top).
+    Stored in the registry (Postgres), not this process's own memory and
+    not encoded into the token round-tripped through the client -- still
+    matches this module's own `stateless_client` mandate (see the
+    `__iacs__` marker at the top: whichever subprocess/session reopens
+    this world can resume identically, the same way every other piece of
+    world state already survives a restart), just via the durable store
+    this architecture already has for exactly that, rather than a
+    `_pending_turns`-style in-memory session dict.
 
-    `is_checkpoint` (omitted when False) marks a keyed_subagent budget
+    Avoids a real correctness bug the prior token-encodes-everything
+    design had: `answers` accumulates this event's full judgment-call
+    text and only grows across checkpoints, so by a later event in a run
+    it could be several KB -- a large, opaque, ever-growing blob the
+    connected model had to relay back byte-for-byte on every single
+    round-trip. A weaker/cheaper driver model mangling one character of
+    that on the way back is exactly the failure mode that produced a raw,
+    unhandled decode crash (see the fix for that in `_load_pending`
+    below, and issue #75). The `resume_token` returned here is now just
+    `alias` itself -- a short, already-known-safe identifier the model
+    already relays correctly everywhere else in this codebase.
+
+    `is_checkpoint` (False by default) marks a keyed_subagent budget
     check-in pause -- see `NeedsExternalInput.is_checkpoint`.
     """
-    payload: dict[str, object] = {"alias": alias, "answers": answers}
-    if is_checkpoint:
-        payload["is_checkpoint"] = True
-    payload_bytes = json.dumps(payload).encode()
-    return base64.urlsafe_b64encode(payload_bytes).decode()
+    entity = {alias: [{"pending_resolution": {"answers": json.dumps(answers), "is_checkpoint": is_checkpoint}}]}
+    registrar.update(
+        yaml_strings={SOURCE_KEY: yaml.safe_dump(entity, sort_keys=False)},
+        time=_next_time_stamp(registrar),
+    )
+    return alias
 
 
-def _decode_token(resume_token: str) -> tuple[str, list[str], bool]:
-    payload = json.loads(base64.urlsafe_b64decode(resume_token.encode()))
-    return payload["alias"], payload["answers"], payload.get("is_checkpoint", False)
+def _load_pending(registrar: Registrar, resume_token: str) -> tuple[str, list[str], bool]:
+    """Inverse of `_save_pending`: look `resume_token` (a plain alias) up in the registry.
+
+    Raises a clear `ValueError` if nothing was ever recorded for it (a
+    tampered/invented resume_token, one from a different world/session, or
+    simply a typo) instead of failing deep inside a decode step with
+    nothing actionable to react to.
+    """
+    raw_answers = registrar.get_current_value("pending_resolution", "answers", alias=resume_token)
+    if raw_answers is None:
+        raise ValueError(
+            f"resume_token {resume_token!r} is invalid or doesn't match any paused turn in this world -- "
+            "call advance_simulation with no arguments to get a fresh prompt for the current event."
+        )
+    is_checkpoint = bool(registrar.get_current_value("pending_resolution", "is_checkpoint", alias=resume_token))
+    return resume_token, json.loads(raw_answers), is_checkpoint
 
 
-def _resolve_args(resume_token: str | None, answer: str | None) -> tuple[str | None, TurnReplay | None]:
+def _resolve_args(
+    registrar: Registrar, resume_token: str | None, answer: str | None
+) -> tuple[str | None, TurnReplay | None]:
     """Shared resume_token/answer validation + decode for `advance_simulation`."""
     if resume_token is None:
         if answer is not None:
@@ -543,7 +573,7 @@ def _resolve_args(resume_token: str | None, answer: str | None) -> tuple[str | N
         return None, None
     if answer is None:
         raise ValueError("resume_token given without an answer.")
-    alias, prior_answers, is_checkpoint = _decode_token(resume_token)
+    alias, prior_answers, is_checkpoint = _load_pending(registrar, resume_token)
     if is_checkpoint:
         # `answer` is the check-in's own reply, not game content -- discard
         # it so the interrupted call retries fresh instead of banking it.
@@ -552,6 +582,7 @@ def _resolve_args(resume_token: str | None, answer: str | None) -> tuple[str | N
 
 
 def _wrap_loop_result(
+    registrar: Registrar,
     alias: str | None,
     replay: TurnReplay | None,
     prompt: str,
@@ -565,7 +596,7 @@ def _wrap_loop_result(
         "status": "input_required",
         "prompt": prompt,
         "responder": responder,
-        "resume_token": _encode_token(alias, replay.answers, is_checkpoint),
+        "resume_token": _save_pending(registrar, alias, replay.answers, is_checkpoint),
     }
 
 
@@ -666,9 +697,12 @@ async def advance_simulation(session, resume_token: str | None = None, answer: s
     record whatever you decide yourself via update_registry (there's no
     structured return value this tool applies on your behalf), then call
     again with that exact `resume_token` and your `answer` -- no separate
-    tool, and no server-side state to lose: `resume_token` carries
-    everything needed to resume, so it survives an MCP disconnect/reconnect
-    between calls too.
+    tool. `resume_token` is just the paused event's own alias; its actual
+    resumption state (the answers given so far) lives in the registry, not
+    encoded into the token itself (see `_save_pending`/`_load_pending`) --
+    so, same as before, there's no *process* state to lose: this survives
+    an MCP disconnect/reconnect between calls, or even a fresh subprocess
+    after a restart, the same way every other piece of world state already does.
 
     Args:
         resume_token: The `resume_token` from this session's last
@@ -679,8 +713,8 @@ async def advance_simulation(session, resume_token: str | None = None, answer: s
             itself along with `resume_token` on a fresh call.
     """
     registrar = registrar_sessions.get_registrar(session)
-    resume_alias, replay = _resolve_args(resume_token, answer)
+    resume_alias, replay = _resolve_args(registrar, resume_token, answer)
     alias, replay, prompt, responder, is_checkpoint = await _run_event_loop(
         registrar, session, resume_alias=resume_alias, replay=replay
     )
-    return _wrap_loop_result(alias, replay, prompt, responder, is_checkpoint)
+    return _wrap_loop_result(registrar, alias, replay, prompt, responder, is_checkpoint)

@@ -1,9 +1,9 @@
-"""Spike: is a native subagent's own turn detail reachable from a HeadlessSession trace?
+"""Confirms a native subagent's own turn detail is reachable from a HeadlessSession trace.
 
-Confirmed yes, via a separate output_file a task_notification event
-points to -- see docs/manifest/history.yaml:
+Originally a spike; kept as a live regression since
+render_trace_follows_task_notification depends on this. Full finding:
+docs/manifest/history.yaml:
 project_history.native_subagent_detail_confirmed_reachable_via_task_notification_output_file
-for the full finding.
 """
 
 import json

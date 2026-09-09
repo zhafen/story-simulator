@@ -748,8 +748,10 @@ project_history:
               as an empty DataFrame rather than None).
     native_subagent_detail_confirmed_reachable_via_task_notification_output_file:
         - description: >
-              tests/test_subagent_sidechain_spike.py's
-              spike answered mrtr_subagent_trace's
+              tests/test_native_subagent_sidechain.py's
+              spike (its original form, before the finding below made it
+              worth keeping as a permanent regression instead of deleting
+              it) answered mrtr_subagent_trace's
               capture_native_subagent_sidechain open question (see the
               requirement-tree manifest): the manifest's original guess
               -- an inline isSidechain/parentToolUseId event interleaved

@@ -746,3 +746,41 @@ project_history:
               same name for the one behavior simplification made in the
               move (an empty-but-declared component type now reads back
               as an empty DataFrame rather than None).
+    native_subagent_detail_confirmed_reachable_via_task_notification_output_file:
+        - description: >
+              tests/test_human_validated/test_subagent_sidechain_spike.py's
+              spike answered mrtr_subagent_trace's
+              capture_native_subagent_sidechain open question (see the
+              requirement-tree manifest): the manifest's original guess
+              -- an inline isSidechain/parentToolUseId event interleaved
+              into the *parent's own* stream-json -- was wrong in its
+              specifics but right in substance. What actually happens
+              (this environment's claude CLI, version 2.1.263): the
+              parent's own trace_path never gets subagent tool_use/
+              tool_result detail inline -- it only ever sees a
+              system/task_notification event once the subagent finishes,
+              carrying tool_use_id (correlating back to the spawning
+              tool_use, e.g. an "Agent" tool_use -- not literally named
+              "Task" in this CLI version), a one-line summary, and an
+              output_file path. That output_file is a SEPARATE
+              .jsonl-per-line file (not the parent's trace_path) holding
+              the subagent's own full turn-by-turn detail, and its events
+              ARE tagged isSidechain: true plus an agentId matching the
+              notification's own task_id -- confirming the manifest's
+              core premise (the CLI already emits sidechain-tagged
+              subagent detail) while correcting *where* it lives.
+              Structurally identical to nested_subtrace_structure/
+              render_trace_gains_subtrace_rendering's own proposed shape
+              (a separate file + a correlation id + join-at-parse-time)
+              -- except the CLI already produces that separate file for
+              free. Since acted on: render_trace now follows a
+              task_notification event's output_file automatically
+              (render_trace_follows_task_notification, emc2p commit
+              137cd67). Caveat, not yet re-verified: this ran against
+              whatever "claude" binary happened to be on PATH in a
+              sandboxed CI/session environment, which already exhibited
+              Cowork/task-list-specific tool naming (TaskCreate/TaskGet
+              as a todo list, "Agent" for subagent spawn) rather than the
+              plain terminal Claude Code product's classic "Task" tool
+              name -- a real player's own local Claude Code install may
+              differ.

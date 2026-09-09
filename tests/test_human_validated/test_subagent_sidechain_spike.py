@@ -1,51 +1,9 @@
-"""Spike: does the connected "claude" CLI's own subagent mechanism ever
-expose the subagent's internal turns anywhere reachable from a
-HeadlessSession trace?
+"""Spike: is a native subagent's own turn detail reachable from a HeadlessSession trace?
 
-This answers mrtr_subagent_trace's capture_native_subagent_sidechain
-open question -- see the requirement-tree manifest. Not a regression
-gate on story-simulator's own behavior: doesn't touch start_world or any
-MCP tool, just a HeadlessSession talking to the "claude" CLI directly
-with strict_tool_isolation=False so its subagent mechanism stays
-available.
-
-FINDING (first run, this environment's claude CLI, version 2.1.263):
-the manifest's original guess -- an inline isSidechain/parentToolUseId
-event interleaved into the *parent's own* stream-json -- was wrong in
-its specifics but right in substance. What actually happens:
-
-- The parent's own trace_path never gets subagent tool_use/tool_result
-  detail inline. It only ever sees a `system`/`task_notification` event
-  once the subagent finishes, carrying `tool_use_id` (correlating back
-  to the spawning tool_use, e.g. an "Agent" tool_use -- not literally
-  named "Task" in this CLI version), a one-line `summary`, and an
-  `output_file` path.
-- That `output_file` is a SEPARATE .jsonl-per-line file (not the
-  parent's trace_path) holding the subagent's own full turn-by-turn
-  detail, and its events ARE tagged `isSidechain: true` plus an
-  `agentId` matching the notification's own `task_id` -- confirming the
-  manifest's core premise (the CLI already emits sidechain-tagged
-  subagent detail) while correcting *where* it lives.
-
-So this is structurally identical to nested_subtrace_structure/
-render_trace_gains_subtrace_rendering's own proposed shape (a separate
-file + a correlation id + join-at-parse-time) -- except the CLI already
-produces that separate file for free; nothing needs to write it.
-render_trace would only need to (a) recognize a task_notification event,
-(b) parse its output_file's own isSidechain-tagged JSONL, (c) attach the
-result under the tool_use_id it names.
-
-Caveat: this ran against whatever "claude" binary happens to be on PATH
-in this sandboxed CI/session environment, which already exhibits
-Cowork/task-list-specific tool naming (TaskCreate/TaskGet as a todo
-list, "Agent" for subagent spawn) rather than the plain terminal Claude
-Code product's classic "Task" tool name. A real player's own local
-Claude Code install may differ -- worth re-running this spike against
-that surface before fully committing to this shape.
-
-A single run, not a live_trial repeat -- this is a yes/no spike on the
-CLI's own trace format, not a flaky game-logic assertion that benefits
-from multiple trials.
+Confirmed yes, via a separate output_file a task_notification event
+points to -- see docs/manifest/history.yaml:
+project_history.native_subagent_detail_confirmed_reachable_via_task_notification_output_file
+for the full finding.
 """
 
 import json
@@ -115,12 +73,7 @@ def test_subagent_turns_reachable_via_task_notification_output_file(tmp_path: Pa
         print(f"{len(sidechain_events)} isSidechain-tagged events in it")
         print(f"{len(correlated)} events tagged with the notification's own task_id")
 
-        # The actual finding this spike exists to establish: the subagent's
-        # own turn detail is reachable (a separate file, pointed to by the
-        # parent trace's task_notification event) and self-identifies as
-        # sidechain content correlated back to the spawning tool_use --
-        # confirming capture_native_subagent_sidechain's premise, with the
-        # correction that it's a separate file, not an inline event.
+        # See history.yaml's own entry (module docstring) for what this confirms.
         assert sidechain_events, (
             "the subagent's own output_file exists but contains no "
             "isSidechain-tagged events -- capture_native_subagent_sidechain's "

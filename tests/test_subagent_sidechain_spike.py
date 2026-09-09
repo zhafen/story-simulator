@@ -13,7 +13,7 @@ import pytest
 
 from emc2p.testing.headless_session import HeadlessSession
 
-REPO_ROOT = Path(__file__).parent.parent.parent
+REPO_ROOT = Path(__file__).parent.parent
 
 
 @pytest.mark.live

@@ -748,7 +748,7 @@ project_history:
               as an empty DataFrame rather than None).
     native_subagent_detail_confirmed_reachable_via_task_notification_output_file:
         - description: >
-              tests/test_human_validated/test_subagent_sidechain_spike.py's
+              tests/test_subagent_sidechain_spike.py's
               spike answered mrtr_subagent_trace's
               capture_native_subagent_sidechain open question (see the
               requirement-tree manifest): the manifest's original guess

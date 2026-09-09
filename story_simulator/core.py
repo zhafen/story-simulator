@@ -573,7 +573,9 @@ def _wrap_loop_result(
 # `Context` into `session` and call these directly.
 
 
-def start_world(session, save_dir: str, scenario_dir: str | None = None) -> str:
+def start_world(
+    session, save_dir: str, scenario_dir: str | None = None, client_trace_path: str | None = None
+) -> str:
     """Open a world save for this session, seeding it from `scenario_dir` if it's empty.
 
     The loose seed *.yaml under scenario_dir is only ever merged into the
@@ -589,6 +591,14 @@ def start_world(session, save_dir: str, scenario_dir: str | None = None) -> str:
             (an EC directory, e.g. containing scenario.yaml). Defaults to
             story-simulator's plain default world (a player, a door, an
             empty expanse). Ignored if save_dir already has any save data.
+        client_trace_path: The connected client's own trace_path (e.g. a
+            HeadlessSession's), if it wants keyed_subagent's own judgment
+            calls appended to that exact same file instead of a separate
+            one of their own -- see unified_trace_interface's
+            single_shared_trace_file. Recorded via
+            `registrar_sessions.get_trace_path`; omitted or None means
+            keyed_subagent gets no trace_path at all (unchanged, prior
+            behavior).
     """
     save_dir_path = Path(save_dir)
     scenario_path = Path(scenario_dir) if scenario_dir else DEFAULT_WORLD_DIR
@@ -620,7 +630,9 @@ def start_world(session, save_dir: str, scenario_dir: str | None = None) -> str:
     # ...) regardless of whether this save was fresh, resumed, or already declared.
     registrar.update(input_dirs=[str(MANIFEST_DIR)])
 
-    registrar_sessions.set_registrar(session, registrar, export_dir=save_dir_path)
+    registrar_sessions.set_registrar(
+        session, registrar, export_dir=save_dir_path, client_trace_path=client_trace_path
+    )
     return (
         f"World opened at {save_dir_path}. Component types: {registrar.registry.component_types}. "
         "Call view_registry or view_entity to see what's there."

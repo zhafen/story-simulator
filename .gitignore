@@ -14,3 +14,8 @@ render.svg
 /.live_trial_results/
 /.keyed_subagent_usage.jsonl
 /.write_call_trace.jsonl
+
+# Stale local checkout from before emc2p was pinned via [tool.uv.sources]
+# (see pyproject.toml) -- no longer created or used, just untracked cruft
+# some sessions still have on disk.
+/emc2p/

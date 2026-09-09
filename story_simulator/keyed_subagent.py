@@ -100,4 +100,5 @@ async def call_keyed_subagent(prompt: str, session: Any) -> str:
         dispatch=_dispatch,
         tools=REGISTRAR_TOOL_SPECS,
         usage_log_path=USAGE_LOG_PATH,
+        trace_path=core.registrar_sessions.get_trace_path(session),
     )

@@ -116,7 +116,9 @@ server = FastMCP(
 
 
 @server.tool()
-def start_world(save_dir: str, ctx: Context, scenario_dir: str | None = None) -> str:
+def start_world(
+    save_dir: str, ctx: Context, scenario_dir: str | None = None, client_trace_path: str | None = None
+) -> str:
     """Open a world save for this session, seeding it from `scenario_dir` if it's empty.
 
     The loose seed *.yaml under scenario_dir is only ever merged into the
@@ -132,9 +134,14 @@ def start_world(save_dir: str, ctx: Context, scenario_dir: str | None = None) ->
             (an EC directory, e.g. containing scenario.yaml). Defaults to
             story-simulator's plain default world (a player, a door, an
             empty expanse). Ignored if save_dir already has any save data.
+        client_trace_path: This connected session's own trace_path (e.g.
+            a live test's HeadlessSession.trace_path), if keyed_subagent's
+            own judgment calls should append to that same file instead of
+            going untraced. Optional -- omit for the prior, untraced
+            behavior.
     """
     __iacs__ = {"solution of": "story_simulator_mission.tool_catalog.start_world"}
-    return core.start_world(ctx.request_context.session, save_dir, scenario_dir)
+    return core.start_world(ctx.request_context.session, save_dir, scenario_dir, client_trace_path)
 
 
 @server.tool()

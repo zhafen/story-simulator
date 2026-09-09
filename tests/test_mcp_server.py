@@ -86,6 +86,21 @@ class TestStartWorld:
         assert _registrar_sessions.get_registrar(session) is not None
         assert _registrar_sessions._export_dirs[session] == save_dir
 
+    def test_client_trace_path_is_recorded_when_given(self, tmp_path):
+        """single_shared_trace_file: a connected client's own trace_path,
+        threaded through so keyed_subagent can append to that same file."""
+        ctx = _make_ctx()
+        save_dir = tmp_path / "save"
+        trace_path = tmp_path / "session_trace.jsonl"
+        start_world(str(save_dir), ctx, client_trace_path=str(trace_path))
+        session = ctx.request_context.session
+        assert _registrar_sessions.get_trace_path(session) == trace_path
+
+    def test_no_trace_path_recorded_when_omitted(self, tmp_path):
+        ctx = _make_ctx()
+        start_world(str(tmp_path / "save"), ctx)
+        assert _registrar_sessions.get_trace_path(ctx.request_context.session) is None
+
     def test_does_not_reseed_an_already_populated_save_dir(self, tmp_path):
         save_dir = tmp_path / "save"
         ctx = _make_ctx()

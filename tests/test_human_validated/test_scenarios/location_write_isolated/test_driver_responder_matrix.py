@@ -93,12 +93,15 @@ def test_scenario_resolves_under_every_driver_responder_combination(
             from emc2p.testing.render_trace import parse_trace
 
             turns = parse_trace(session.trace_path)
-            # keyed_subagent's own in-process judgment call must have used
-            # update_registry itself (not just the outer model's own call)
-            # for this to prove convergence rather than just "the scenario passed".
+            # keyed_subagent's own nested run_tool_calling_loop call dispatches
+            # through REGISTRAR_TOOL_SPECS's bare names ("update_registry"),
+            # not the "mcp__story-simulator__"-prefixed names the outer
+            # MCP-dispatched call uses -- checking for the bare name is what
+            # actually proves the NESTED call's own trace converged here,
+            # not just that the outer model happened to also call it.
             tool_calls = [tc for t in turns for tc in t.tool_calls]
-            assert any(tc.name == "mcp__story-simulator__update_registry" for tc in tool_calls), (
-                f"no update_registry call appears anywhere in {session.trace_path} -- "
+            assert any(tc.name == "update_registry" for tc in tool_calls), (
+                f"no bare (nested) update_registry call appears anywhere in {session.trace_path} -- "
                 "if the scenario still passed, keyed_subagent's own write never made "
                 "it into the trace, meaning trace convergence silently failed again"
             )

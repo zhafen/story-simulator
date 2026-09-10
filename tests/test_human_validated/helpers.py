@@ -133,6 +133,24 @@ RUN_TO_DONE_INSTRUCTION = (
 )
 
 
+def start_world_instruction(session: AgentSession, save_dir: Path, scenario_dir: Path) -> str:
+    """The standard opening instruction for a live test: open the world and
+    run it to completion.
+
+    Passes this session's own `session.trace_path` as `client_trace_path`
+    so a "keyed_subagent" responder's own judgment calls land in the same
+    trace file as the rest of this turn (see `start_world`'s own
+    `client_trace_path` docstring) -- otherwise nothing tells the
+    connected model to supply it, and keyed_subagent's own steps never
+    show up in the recorded trace at all.
+    """
+    return (
+        f"Use start_world with save_dir={save_dir}, scenario_dir={scenario_dir}, and "
+        f"client_trace_path={session.trace_path} to open a story-simulator world. "
+        f"Then {RUN_TO_DONE_INSTRUCTION}"
+    )
+
+
 def _assert_write_order(registrar: Registrar, write_order: dict) -> None:
     """Asserts each alias's component was time-stamped with its own expected world time.
 

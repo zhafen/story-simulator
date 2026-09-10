@@ -79,12 +79,12 @@ def pop_event(registrar: Registrar) -> str | None:
     """
     if "event" not in registrar.registry.component_types:
         return None
-    events = registrar.view_current(["event.start_time", "event.duration"]).execute()
+    events = registrar.view_current(["event.start_time", "event.duration"]).to_pandas()
     events = events.dropna(subset=["event.start_time", "event.duration"])
     if events.empty:
         return None
-    states = registrar.safe_view_current("event_state.value")
-    if states is not None:
+    states = registrar.safe_view_current("event_state.value").to_pandas()
+    if not states.empty:
         terminal_ids = set(states[states["event_state.value"].isin(_TERMINAL_EVENT_STATES)]["entity_id"])
         events = events[~events["entity_id"].isin(terminal_ids)]
     if events.empty:
@@ -117,7 +117,7 @@ def advance_clock(registrar: Registrar, alias: str) -> float:
     entity_id = registrar.get_entity_id(alias)
     if entity_id is None:
         return 0.0
-    events = registrar.view_current(["event.start_time", "event.duration"]).execute()
+    events = registrar.view_current(["event.start_time", "event.duration"]).to_pandas()
     match = events[events["entity_id"] == entity_id]
     if match.empty:
         return 0.0
@@ -149,8 +149,8 @@ def _next_time_stamp(registrar: Registrar) -> float:
     order. Falls back to 0.0 if nothing has been popped yet (e.g. a stray
     `update_registry` call before `advance_simulation` is ever run).
     """
-    df = registrar.safe_view("world_clock.value")
-    if df is None or df.empty:
+    df = registrar.safe_view("world_clock.value").to_pandas()
+    if df.empty:
         return 0.0
     return float(df["world_clock.value"].max())
 
@@ -553,13 +553,13 @@ def _load_pending(registrar: Registrar, resume_token: str) -> tuple[str, list[st
     simply a typo) instead of failing deep inside a decode step with
     nothing actionable to react to.
     """
-    raw_answers = registrar.get_current_value("pending_resolution", "answers", alias=resume_token)
+    raw_answers = registrar.safe_view_current("pending_resolution.answers", resume_token).to_scalar()
     if raw_answers is None:
         raise ValueError(
             f"resume_token {resume_token!r} is invalid or doesn't match any paused turn in this world -- "
             "call advance_simulation with no arguments to get a fresh prompt for the current event."
         )
-    is_checkpoint = bool(registrar.get_current_value("pending_resolution", "is_checkpoint", alias=resume_token))
+    is_checkpoint = bool(registrar.safe_view_current("pending_resolution.is_checkpoint", resume_token).to_scalar())
     return resume_token, json.loads(raw_answers), is_checkpoint
 
 

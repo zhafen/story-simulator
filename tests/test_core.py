@@ -144,8 +144,8 @@ def test_update_registry_backfills_time_for_a_scenario_local_time_dimension_fiel
     # that only writes race_placement's value, never redeclaring its schema.
     core.registrar_sessions.update_registry(session, "car_a:\n    - race_placement:\n        value: 1\n")
 
-    df = registrar.safe_view_current("race_placement.time", aliases="car_a")
-    assert df is not None and not df.empty
+    df = registrar.safe_view_current("race_placement.time", "car_a").to_pandas()
+    assert not df.empty
     assert not math.isnan(df.iloc[-1]["race_placement.time"])
 
 

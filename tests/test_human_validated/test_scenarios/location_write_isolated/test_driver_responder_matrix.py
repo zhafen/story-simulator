@@ -84,7 +84,7 @@ def test_scenario_resolves_under_every_driver_responder_combination(
     ) as session:
         narration = session.send_turn(start_world_instruction(session, save_dir, SCENARIO_DIR))
         r = Registrar.load(registry_url(save_dir))
-        location = r.get_current_value("location", alias="car_a")
+        location = r.safe_view_current("location.value", "car_a").to_scalar()
         assert location is not None and "parking_spot_1" in location, (
             f"car_a should be parked in parking_spot_1 -- narration: {narration!r}"
         )

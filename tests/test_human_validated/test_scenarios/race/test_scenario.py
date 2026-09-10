@@ -53,12 +53,12 @@ def test_resolves_correctly(tmp_path: Path, live_trial):
         r = Registrar.load(registry_url(save_dir))
         try:
             placements = {
-                alias: r.get_current_value("race_placement", "value", alias)
+                alias: r.safe_view_current("race_placement.value", alias).to_scalar()
                 for alias in EXPECTED_RACE_PLACEMENT
             }
             assert_subset("race_placement", EXPECTED_RACE_PLACEMENT, placements)
             event_states = {
-                alias: r.get_current_value("event_state", "value", alias)
+                alias: r.safe_view_current("event_state.value", alias).to_scalar()
                 for alias in EXPECTED_EVENT_STATE
             }
             assert_subset("event_state", EXPECTED_EVENT_STATE, event_states)

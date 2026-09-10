@@ -57,8 +57,9 @@ def _parked_at(location: str | None, spot: str) -> bool:
     phrased several ways ("parked in
     parking_spot_1" vs. just "parking_spot_1") -- the model shouldn't
     have to guess the one exact wording a test hardcodes. Takes the
-    value directly (e.g. from `registrar.get_current_value("location",
-    alias=alias)`) rather than reading it itself.
+    value directly (e.g. from
+    `registrar.safe_view_current("location.value", alias).to_scalar()`)
+    rather than reading it itself.
 
     Scenario-specific (this harness's own parking check), not shared --
     test_scenarios/parking/test_scenario.py keeps its own copy rather
@@ -166,7 +167,7 @@ def run_one(approach: str, tmp_dir: Path, model: str = LOW_QUALITY_MODEL) -> tup
         # through to whatever schema is otherwise on the search path rather
         # than erroring (see its docstring), so this just reads as "location"
         # never got recorded: a rep outcome to count, not a harness bug.
-        success = _parked_at(r.get_current_value("location", alias="car_a"), "parking_spot_1")
+        success = _parked_at(r.safe_view_current("location.value", "car_a").to_scalar(), "parking_spot_1")
         misfires = unexpected_components(r, "car_a", _EXPECTED_CAR_A_COMPONENTS)
         return success, narration, session.usage_summary(), misfires
 

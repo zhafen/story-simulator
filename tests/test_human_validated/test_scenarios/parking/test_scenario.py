@@ -138,7 +138,7 @@ class TestDeterministicWalkthrough:
                     """)
             update_registry(yaml_string, ctx=ctx)
             if location is not None:
-                assert r.get_current_value("location", alias=car_alias) == location, (
+                assert r.safe_view_current("location.value", car_alias).to_scalar() == location, (
                     f"{car_alias}.location should read back exactly what was just "
                     f"written -- if this fails, update_registry's write didn't "
                     f"actually persist/read back, independent of anything a model "
@@ -160,7 +160,7 @@ class TestDeterministicWalkthrough:
         # Final state: every car ended up exactly where the puzzle says it should.
         for event_alias, car_alias, outcome, location, end_time in self.WALKTHROUGH:
             if location is not None:
-                assert r.get_current_value("location", alias=car_alias) == location
+                assert r.safe_view_current("location.value", car_alias).to_scalar() == location
 
 
 class TestLiveWalkthrough:
@@ -209,13 +209,13 @@ class TestLiveWalkthrough:
                 # Check parking locations along the way
                 for alias, spot in self.EXPECTED_LOCATION.items():
 
-                    location = r.get_current_value("location", alias=alias)
+                    location = r.safe_view_current("location.value", alias).to_scalar()
                     assert location is not None and spot in location, (
                         f"{alias} should be parked at {spot}"
                     )
 
                 event_states = {
-                    alias: r.get_current_value("event_state", "value", alias)
+                    alias: r.safe_view_current("event_state.value", alias).to_scalar()
                     for alias in self.EXPECTED_EVENT_STATE
                 }
                 assert_subset("event_state", self.EXPECTED_EVENT_STATE, event_states)

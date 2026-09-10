@@ -75,7 +75,7 @@ class TestStartWorld:
         ctx = _make_ctx()
         start_world(str(tmp_path / "save"), ctx, scenario_dir=str(LIVING_WORLD_DIR))
         registrar = _registrar_sessions.get_registrar(ctx.request_context.session)
-        positions = registrar.view_df("position")
+        positions = registrar.view("position").to_pandas()
         assert "journaling_desk.journal" in positions["entity_id.alias"].values
 
     def test_stores_registrar_and_save_dir_for_session(self, tmp_path):
@@ -199,13 +199,15 @@ class TestRegistryTools:
         result = view_registry("position", ctx)
         assert "player" in result
 
-    def test_view_registry_delegates_to_iacs_registrar_view_df(self, tmp_path):
-        """Not a reimplementation -- the same Registrar.view_df call
+    def test_view_registry_delegates_to_registrar_view(self, tmp_path):
+        """Not a reimplementation -- the same Registrar.view call
         iacs's own view_component tool wraps too."""
         ctx = _make_ctx()
         start_world(str(tmp_path / "save"), ctx)
         registrar = _registrar_sessions.get_registrar(ctx.request_context.session)
-        assert view_registry("position", ctx) == registrar.view_df("position").fillna("null").to_markdown()
+        assert view_registry("position", ctx) == (
+            registrar.view("position").to_pandas().fillna("null").to_markdown()
+        )
 
     def test_update_registry_merges_new_entity(self, tmp_path):
         ctx = _make_ctx()

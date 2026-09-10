@@ -664,10 +664,7 @@ def start_world(
     registrar_sessions.set_registrar(
         session, registrar, export_dir=save_dir_path, client_trace_path=client_trace_path
     )
-    return (
-        f"World opened at {save_dir_path}. Component types: {registrar.registry.component_types}. "
-        "Call view_registry or view_entity to see what's there."
-    )
+    return f"World opened at {save_dir_path}. Call view_registry or view_entity to see what's there."
 
 
 async def advance_simulation(session, resume_token: str | None = None, answer: str | None = None) -> dict:

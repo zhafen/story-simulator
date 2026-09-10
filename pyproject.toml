@@ -37,7 +37,7 @@ story-simulator-mcp = "story_simulator.mcp_server:main"
 # directly. Pinned by commit (not branch) so this is a real, reproducible
 # version pin, bumped explicitly the same way the submodule pointer used
 # to be.
-emc2p = { git = "https://github.com/zhafen/emc2p", rev = "c1a7eac60f082ba7fd7af97d331bd2afed5f1ffb" }
+emc2p = { git = "https://github.com/zhafen/emc2p", rev = "584d22b2447cb401a8df315b0c09f57ff6f6ebba" }
 
 [tool.setuptools.packages.find]
 where = ["."]

@@ -38,8 +38,11 @@ class TestTracePathPlumbing:
 
         captured = {}
 
-        async def fake_run_tool_calling_loop(prompt, *, model, dispatch, tools, usage_log_path, trace_path):
+        async def fake_run_tool_calling_loop(
+            prompt, *, model, dispatch, tools, usage_log_path, trace_path, trace_actor
+        ):
             captured["trace_path"] = trace_path
+            captured["trace_actor"] = trace_actor
             return "answered"
 
         monkeypatch.setattr(
@@ -50,13 +53,16 @@ class TestTracePathPlumbing:
 
         assert result == "answered"
         assert captured["trace_path"] == trace_path
+        assert captured["trace_actor"] == "keyed_subagent"
 
     def test_passes_none_when_no_client_trace_path_was_ever_recorded(self, monkeypatch, tmp_path):
         session = _open_session(tmp_path)  # no client_trace_path given
 
         captured = {}
 
-        async def fake_run_tool_calling_loop(prompt, *, model, dispatch, tools, usage_log_path, trace_path):
+        async def fake_run_tool_calling_loop(
+            prompt, *, model, dispatch, tools, usage_log_path, trace_path, trace_actor
+        ):
             captured["trace_path"] = trace_path
             return "answered"
 

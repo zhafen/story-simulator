@@ -52,7 +52,7 @@ _ALLOWED_TOOLS = ["mcp__story-simulator__*"]
 # Flips create_session's own default `responder` (see its docstring) for
 # every live test that doesn't pin one explicitly.
 LIVE_TEST_RESPONDER_ENV_VAR = "STORY_SIM_LIVE_TEST_RESPONDER"
-DEFAULT_LIVE_TEST_RESPONDER = "keyed_subagent"
+DEFAULT_LIVE_TEST_RESPONDER = "host"
 
 # Flips create_session's default `driver`; same resolution order as
 # responder above. mcp_client is default since it's not CLI/model-tied.
@@ -104,8 +104,9 @@ def create_session(
     """story-simulator's live-test session factory over create_agent_session.
 
     `driver`/`model`/`responder` resolve as explicit arg > env var > default.
-    `responder` defaults to "keyed_subagent"; pass "host" to exercise the
-    connected model's own reasoning.
+    `responder` defaults to "host" (the connected driver resolves its own
+    judgment calls inline); pass "keyed_subagent" to delegate them to a
+    separate in-process model call instead.
 
     `subagent_time_budget_seconds` overrides
     `STORY_SIM_SUBAGENT_TIME_BUDGET_SECONDS` for this session only

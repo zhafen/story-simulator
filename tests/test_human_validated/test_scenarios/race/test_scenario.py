@@ -1,11 +1,12 @@
 """Live regressions for this directory's scenario.yaml: three cars race for placement.
 
-test_resolves_correctly runs under the default (keyed_subagent) responder
-and checks final state; test_persists_via_keyed_subagent is a minimal
-sibling that only confirms keyed_subagent's writes actually reach disk --
-its update_registry calls go through a different, nested-subagent path
-than a host responder's direct tool calls, so persistence isn't a given
-the way it is for every other live test.
+test_resolves_correctly runs under the keyed_subagent responder (an
+explicit override -- host is the suite's default) and checks final state;
+test_persists_via_keyed_subagent is a minimal sibling that only confirms
+keyed_subagent's writes actually reach disk -- its update_registry calls
+go through a different, nested-subagent path than a host responder's
+direct tool calls, so persistence isn't a given the way it is for every
+other live test.
 """
 
 from pathlib import Path
@@ -46,7 +47,9 @@ def test_resolves_correctly(tmp_path: Path, live_trial):
     """Runs to completion under a live session, then checks final state."""
     save_dir = tmp_path / "test_save"
 
-    with create_session(save_dir, turn_timeout=420, session_timeout=420) as session:  # responder="keyed_subagent", the default
+    with create_session(
+        save_dir, responder="keyed_subagent", turn_timeout=420, session_timeout=420
+    ) as session:
         print(f"agent session trace: {session.trace_path}")
         live_trial.id = str(session.trace_path)
         narration = session.send_turn(start_world_instruction(session, save_dir, SCENARIO_DIR))

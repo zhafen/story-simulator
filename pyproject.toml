@@ -31,13 +31,8 @@ dependencies = [
 story-simulator-mcp = "story_simulator.mcp_server:main"
 
 [tool.uv.sources]
-# emc2p used to be vendored as a git submodule at ./emc2p purely so a
-# single-repo-attached session could reach its source for editable local
-# dev -- no longer needed now that multiple repos can be attached
-# directly. Pinned by commit (not branch) so this is a real, reproducible
-# version pin, bumped explicitly the same way the submodule pointer used
-# to be.
-emc2p = { git = "https://github.com/zhafen/emc2p", rev = "62d5c381ffcef3ef165c3dd5f7f82d3d1dd582f5" }
+# Local editable checkout at ~/repos/emc2p for active cross-repo dev.
+emc2p = { path = "../emc2p", editable = true }
 
 [tool.setuptools.packages.find]
 where = ["."]

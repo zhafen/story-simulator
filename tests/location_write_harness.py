@@ -155,7 +155,8 @@ def run_one(approach: str, tmp_dir: Path, model: str = LOW_QUALITY_MODEL) -> tup
     save_dir = tmp_dir / "save"
     instruction = _APPROACHES[approach]
     # This harness compares how the *connected* model performs a write
-    # under each approach -- explicit override of the keyed_subagent default.
+    # under each approach -- explicit host responder, independent of
+    # whichever responder create_session currently defaults to.
     with create_session(save_dir, driver="claude", model=model, responder="host") as session:
         narration = session.send_turn(
             f"Use start_world with save_dir={save_dir} and scenario_dir={SCENARIO_DIR} "

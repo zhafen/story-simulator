@@ -86,7 +86,7 @@ def test_scenario_resolves_under_every_responder(tmp_path: Path, responder: str,
         )
 
         if responder == "keyed_subagent":
-            from emc2p.testing.render_trace import parse_trace
+            from emc2p.testing.render_trace import iter_tool_calls, parse_trace
 
             turns = parse_trace(session.trace_path)
             # keyed_subagent's own nested run_tool_calling_loop call dispatches
@@ -95,8 +95,10 @@ def test_scenario_resolves_under_every_responder(tmp_path: Path, responder: str,
             # MCP-dispatched call uses -- checking for the bare name is what
             # actually proves the NESTED call's own trace converged here,
             # not just that the outer model happened to also call it.
-            tool_calls = [tc for t in turns for tc in t.tool_calls]
-            assert any(tc.name == "update_registry" for tc in tool_calls), (
+            # iter_tool_calls, not a flat [tc for t in turns for tc in
+            # t.tool_calls]: keyed_subagent's own calls are nested one
+            # level down, inside its pending host call's own subtrace.
+            assert any(tc.name == "update_registry" for tc in iter_tool_calls(turns)), (
                 f"no bare (nested) update_registry call appears anywhere in {session.trace_path} -- "
                 "if the scenario still passed, keyed_subagent's own write never made "
                 "it into the trace, meaning trace convergence silently failed again"

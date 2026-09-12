@@ -59,7 +59,7 @@ def _log_write_call(record: dict[str, Any]) -> None:
         pass
 
 
-async def call_keyed_subagent(prompt: str, session: Any) -> str:
+async def call_keyed_subagent(prompt: str, session: Any, origin: str = "") -> str:
     """Answer one already-framed judgment prompt via `keyed_subagent_model()`,
     with real registry access so it can actually persist what it decides.
 
@@ -70,6 +70,13 @@ async def call_keyed_subagent(prompt: str, session: Any) -> str:
     keys its `_registrars`/`_export_dirs` off of -- passed through from
     `TurnReplay.resolve` (see that module) so `dispatch()`'s calls below
     land on this exact world's already-open registrar, not a fresh one.
+
+    `origin` is the request's own `JudgmentRequest.origin` (which function
+    -- e.g. `core.resolve_event` vs. `core.plan_events` -- constructed
+    `prompt`), recorded in the trace alongside it rather than folded into
+    `prompt` itself: distinguishing the two matters for understanding
+    what actually happened, but a responder has no need to see it to
+    answer the prompt.
     """
 
     def _dispatch(name: str, arguments: dict[str, Any]) -> str:
@@ -102,4 +109,5 @@ async def call_keyed_subagent(prompt: str, session: Any) -> str:
         usage_log_path=USAGE_LOG_PATH,
         trace_path=core.registrar_sessions.get_trace_path(session),
         trace_actor="keyed_subagent",
+        trace_origin=origin or None,
     )

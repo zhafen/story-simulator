@@ -85,6 +85,13 @@ class JudgmentRequest:
 
     prompt: str
     system_prompt: str = ""
+    # Which function constructed this request (e.g. "resolve_event" vs.
+    # "plan_events") -- never folded into `prompt`/`render()`'s own text
+    # (a responder has no need to know this to answer), but carried
+    # through to whichever responder answers it so it lands in that
+    # call's own trace instead of being unrecoverable after the fact.
+    # "" (the default) matches call sites/tests that don't care to set it.
+    origin: str = ""
 
     def render(self) -> str:
         """Flatten to plain text -- no separate system/user split for any
@@ -111,13 +118,20 @@ class NeedsExternalInput(Exception):
     `is_checkpoint` marks keyed_subagent's own budget check-in pause (see
     `TurnReplay.resolve`) -- its reply is never game content, so `core.py`'s
     resume plumbing must not fold it into `TurnReplay.answers`.
+
+    `origin` carries through the request's own `JudgmentRequest.origin`
+    (which function raised this) -- not currently surfaced any further
+    than this attribute (`core.py`'s host/subagent return path doesn't
+    thread it into the JSON handed back to the client), but stored here
+    rather than dropped so that's a small addition later, not a rewrite.
     """
 
-    def __init__(self, prompt: str, responder: str, is_checkpoint: bool = False):
+    def __init__(self, prompt: str, responder: str, is_checkpoint: bool = False, origin: str = ""):
         super().__init__(prompt)
         self.prompt = prompt
         self.responder = responder
         self.is_checkpoint = is_checkpoint
+        self.origin = origin
 
 
 def _frame_for_responder(request: JudgmentRequest, responder: str) -> str:
@@ -200,18 +214,24 @@ class TurnReplay:
                     "simulation running from exactly where it left off, or stop here "
                     "if this is a reasonable checkpoint."
                 )
-                raise NeedsExternalInput(prompt=checkin_prompt, responder="host", is_checkpoint=True)
+                raise NeedsExternalInput(
+                    prompt=checkin_prompt, responder="host", is_checkpoint=True, origin=request.origin
+                )
             self.call_index += 1
             # No NeedsExternalInput here -- nothing external to wait on. Framed
             # the same way "host" is, since that's about how the model should behave.
             from story_simulator.keyed_subagent import call_keyed_subagent
 
-            answer = await call_keyed_subagent(_frame_for_responder(request, "host"), session)
+            answer = await call_keyed_subagent(
+                _frame_for_responder(request, "host"), session, origin=request.origin
+            )
             self.answers.append(answer)
             return answer
         i, self.call_index = self.call_index, self.call_index + 1
         if i < len(self.answers):
             return self.answers[i]
         if responder in ("human", "subagent", "host"):
-            raise NeedsExternalInput(prompt=_frame_for_responder(request, responder), responder=responder)
+            raise NeedsExternalInput(
+                prompt=_frame_for_responder(request, responder), responder=responder, origin=request.origin
+            )
         raise ValueError(f"unknown responder {responder!r}")

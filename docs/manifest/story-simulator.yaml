@@ -82,12 +82,32 @@ story_simulator_mission:
                     - description: >
                         The user needs to be able to freely experience and interact with
                         their character's surroundings.
-                experience_surrroundings:
-                    - requirement
-                input_actions:
-                    - requirement
+                experience_surroundings:
+                    data:
+                        - requirement
+                    natural_language_ui:
+                        data:
+                            - required: Natural language is a good fit for our UI.
+                            - solution
+                        text_input:
+                            - requirement
+                        text_output:
+                            - requirement
                 resolve_actions:
-                    - requirement
+                    data:
+                        - requirement
+                    translate_input_to_attempted_action:
+                        - requirement
+                    resolve_events:
+                        data:
+                            - requirement
+                        story_sim_simulation:
+                            data:
+                                - description: What actually resolves events.
+                                - solution
+                            simulation_framework:
+                                data:
+                                    - requirement
             stories_exist_in_world:
                 data:
                     - description: >

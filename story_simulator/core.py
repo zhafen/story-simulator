@@ -383,7 +383,8 @@ async def resolve_event(alias: str, replay: TurnReplay, end_time: float, session
             f"if you're unsure which one or how to phrase it), not only "
             f"described in {alias}'s own outcome text -- all via "
             f"update_registry."
-        )
+        ),
+        origin="resolve_event",
     )
     return await replay.resolve(request, responder=event_responder(), session=session)
 
@@ -403,7 +404,8 @@ async def plan_events(alias: str, replay: TurnReplay, session) -> str:
             f"event entities (their own start_time/duration/event_state/"
             f"involved_entity) via update_registry. If nothing follows "
             f"from this, just say so -- no new events needed."
-        )
+        ),
+        origin="plan_events",
     )
     return await replay.resolve(request, responder=event_responder(), session=session)
 

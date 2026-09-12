@@ -30,6 +30,13 @@ LIVE_TRIAL_RESULTS_DIR = REPO_ROOT / ".live_trial_results"
 # Only used by driver="claude"; mcp_client uses DEFAULT_LIVE_TEST_MODEL.
 LOW_QUALITY_MODEL = "claude-haiku-4-5-20251001"
 
+# Overrides driver="claude"'s own default model (LOW_QUALITY_MODEL) --
+# same resolution order as driver/responder above. Not applied to other
+# drivers: an mcp_client/copilot model string has different constraints
+# (e.g. litellm's own provider-prefixed format), so a bare Claude Code
+# CLI model alias set here isn't assumed to be valid for them too.
+LIVE_TEST_MODEL_ENV_VAR = "STORY_SIM_LIVE_TEST_MODEL"
+
 # DeepSeek, matching config.DEFAULT_KEYED_SUBAGENT_MODEL -- any litellm
 # model works for driver="mcp_client"; just this suite's own default.
 DEFAULT_LIVE_TEST_MODEL = "deepseek/deepseek-chat"
@@ -52,10 +59,11 @@ DEFAULT_LIVE_TEST_RESPONDER = "keyed_subagent"
 LIVE_TEST_DRIVER_ENV_VAR = "STORY_SIM_LIVE_TEST_DRIVER"
 DEFAULT_LIVE_TEST_DRIVER: Driver = "mcp_client"
 
-# mcp_client has no obvious default model, so its entry is None --
-# create_session raises rather than silently picking one.
+# "claude" isn't looked up here -- its own resolution (LOW_QUALITY_MODEL,
+# overridable via LIVE_TEST_MODEL_ENV_VAR) happens directly in
+# create_session. copilot has no obvious default model, so its entry is
+# None -- create_session raises rather than silently picking one.
 _DEFAULT_MODEL_BY_DRIVER: dict[Driver, str | None] = {
-    "claude": LOW_QUALITY_MODEL,
     "copilot": None,
     "mcp_client": DEFAULT_LIVE_TEST_MODEL,
 }
@@ -107,7 +115,10 @@ def create_session(
     if driver is None:
         driver = os.environ.get(LIVE_TEST_DRIVER_ENV_VAR, DEFAULT_LIVE_TEST_DRIVER)
     if model is None:
-        model = _DEFAULT_MODEL_BY_DRIVER[driver]
+        if driver == "claude":
+            model = os.environ.get(LIVE_TEST_MODEL_ENV_VAR, LOW_QUALITY_MODEL)
+        else:
+            model = _DEFAULT_MODEL_BY_DRIVER[driver]
         if model is None:
             raise ValueError(f"driver={driver!r} has no default model -- pass model= explicitly")
     kwargs = dict(

@@ -38,25 +38,33 @@ class TestTracePathPlumbing:
 
         captured = {}
 
-        async def fake_run_tool_calling_loop(prompt, *, model, dispatch, tools, usage_log_path, trace_path):
+        async def fake_run_tool_calling_loop(
+            prompt, *, model, dispatch, tools, usage_log_path, trace_path, trace_actor, trace_origin
+        ):
             captured["trace_path"] = trace_path
+            captured["trace_actor"] = trace_actor
+            captured["trace_origin"] = trace_origin
             return "answered"
 
         monkeypatch.setattr(
             "story_simulator.keyed_subagent.run_tool_calling_loop", fake_run_tool_calling_loop
         )
 
-        result = asyncio.run(call_keyed_subagent("what happened?", session))
+        result = asyncio.run(call_keyed_subagent("what happened?", session, origin="resolve_event"))
 
         assert result == "answered"
         assert captured["trace_path"] == trace_path
+        assert captured["trace_actor"] == "keyed_subagent"
+        assert captured["trace_origin"] == "resolve_event"
 
     def test_passes_none_when_no_client_trace_path_was_ever_recorded(self, monkeypatch, tmp_path):
         session = _open_session(tmp_path)  # no client_trace_path given
 
         captured = {}
 
-        async def fake_run_tool_calling_loop(prompt, *, model, dispatch, tools, usage_log_path, trace_path):
+        async def fake_run_tool_calling_loop(
+            prompt, *, model, dispatch, tools, usage_log_path, trace_path, trace_actor, trace_origin
+        ):
             captured["trace_path"] = trace_path
             return "answered"
 
@@ -67,3 +75,25 @@ class TestTracePathPlumbing:
         asyncio.run(call_keyed_subagent("what happened?", session))
 
         assert captured["trace_path"] is None
+
+    def test_omitted_origin_passes_none_not_an_empty_string(self, monkeypatch, tmp_path):
+        """`origin` defaults to "" (matching JudgmentRequest's own
+        default), but the trace writer's own convention for "not given"
+        is None, not an empty string -- see run_tool_calling_loop's
+        trace_origin (omits the key entirely only for None)."""
+        session = _open_session(tmp_path)
+        captured = {}
+
+        async def fake_run_tool_calling_loop(
+            prompt, *, model, dispatch, tools, usage_log_path, trace_path, trace_actor, trace_origin
+        ):
+            captured["trace_origin"] = trace_origin
+            return "answered"
+
+        monkeypatch.setattr(
+            "story_simulator.keyed_subagent.run_tool_calling_loop", fake_run_tool_calling_loop
+        )
+
+        asyncio.run(call_keyed_subagent("what happened?", session))
+
+        assert captured["trace_origin"] is None

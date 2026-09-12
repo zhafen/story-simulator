@@ -26,8 +26,23 @@ def test_host_raises_needs_external_input():
     assert exc_info.value.responder == "host"
 
 
+def test_host_needs_external_input_carries_the_requests_own_origin():
+    """`origin` (which function -- e.g. resolve_event vs. plan_events --
+    constructed this request) rides along on the raised exception, so a
+    caller (or a future host-facing status field) can see which call
+    site is actually waiting on an answer."""
+    replay = TurnReplay(answers=[])
+    with pytest.raises(NeedsExternalInput) as exc_info:
+        asyncio.run(
+            replay.resolve(
+                JudgmentRequest(prompt="what happened?", origin="resolve_event"), responder="host"
+            )
+        )
+    assert exc_info.value.origin == "resolve_event"
+
+
 def test_keyed_subagent_answers_inline_without_raising(monkeypatch):
-    async def fake_call_keyed_subagent(prompt: str, session) -> str:
+    async def fake_call_keyed_subagent(prompt: str, session, origin: str = "") -> str:
         assert "what happened?" in prompt
         assert session == "sess-1"
         return "the car parked."
@@ -45,6 +60,28 @@ def test_keyed_subagent_answers_inline_without_raising(monkeypatch):
     assert result == "the car parked."
 
 
+def test_keyed_subagent_receives_the_requests_own_origin(monkeypatch):
+    captured = {}
+
+    async def fake_call_keyed_subagent(prompt: str, session, origin: str = "") -> str:
+        captured["origin"] = origin
+        return "the car parked."
+
+    monkeypatch.setattr(
+        "story_simulator.keyed_subagent.call_keyed_subagent", fake_call_keyed_subagent
+    )
+
+    replay = TurnReplay(answers=[])
+    asyncio.run(
+        replay.resolve(
+            JudgmentRequest(prompt="what happened?", origin="plan_events"),
+            responder="keyed_subagent",
+            session="sess-1",
+        )
+    )
+    assert captured["origin"] == "plan_events"
+
+
 def test_keyed_subagent_answer_is_cached_into_replay_answers(monkeypatch):
     """A later judgment call in the same turn pausing (e.g.
     responder="host") must not lose an earlier keyed_subagent answer.
@@ -52,7 +89,7 @@ def test_keyed_subagent_answer_is_cached_into_replay_answers(monkeypatch):
     See TurnReplay.resolve's own comment and core._wrap_loop_result's
     `_save_pending(registrar, alias, replay.answers)`.
     """
-    async def fake_call_keyed_subagent(prompt: str, session) -> str:
+    async def fake_call_keyed_subagent(prompt: str, session, origin: str = "") -> str:
         return "resolved via deepseek"
 
     monkeypatch.setattr(
@@ -87,7 +124,7 @@ def test_keyed_subagent_checks_in_once_deadline_passes(monkeypatch):
     """
     called = False
 
-    async def fake_call_keyed_subagent(prompt: str, session) -> str:
+    async def fake_call_keyed_subagent(prompt: str, session, origin: str = "") -> str:
         nonlocal called
         called = True
         return "should not be reached"
@@ -124,7 +161,7 @@ def test_checkpoint_pause_leaves_call_index_untouched_for_resume(monkeypatch):
     """
     calls = []
 
-    async def fake_call_keyed_subagent(prompt: str, session) -> str:
+    async def fake_call_keyed_subagent(prompt: str, session, origin: str = "") -> str:
         calls.append(prompt)
         return "car_c parked in parking_spot_2."
 
@@ -159,7 +196,7 @@ def test_checkpoint_pause_leaves_call_index_untouched_for_resume(monkeypatch):
 def test_keyed_subagent_within_budget_still_answers_inline(monkeypatch):
     """The counterpart to the expired-deadline test: a deadline that
     hasn't passed yet must not block the ordinary inline-answer path."""
-    async def fake_call_keyed_subagent(prompt: str, session) -> str:
+    async def fake_call_keyed_subagent(prompt: str, session, origin: str = "") -> str:
         return "the car parked."
 
     monkeypatch.setattr(

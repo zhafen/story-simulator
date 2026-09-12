@@ -268,6 +268,41 @@ event_components:
                     of the most recently popped event's own end_time.
                 type: float
                 units: seconds
+    pending_resolution:
+        - description: >
+            Internal bookkeeping for a turn paused mid-resolution, keyed to
+            the paused event's own alias: the exact judgment-call answers
+            given so far, plus whether the most recent pause was a
+            keyed_subagent budget check-in (its own reply is discarded on
+            resume) rather than a genuine judgment call. Written and read
+            only by story_simulator.core's resume_token plumbing
+            (_save_pending/_load_pending) -- a paused turn's `resume_token`
+            is now just that event's own alias, not an encoded payload, so
+            this is what a client round-trips back instead. Not narrative
+            world state, and not meant to be read or written by a
+            connected agent.
+        - component_type
+        - field:
+            answers:
+                description: JSON-encoded list of this paused turn's
+                    judgment-call answers so far, in call order.
+                type: str
+            is_checkpoint:
+                description: Whether the most recent pause was a
+                    keyed_subagent budget check-in rather than a real
+                    judgment call needing the connected host's actual decision.
+                type: bool
+            time:
+                description: World time this checkpoint was recorded at,
+                    backfilled on merge like state.time/event_state.time,
+                    not authored directly. Ties (the common case here,
+                    since world time doesn't advance between checkpoints of
+                    the same still-unresolved event) are broken by write
+                    order -- see Registry's own _seq_ column.
+                type: float
+                nullable: true
+                time_dimension: true
+                units: seconds
 
 agent_components:
     agent:

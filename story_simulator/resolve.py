@@ -28,8 +28,10 @@ Same request shape (`JudgmentRequest`) at every call site, dispatched by
   always do -- except once its own wall-clock time budget
   (`config.keyed_subagent_time_budget_seconds()`) runs out for this
   `advance_simulation` call, at which point it checks in with the host
-  the same way "host" would, so an unattended run can't chain past Claude
-  Code's own per-MCP-tool-call timeout.
+  the same way "host" would, so an unattended run periodically surfaces
+  what it's doing instead of chaining silently -- see #76 for replacing
+  this with MCP progress notifications instead, the protocol-native
+  mechanism for exactly this.
 
 "human"/"subagent"/"host" are reached by raising `NeedsExternalInput`, resumed
 through MRTR (Multi Round-Trip Requests, MCP spec 2026-07-28) rather than
@@ -60,9 +62,10 @@ anything but the in-flight decision (see CLAUDE.md's disconnect-recovery
 section). This module doesn't introduce that requirement, it spends one
 already paid for.
 
-The answers-so-far themselves travel in an opaque token
-(`core._encode_token`/`_decode_token`), not server-side session
-state -- see `core.advance_simulation`.
+The answers-so-far themselves are persisted into the registry, keyed to
+the paused event's own alias (`core._save_pending`/`_load_pending`), not
+this process's own session state -- see `core.advance_simulation`. The
+`resume_token` handed back to the client is just that alias.
 """
 
 from __future__ import annotations

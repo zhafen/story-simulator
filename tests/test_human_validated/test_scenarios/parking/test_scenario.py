@@ -20,8 +20,8 @@ from conftest import _make_ctx, update_registry
 from story_simulator.config import registry_url
 from story_simulator.mcp_server import advance_simulation, start_world
 from test_human_validated.helpers import (
-    RUN_TO_DONE_INSTRUCTION,
     create_session,
+    start_world_instruction,
     _assert_write_order,
 )
 
@@ -202,10 +202,7 @@ class TestLiveWalkthrough:
         ) as session:
             print(f"agent session trace: {session.trace_path}")
             live_trial.id = str(session.trace_path)
-            narration = session.send_turn(
-                f"Use start_world with save_dir={save_dir} and scenario_dir={SCENARIO_DIR} "
-                f"to open a story-simulator world. Then {RUN_TO_DONE_INSTRUCTION}"
-            )
+            narration = session.send_turn(start_world_instruction(session, save_dir, SCENARIO_DIR))
             r = Registrar.load(registry_url(save_dir))
 
             try:

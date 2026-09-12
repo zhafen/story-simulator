@@ -50,7 +50,7 @@ def test_keyed_subagent_answer_is_cached_into_replay_answers(monkeypatch):
     responder="host") must not lose an earlier keyed_subagent answer.
 
     See TurnReplay.resolve's own comment and core._wrap_loop_result's
-    `_encode_token(alias, replay.answers)`.
+    `_save_pending(registrar, alias, replay.answers)`.
     """
     async def fake_call_keyed_subagent(prompt: str, session) -> str:
         return "resolved via deepseek"
@@ -80,9 +80,10 @@ def test_keyed_subagent_checks_in_once_deadline_passes(monkeypatch):
     the time budget, keyed_subagent must check in with the host instead.
 
     Instead of placing another (possibly slow) model call: with no
-    budget at all, one advance_simulation call can chain many DeepSeek
-    round-trips and blow past Claude Code's own ~60s MCP tool-call
-    timeout.
+    budget at all, one advance_simulation call could chain many DeepSeek
+    round-trips with no visibility into what it's doing until it's done --
+    see config.DEFAULT_KEYED_SUBAGENT_TIME_BUDGET_SECONDS's own comment
+    for what actually bounds a single stdio MCP tool call.
     """
     called = False
 
@@ -175,32 +176,91 @@ def test_keyed_subagent_within_budget_still_answers_inline(monkeypatch):
     assert replay.answers == ["the car parked."]
 
 
+def _pending_registrar():
+    """A fresh in-memory registrar with `pending_resolution`'s schema
+    declared, matching real usage: `start_world` always loads
+    manifest/builtins.yaml before any `_save_pending`/`_load_pending` call
+    can happen. Without this, `is_checkpoint` (undeclared) would be typed
+    from shorthand inference alone, which -- unlike the real declared
+    `bool` field -- round-trips as the *string* "False"/"True", not a
+    real boolean (Python's `bool("False")` is `True`).
+    """
+    from emc2p.registrar import Registrar
+    from story_simulator.config import MANIFEST_DIR
+
+    registrar = Registrar()
+    registrar.update(input_dirs=[str(MANIFEST_DIR)])
+    return registrar
+
+
+@pytest.mark.slow
 def test_resolve_args_discards_checkpoint_answer_instead_of_banking_it():
     """`_resolve_args`'s half of the `is_checkpoint` fix: a checkpoint's
     "continue" reply must not enter `TurnReplay`'s answer bank.
     """
-    from story_simulator.core import _encode_token, _resolve_args
+    from story_simulator.core import _resolve_args, _save_pending
 
-    # A checkpoint pause's own token: whatever was already genuinely
+    registrar = _pending_registrar()
+    # A checkpoint pause's own saved state: whatever was already genuinely
     # answered, unchanged -- the paused call itself never got an answer.
-    token = _encode_token("car_c_park", ["earlier real answer"], is_checkpoint=True)
+    token = _save_pending(registrar, "car_c_park", ["earlier real answer"], is_checkpoint=True)
 
-    alias, replay = _resolve_args(token, "Continue the simulation.")
+    alias, replay = _resolve_args(registrar, token, "Continue the simulation.")
     assert alias == "car_c_park"
     # The check-in reply ("Continue the simulation.") must NOT appear here --
     # only the genuine prior answer survives the resume.
     assert replay.answers == ["earlier real answer"]
 
 
+@pytest.mark.slow
 def test_resolve_args_banks_an_ordinary_pauses_answer_normally():
     """The non-checkpoint case is unchanged: an ordinary host/subagent/human
     pause's answer is real content and belongs in the bank."""
-    from story_simulator.core import _encode_token, _resolve_args
+    from story_simulator.core import _resolve_args, _save_pending
 
-    token = _encode_token("car_c_park", ["earlier real answer"])  # is_checkpoint defaults False
-    alias, replay = _resolve_args(token, "car_c parked in parking_spot_2.")
+    registrar = _pending_registrar()
+    token = _save_pending(registrar, "car_c_park", ["earlier real answer"])  # is_checkpoint defaults False
+    alias, replay = _resolve_args(registrar, token, "car_c parked in parking_spot_2.")
     assert alias == "car_c_park"
     assert replay.answers == ["earlier real answer", "car_c parked in parking_spot_2."]
+
+
+@pytest.mark.slow
+def test_save_pending_resume_token_is_just_the_alias():
+    """Regression guard for issue #75's root cause: the resume_token must
+    be a short, already-known-safe identifier, not an encoded blob the
+    connected model has to relay back byte-for-byte -- see
+    `_save_pending`'s own docstring.
+    """
+    from story_simulator.core import _save_pending
+
+    registrar = _pending_registrar()
+    token = _save_pending(registrar, "car_c_park", ["a long answer " * 200], is_checkpoint=False)
+    assert token == "car_c_park"
+
+
+@pytest.mark.slow
+def test_load_pending_round_trips_answers_and_checkpoint_flag():
+    from story_simulator.core import _load_pending, _save_pending
+
+    registrar = _pending_registrar()
+    _save_pending(registrar, "car_c_park", ["first", "second"], is_checkpoint=True)
+    alias, answers, is_checkpoint = _load_pending(registrar, "car_c_park")
+    assert alias == "car_c_park"
+    assert answers == ["first", "second"]
+    assert is_checkpoint is True
+
+
+@pytest.mark.slow
+def test_load_pending_raises_clear_error_for_unknown_alias():
+    """No `pending_resolution` row for this alias (a tampered/invented
+    resume_token, or one from a different world) must raise a clear,
+    actionable error -- not a raw decode crash (see issue #75)."""
+    from story_simulator.core import _load_pending
+
+    registrar = _pending_registrar()
+    with pytest.raises(ValueError, match="not_a_real_alias"):
+        _load_pending(registrar, "not_a_real_alias")
 
 
 def test_unknown_responder_raises_value_error():

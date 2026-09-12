@@ -87,8 +87,24 @@ _EVENT_RESPONDERS = ("host", "subagent", "keyed_subagent")
 DEFAULT_KEYED_SUBAGENT_MODEL = "deepseek/deepseek-chat"
 
 # Wall-clock seconds `keyed_subagent_time_budget_seconds()` falls back to.
-# Deliberately well under Claude Code's own ~60s per-MCP-tool-call timeout.
-DEFAULT_KEYED_SUBAGENT_TIME_BUDGET_SECONDS = 30.0
+#
+# NOT bounded by a ~60s Claude Code per-MCP-tool-call timeout -- that
+# figure (an earlier version of this comment's own assumption) turns out
+# to only be a per-request "time to first byte" timer for HTTP/SSE/
+# connector MCP servers; per
+# https://code.claude.com/docs/en/mcp.md#mcp-tool-call-timeouts, "Stdio
+# and WebSocket servers have no per-request timer" -- story-simulator-mcp
+# is stdio (spawned once, long-lived, via .mcp.json). The real applicable
+# ceiling for a stdio server is the *idle* timeout (default 30 minutes:
+# no response and no progress notification at all), not a wall-clock cap
+# on one call (MCP_TOOL_TIMEOUT's own default, when unset, is ~28 hours).
+# 300s (five minutes) is comfortably under that 30-minute idle window even
+# accounting for a slow driver model, while still keeping some periodic
+# check-in cadence rather than letting one call run unbounded -- see
+# issue #76 for actually closing that gap properly (MCP progress
+# notifications during keyed_subagent's own loop, so it never needs to
+# check in via the client at all).
+DEFAULT_KEYED_SUBAGENT_TIME_BUDGET_SECONDS = 300.0
 
 
 def event_responder() -> str:

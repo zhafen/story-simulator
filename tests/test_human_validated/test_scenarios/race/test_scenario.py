@@ -16,8 +16,8 @@ from emc2p.registrar import Registrar
 from emc2p.testing.expected_fixtures import assert_subset
 from story_simulator.config import registry_url
 from test_human_validated.helpers import (
-    RUN_TO_DONE_INSTRUCTION,
     create_session,
+    start_world_instruction,
     _assert_write_order,
 )
 
@@ -49,10 +49,7 @@ def test_resolves_correctly(tmp_path: Path, live_trial):
     with create_session(save_dir, turn_timeout=420, session_timeout=420) as session:  # responder="keyed_subagent", the default
         print(f"agent session trace: {session.trace_path}")
         live_trial.id = str(session.trace_path)
-        narration = session.send_turn(
-            f"Use start_world with save_dir={save_dir} and scenario_dir={SCENARIO_DIR} "
-            f"to open a story-simulator world. Then {RUN_TO_DONE_INSTRUCTION}"
-        )
+        narration = session.send_turn(start_world_instruction(session, save_dir, SCENARIO_DIR))
         r = Registrar.load(registry_url(save_dir))
         try:
             placements = {
@@ -80,10 +77,7 @@ def test_persists_via_keyed_subagent(tmp_path: Path, live_trial):
     ) as session:
         print(f"agent session trace: {session.trace_path}")
         live_trial.id = str(session.trace_path)
-        narration = session.send_turn(
-            f"Use start_world with save_dir={save_dir} and scenario_dir={SCENARIO_DIR} "
-            f"to open a story-simulator world. Then {RUN_TO_DONE_INSTRUCTION}"
-        )
+        narration = session.send_turn(start_world_instruction(session, save_dir, SCENARIO_DIR))
         world_dir = save_dir / "world"
         assert world_dir.is_dir(), (
             f"save_dir/world/ was never created -- keyed_subagent's update_registry calls "

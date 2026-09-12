@@ -4,11 +4,11 @@ Solid arrows are calls, dashed arrows are imports.
 
 ```mermaid
 flowchart LR
-    n0["config"]
-    n1["core"]
-    n2["keyed_subagent"]
-    n3["mcp_server"]
-    n4["resolve"]
+    n0["story_simulator.config"]
+    n1["story_simulator.core"]
+    n2["story_simulator.keyed_subagent"]
+    n3["story_simulator.mcp_server"]
+    n4["story_simulator.resolve"]
     n1 --> n0
     n1 -.-> n0
     n1 -.-> n4

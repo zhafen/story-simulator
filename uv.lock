@@ -570,7 +570,7 @@ wheels = [
 [[package]]
 name = "emc2p"
 version = "0.1.0"
-source = { git = "https://github.com/zhafen/emc2p?rev=99173a84029822cbd8a5cd7b35ec18dc8f00139e#99173a84029822cbd8a5cd7b35ec18dc8f00139e" }
+source = { git = "https://github.com/zhafen/emc2p?rev=d3d0a0df0df8bad4c9ee6217f2cbb41ca955431e#d3d0a0df0df8bad4c9ee6217f2cbb41ca955431e" }
 dependencies = [
     { name = "duckdb" },
     { name = "ibis-framework", extra = ["duckdb"] },
@@ -2435,7 +2435,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "emc2p", extras = ["agents", "mcp", "testing"], git = "https://github.com/zhafen/emc2p?rev=99173a84029822cbd8a5cd7b35ec18dc8f00139e" },
+    { name = "emc2p", extras = ["agents", "mcp", "testing"], git = "https://github.com/zhafen/emc2p?rev=d3d0a0df0df8bad4c9ee6217f2cbb41ca955431e" },
     { name = "matplotlib", specifier = ">=3.11.0" },
     { name = "mcp", specifier = ">=1.28.1" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.2" },

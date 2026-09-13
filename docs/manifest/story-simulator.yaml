@@ -820,7 +820,7 @@ unsorted_requirements_and_solutions:
                       candidate solutions not yet explored.
                 - requirement
                 - requirement_priority: 0.6
-            character_context_is_restrictive:
+            character_context_is_restricted:
                 data:
                     - description: >
                           A character's perceptible view of the world must

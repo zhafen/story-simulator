@@ -744,77 +744,26 @@ unsorted_requirements_and_solutions:
                           +#   if replay.allowed_tools is not None:
                           +#       server.restrict_tools_for_session(session, replay.allowed_tools)
                 - work_state: new
-        perceive_and_advance_npc_turn_tool_surface:
-            data:
-                - description: >
-                      Whether perceive/advance_npc_turn come back as
-                      directly callable MCP tools or exist only inside
-                      advance_simulation's loop.
-                - requirement
-                - requirement_priority: 0.6
-            standalone_tools_restored:
-                - description: >
-                      Restore perceive/advance_npc_turn as their own
-                      @server.tool() functions, delegating to the same
-                      decide_then_record_split/spatial helpers
-                      process_event uses internally -- callable ad hoc as
-                      well as from inside the loop.
-                - solution
-                - selected: true
-                - pro: >
-                      Already mandated by Epic C's own checklist item 3 --
-                      listed here for traceability, not as an open question.
-                - estimated_diff: >
-                      ~70-90 lines, mostly mcp_server.py -- two new
-                      @server.tool() functions (perceive, advance_npc_turn)
-                      delegating to decide_then_record_split's own helpers,
-                      matching the old shelved shape trimmed to the current
-                      event-entity loop. Small additive change in core.py
-                      (~10 lines) to expose a callable entry point those
-                      tools can share with process_event.
-                - code_example:
-                      language: diff
-                      value: |
-                          --- a/story_simulator/mcp_server.py
-                          +++ b/story_simulator/mcp_server.py
-                          @@
-                           from mcp.server.fastmcp import Context, FastMCP
-
-                           from story_simulator import core
-                          +from story_simulator.resolve import TurnReplay
-
-                          @@ async def advance_simulation(ctx: Context, resume_token: str | None = None, answer: str | None = None) -> dict:
-                               __iacs__ = {"solution of": "story_simulator_mission.tool_catalog.advance_simulation"}
-                               return await core.advance_simulation(ctx.request_context.session, resume_token, answer)
-
-
-                          +@server.tool()
-                          +async def perceive(alias: str, ctx: Context) -> str:
-                          +    """Return what `alias` can currently perceive -- callable any
-                          +    time, not only from inside advance_simulation's own loop."""
-                          +    __iacs__ = {"solution of": "story_simulator_mission.tool_catalog.perceive"}
-                          +    registrar = core.registrar_sessions.get_registrar(ctx.request_context.session)
-                          +    return core.narrate_to_character(registrar, alias)
-                          +
-                          +
-                          +@server.tool()
-                          +async def advance_npc_turn(alias: str, ctx: Context) -> str:
-                          +    """Decide, narrate, and record one NPC's whole turn on demand,
-                          +    via the same decide_event/resolve_event pair process_event
-                          +    uses internally for a character-flagged event."""
-                          +    __iacs__ = {"solution of": "story_simulator_mission.tool_catalog.advance_npc_turn"}
-                          +    session = ctx.request_context.session
-                          +    registrar = core.registrar_sessions.get_registrar(session)
-                          +    resolve_narration, _plan_narration = await core.process_event(
-                          +        registrar, alias, TurnReplay(answers=[]), session
-                          +    )
-                          +    return resolve_narration
-                          +
-                          +
-                           # Mounts view_registry/view_entity/update_registry/consolidate_review --
-                           # see this module's own docstring for why open_registry is excluded.
-                           core.registrar_sessions.mount(server, exclude={"open_registry"})
-                - work_state: new
+        perceive_and_reaction_stay_event_scheduled:
+            - description: >
+                  Dropped from this design's own requirement tree: perceive
+                  and advance_npc_turn were briefly considered for
+                  standalone, out-of-loop MCP-tool exposure (so a host
+                  could force them ahead of the event queue's own
+                  soonest-end_time ordering), but that's the wrong shape --
+                  perception and an NPC's reaction are themselves events,
+                  driven by their own reaction-time duration, scheduled and
+                  popped the same way as anything else
+                  (entities_can_take_turns_via_the_event_model). No
+                  standalone tool surface, no out-of-band forcing.
+            - todo:
+                  value: >
+                      If reaction-time-as-an-ordinary-event turns out not
+                      to give the host enough narrative control in
+                      practice, reconsider exposing perceive/
+                      advance_npc_turn as standalone, out-of-loop MCP
+                      tools after all.
+                  priority: 0.2
         world_time_source_for_npc_turns:
             data:
                 - description: >

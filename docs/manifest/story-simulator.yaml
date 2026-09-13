@@ -744,6 +744,78 @@ unsorted_requirements_and_solutions:
                           +#   if replay.allowed_tools is not None:
                           +#       server.restrict_tools_for_session(session, replay.allowed_tools)
                 - work_state: new
+        available_context_depends_on_viewer:
+            data:
+                - description: >
+                      What context a decision-maker gets access to when
+                      deciding a character's action depends on who's
+                      behind that character -- an NPC's autonomous
+                      judgment call and a human player's own narration are
+                      two distinct context-restriction problems, not one.
+                - requirement
+                - requirement_priority: 1
+            npc_context_is_restricted:
+                data:
+                    - description: >
+                          An NPC's decide-phase judgment call must run
+                          with only the context an autonomous
+                          decision-maker should have -- not the full
+                          conversation/registry context a
+                          human-narrating host otherwise carries.
+                    - requirement
+                    - requirement_priority: 1
+                subagent_responder:
+                    - description: >
+                          decide_event asks via responder="subagent": the
+                          connected host is asked to delegate to its own
+                          isolated subagent mechanism (e.g. Claude Code's
+                          Agent/Task tool) rather than answering inline.
+                          Verified live in this design session -- a
+                          freshly-spawned subagent asked to guess a color
+                          it was never told had no way to know it and
+                          guessed wrong, confirming genuine isolation from
+                          the parent conversation's context.
+                    - solution
+                    - selected: true
+                    - pro: >
+                          No dedicated API key or model config needed --
+                          rides on whatever subagent mechanism the
+                          connected host already has, unlike
+                          keyed_subagent_responder.
+                    - pro: Genuine context isolation, not just claimed -- confirmed live.
+                    - con: >
+                          Trust-based, not enforced: nothing verifies the
+                          host actually delegated rather than answering
+                          inline (open TODO in resolve.py's
+                          _frame_for_responder).
+                    - work_state: new
+                keyed_subagent_responder:
+                    - description: >
+                          decide_event asks via responder="keyed_subagent":
+                          answered in-process via
+                          story_simulator.keyed_subagent.call_keyed_subagent,
+                          with its own model call (LiteLLM, DeepSeek by
+                          default) and real registry tool access.
+                    - solution
+                    - con: >
+                          Requires a dedicated API key/model configured
+                          for keyed_subagent -- not every deployment or
+                          user has one set up. A crippling con: this
+                          solution simply doesn't work at all without it,
+                          unlike subagent_responder's softer, still-open
+                          trust-verification gap.
+                    - work_state: new
+            human_context_is_restricted:
+                - description: >
+                      A human-voiced character's own narration is also
+                      bounded by what that character would actually know
+                      or perceive, not full registry omniscience just
+                      because a human is behind it. Sibling to
+                      npc_context_is_restricted under the same
+                      available_context_depends_on_viewer requirement --
+                      candidate solutions not yet explored.
+                - requirement
+                - requirement_priority: 0.6
         perceive_and_reaction_stay_event_scheduled:
             - description: >
                   Dropped from this design's own requirement tree: perceive

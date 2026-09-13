@@ -439,8 +439,8 @@ unsorted_requirements_and_solutions:
                       character-flagged event *is*, this requirement's own
                       question -- not about what happens once one is found,
                       the sibling requirement's question.
-                - solution
-                - selected: true
+                - solution:
+                      selected: true
                 - pro: Zero changes to pop_event/is_event_valid/advance_clock.
                 - pro: >
                       A character's turn advances the same world_clock
@@ -600,8 +600,8 @@ unsorted_requirements_and_solutions:
                       not an NPC-only special case. A third JudgmentRequest
                       per turn, same TurnReplay/NeedsExternalInput
                       mechanism resolve_event/plan_events already use.
-                - solution
-                - selected: true
+                - solution:
+                      selected: true
                 - pro: Only additive to existing resume/replay plumbing -- no new mechanism.
                 - pro: Matches Epic B's "restricted then broader" ordering directly.
                 - con: >
@@ -822,8 +822,8 @@ unsorted_requirements_and_solutions:
                           it was never told had no way to know it and
                           guessed wrong, confirming genuine isolation from
                           the parent conversation's context.
-                    - solution
-                    - selected: true
+                    - solution:
+                          selected: true
                     - pro: >
                           No dedicated API key or model config needed --
                           rides on whatever subagent mechanism the
@@ -874,8 +874,8 @@ unsorted_requirements_and_solutions:
                           solution) -- never in full view_registry/
                           view_entity omniscience -- when narrating on
                           that player's behalf.
-                    - solution
-                    - selected: true
+                    - solution:
+                          selected: true
                     - pro: >
                           No new mechanism -- reuses the same perceive
                           substrate character_context_is_restricted
@@ -929,8 +929,8 @@ unsorted_requirements_and_solutions:
                           merges them into the viewing character's memory.
                           Feeds the decide phase's actual bounded content,
                           regardless of which responder answers it.
-                    - solution
-                    - selected: true
+                    - solution:
+                          selected: true
                     - work_state: new
         perceive_and_reaction_stay_event_scheduled:
             - description: >

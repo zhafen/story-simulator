@@ -507,6 +507,41 @@ unsorted_requirements_and_solutions:
                       a replacement for the deleted enabled_modules() toggle
                       in config.py (~10-20 lines). Largest diff of the
                       entities_can_take_turns_via_the_event_model candidates.
+                - code_example:
+                      language: diff
+                      value: |
+                          --- a/story_simulator/core.py
+                          +++ b/story_simulator/core.py
+                          @@
+                          +def pop_next_alias(registrar: Registrar) -> str | None:
+                          +    """Merged pop: prefer a character due via the restored
+                          +    next_due-based spatial.pop_event, else fall back to
+                          +    core.pop_event's own soonest-end_time event rule.
+                          +    """
+                          +    from story_simulator import spatial  # restored from shelved/
+                          +
+                          +    character_alias = spatial.pop_event(registrar)
+                          +    if character_alias is not None:
+                          +        return character_alias
+                          +    return pop_event(registrar)
+                          +
+                          +
+                           async def _run_event_loop(
+                               registrar: Registrar,
+                               session,
+                          @@
+                               alias = resume_alias
+                               while True:
+                                   if alias is None:
+                          -            alias = pop_event(registrar)
+                          +            alias = pop_next_alias(registrar)
+                                       if alias is None:
+                                           return None, None, "Nothing scheduled.", None, False
+
+                          # Plus: next_due_entity/pop_event restored verbatim from
+                          # shelved/story_simulator/spatial.py (~40 lines, not reproduced
+                          # here -- see that file), and a re-added `next_due` component
+                          # declaration in manifest/builtins.yaml.
                 - work_state: new
         npc_decide_step_is_authority_restricted:
             data:

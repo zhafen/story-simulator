@@ -403,14 +403,18 @@ unsorted_requirements_and_solutions:
                   spatial.pop_event scheduler it used to dispatch to
                   (removed in 5a00660/b728efa) are both gone -- nothing
                   below is a restoration, it's a fresh design against the
-                  current event-entity loop. Awaiting sign-off before Epic
-                  C's file-restoration/re-wiring steps begin.
+                  current event-entity loop. Signed off; selected
+                  solutions are character_turn_is_its_own_event_type,
+                  perceive, decide_then_record_split, subagent_responder,
+                  and prompt_instructs_host_to_narrate_via_perceive. Epic
+                  C's file-restoration/re-wiring steps (checklist items
+                  2+) may now proceed against this design.
             - requirement
             - requirement_priority: 1
             - impact:
                   type: architecture_clarity
                   value: 0.5
-            - work_state: in progress
+            - work_state: done
         entities_can_take_turns_via_the_event_model:
             data:
                 - description: >

@@ -543,29 +543,43 @@ unsorted_requirements_and_solutions:
                           # here -- see that file), and a re-added `next_due` component
                           # declaration in manifest/builtins.yaml.
                 - work_state: new
-        npc_decide_step_is_authority_restricted:
+        characters_cannot_modify_world_data_directly:
             data:
                 - description: >
                       Traces to Epic B's folded-in npc_authority_separation
-                      (story-simulator#48's own body): an NPC's decide step
-                      must stay perceive-scoped and tool-free, while its
-                      resolve+record step needs update_registry access --
-                      without implicitly inheriting a human-narrating
-                      host's full write authority just because both use
-                      responder="host".
+                      (story-simulator#48's own body), generalized to cover
+                      every character, not just NPCs: whatever surfaces a
+                      character's stated intent -- an NPC's own autonomous
+                      judgment call, or a human-voiced character's typed
+                      action -- must not itself be able to modify world
+                      data. That decide-shaped phase (its exact mechanism
+                      is a solution-level choice below, not fixed by this
+                      requirement -- we don't yet know if it'll actually
+                      take the shape of a dedicated "decide step") stays
+                      perceive-scoped and tool-free; a separate
+                      resolve+record step is the only one with
+                      update_registry access, applied the same way
+                      whether the character behind it is an NPC or a
+                      human player -- neither gets to write world state
+                      merely by describing what they want to do.
                 - requirement
                 - requirement_priority: 1
             decide_then_record_split:
                 - description: >
                       process_event gains a decide_event box, run first for
-                      character-flagged events: a perception-only,
-                      tool-free JudgmentRequest (perception helpers ported
-                      from shelved/spatial.py) whose answer feeds into
+                      any character-flagged event -- NPC or human-voiced
+                      alike: a perception-only, tool-free JudgmentRequest
+                      (an NPC's own judgment call, or simply relaying a
+                      human player's typed action -- same shape either
+                      way, using perception helpers ported from
+                      shelved/spatial.py where the answer comes from an
+                      autonomous judgment call) whose answer feeds into
                       resolve_event's own prompt -- resolve_event is the
                       one call that actually has write authority to record
-                      it. A third JudgmentRequest per turn, same
-                      TurnReplay/NeedsExternalInput mechanism resolve_event/
-                      plan_events already use.
+                      it. One mechanism serving every kind of character,
+                      not an NPC-only special case. A third JudgmentRequest
+                      per turn, same TurnReplay/NeedsExternalInput
+                      mechanism resolve_event/plan_events already use.
                 - solution
                 - selected: true
                 - pro: Only additive to existing resume/replay plumbing -- no new mechanism.
@@ -645,8 +659,9 @@ unsorted_requirements_and_solutions:
                 - work_state: new
             fold_decide_into_resolve_event:
                 - description: >
-                      Treat the NPC-scoped, perception-only framing as part
-                      of a single resolve_event call instead of a separate step.
+                      Treat the character-scoped, perception-only framing
+                      (NPC or human-voiced alike) as part of a single
+                      resolve_event call instead of a separate step.
                 - solution
                 - con: >
                       Doesn't separate authority at all -- one call, one
@@ -684,9 +699,10 @@ unsorted_requirements_and_solutions:
                 - work_state: new
             enforce_via_tool_allowlist:
                 - description: >
-                      Give the decide step's responder turn a genuinely
-                      restricted MCP tool set (no update_registry exposed
-                      at all), the way perceive used to be a read-only tool.
+                      Give any character's decide-shaped responder turn
+                      (NPC or human-voiced) a genuinely restricted MCP tool
+                      set (no update_registry exposed at all), the way
+                      perceive used to be a read-only tool.
                 - solution
                 - dependence: session-scoped, per-call tool-visibility control in mcp_server.py (doesn't exist yet)
                 - pro: >

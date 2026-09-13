@@ -444,9 +444,14 @@ unsorted_requirements_and_solutions:
                       plus a small is_character_event(registrar, alias)
                       helper (checks involved_entity for a character
                       component). Additive, no removals; no new files.
-                - code_example:
+                - change:
+                      file: story_simulator/core.py
+                      change: >
+                          Add an is_character_event helper and extend
+                          plan_events' prompt to mention scheduling a
+                          character's own next turn.
                       language: diff
-                      value: |
+                      preview: |
                           --- a/story_simulator/core.py
                           +++ b/story_simulator/core.py
                           @@ def is_event_valid(registrar: Registrar, alias: str) -> bool:
@@ -507,9 +512,18 @@ unsorted_requirements_and_solutions:
                       a replacement for the deleted enabled_modules() toggle
                       in config.py (~10-20 lines). Largest diff of the
                       entities_can_take_turns_via_the_event_model candidates.
-                - code_example:
+                - change:
+                      file: story_simulator/core.py
+                      change: >
+                          Add pop_next_alias (merges a restored,
+                          character-priority spatial.pop_event with
+                          core.pop_event) and branch _run_event_loop to use
+                          it. Also requires restoring next_due_entity/
+                          pop_event verbatim from shelved/spatial.py
+                          (~40 lines, not shown here) and re-adding a
+                          next_due component in manifest/builtins.yaml.
                       language: diff
-                      value: |
+                      preview: |
                           --- a/story_simulator/core.py
                           +++ b/story_simulator/core.py
                           @@
@@ -537,11 +551,6 @@ unsorted_requirements_and_solutions:
                           +            alias = pop_next_alias(registrar)
                                        if alias is None:
                                            return None, None, "Nothing scheduled.", None, False
-
-                          # Plus: next_due_entity/pop_event restored verbatim from
-                          # shelved/story_simulator/spatial.py (~40 lines, not reproduced
-                          # here -- see that file), and a re-added `next_due` component
-                          # declaration in manifest/builtins.yaml.
                 - work_state: new
         characters_cannot_modify_world_data_directly:
             data:
@@ -600,9 +609,15 @@ unsorted_requirements_and_solutions:
                       shelved/spatial.py into a restored, perception-only
                       module (~80-100 lines). No changes to resolve.py --
                       reuses TurnReplay/NeedsExternalInput as-is.
-                - code_example:
+                - change:
+                      file: story_simulator/core.py
+                      change: >
+                          Add decide_event (a perception-only, tool-free
+                          JudgmentRequest), thread its answer into
+                          resolve_event via a new decision kwarg, and call
+                          it from process_event for character-flagged events.
                       language: diff
-                      value: |
+                      preview: |
                           --- a/story_simulator/core.py
                           +++ b/story_simulator/core.py
                           @@
@@ -672,9 +687,14 @@ unsorted_requirements_and_solutions:
                       resolve_event's prompt-building for character-flagged
                       events. Smallest diff of the three candidates here,
                       proportional to how little it actually solves.
-                - code_example:
+                - change:
+                      file: story_simulator/core.py
+                      change: >
+                          Branch resolve_event's own prompt-building inline
+                          for character-flagged events, instead of adding a
+                          separate decide_event step.
                       language: diff
-                      value: |
+                      preview: |
                           --- a/story_simulator/core.py
                           +++ b/story_simulator/core.py
                           @@ async def resolve_event(alias: str, replay: TurnReplay, end_time: float, session) -> str:
@@ -722,9 +742,14 @@ unsorted_requirements_and_solutions:
                       Largest and riskiest diff of any candidate in this
                       tree -- consistent with being tracked as a follow-up
                       rather than part of this design.
-                - code_example:
+                - change:
+                      file: story_simulator/resolve.py
+                      change: >
+                          SPECULATIVE -- add an allowed_tools field to
+                          TurnReplay. Inert on its own; no enforcement
+                          mechanism reads it yet.
                       language: diff
-                      value: |
+                      preview: |
                           --- a/story_simulator/resolve.py
                           +++ b/story_simulator/resolve.py
                           @@ class TurnReplay:
@@ -734,7 +759,14 @@ unsorted_requirements_and_solutions:
                           +    # SPECULATIVE -- no enforcement mechanism exists at the MCP
                           +    # boundary today; this field alone changes nothing on its own.
                           +    allowed_tools: frozenset[str] | None = None
-
+                - change:
+                      file: story_simulator/mcp_server.py
+                      change: >
+                          SPECULATIVE -- FastMCP has no per-call
+                          tool-visibility hook today; sketch only, not
+                          achievable without new plumbing at this boundary.
+                      language: diff
+                      preview: |
                           --- a/story_simulator/mcp_server.py
                           +++ b/story_simulator/mcp_server.py
                           @@

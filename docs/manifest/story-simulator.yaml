@@ -842,16 +842,53 @@ unsorted_requirements_and_solutions:
                           trust-verification gap.
                     - work_state: new
             human_context_is_restricted:
-                - description: >
-                      A human-voiced character's own narration is also
-                      bounded by what that character would actually know
-                      or perceive, not full registry omniscience just
-                      because a human is behind it. Sibling to
-                      npc_context_is_restricted under the same
-                      available_context_depends_on_viewer requirement --
-                      candidate solutions not yet explored.
-                - requirement
-                - requirement_priority: 0.6
+                data:
+                    - description: >
+                          A human-voiced character's own narration is also
+                          bounded by what that character would actually
+                          know or perceive, not full registry omniscience
+                          just because a human is behind it. Sibling to
+                          npc_context_is_restricted under the same
+                          available_context_depends_on_viewer requirement.
+                    - requirement
+                    - requirement_priority: 0.6
+                prompt_instructs_host_to_narrate_via_perceive:
+                    - description: >
+                          The MCP server's own instructions (and
+                          resolve_event's per-turn prompt) explicitly tell
+                          the host to ground anything it tells a human
+                          player about their character's surroundings or
+                          an event's outcome in perceive's own bounded
+                          view (character_context_is_restricted's
+                          solution) -- never in full view_registry/
+                          view_entity omniscience -- when narrating on
+                          that player's behalf.
+                    - solution
+                    - selected: true
+                    - pro: >
+                          No new mechanism -- reuses the same perceive
+                          substrate character_context_is_restricted
+                          already established, just applied to human
+                          narration too instead of only NPC decide steps.
+                    - con: >
+                          Purely prompt-enforced, same as every other
+                          trust-based solution in this tree (decide_then_record_split,
+                          subagent_responder) -- a weak or careless host
+                          can still narrate metagame information nothing
+                          in the mechanism actually blocks.
+                    - work_state: new
+                no_special_case_for_humans:
+                    - description: >
+                          Leave human narration unrestricted -- rely
+                          entirely on the connected host/player's own
+                          good-faith roleplay to self-limit metagame
+                          knowledge, with no stated instruction at all.
+                    - solution
+                    - con: >
+                          Weaker than even a trust-based instruction: not
+                          even asked for, just assumed. Kept here as the
+                          baseline this tree is choosing not to accept.
+                    - work_state: new
             character_context_is_restricted:
                 data:
                     - description: >

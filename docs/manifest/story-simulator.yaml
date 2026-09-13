@@ -444,6 +444,48 @@ unsorted_requirements_and_solutions:
                       plus a small is_character_event(registrar, alias)
                       helper (checks involved_entity for a character
                       component). Additive, no removals; no new files.
+                - code_example:
+                      language: diff
+                      value: |
+                          --- a/story_simulator/core.py
+                          +++ b/story_simulator/core.py
+                          @@ def is_event_valid(registrar: Registrar, alias: str) -> bool:
+                               return registrar.get_entity_id(alias) is not None
+
+                          +def is_character_event(registrar: Registrar, alias: str) -> bool:
+                          +    """True if `alias`'s event has an involved_entity carrying a
+                          +    `character` component -- this event IS that character's own
+                          +    turn, not an ordinary base-module event.
+                          +    """
+                          +    entity_id = registrar.get_entity_id(alias)
+                          +    if entity_id is None or "involved_entity" not in registrar.registry.component_types:
+                          +        return False
+                          +    involved = registrar.view_current("involved_entity.value").to_pandas()
+                          +    linked = set(involved[involved["entity_id"] == entity_id]["involved_entity.value"])
+                          +    if not linked or "character" not in registrar.registry.component_types:
+                          +        return False
+                          +    characters = set(registrar.get("character.interaction_type").to_pandas()["entity_id"])
+                          +    return bool(linked & characters)
+                          +
+                          +
+                           def advance_clock(registrar: Registrar, alias: str) -> float:
+
+                          @@ async def plan_events(alias: str, replay: TurnReplay, session) -> str:
+                               request = JudgmentRequest(
+                                   prompt=(
+                                       f"Given how {alias} just resolved, does anything new need to "
+                                       f"happen as a result? If so, create it now: one or more new "
+                                       f"event entities (their own start_time/duration/event_state/"
+                          -            f"involved_entity) via update_registry. If nothing follows "
+                          -            f"from this, just say so -- no new events needed."
+                          +            f"involved_entity) via update_registry -- including this "
+                          +            f"character's own next turn, if they have more to do this "
+                          +            f"scene: schedule it the same way, linked back via "
+                          +            f"involved_entity. If nothing follows from this, just say "
+                          +            f"so -- no new events needed."
+                                   ),
+                                   origin="plan_events",
+                               )
                 - work_state: new
             separate_character_pop_layered_on_core:
                 - description: >
@@ -509,6 +551,62 @@ unsorted_requirements_and_solutions:
                       shelved/spatial.py into a restored, perception-only
                       module (~80-100 lines). No changes to resolve.py --
                       reuses TurnReplay/NeedsExternalInput as-is.
+                - code_example:
+                      language: diff
+                      value: |
+                          --- a/story_simulator/core.py
+                          +++ b/story_simulator/core.py
+                          @@
+                          +async def decide_event(alias: str, replay: TurnReplay, session) -> str | None:
+                          +    """Decide box: for a character-flagged event only, ask a
+                          +    perception-only, tool-free judgment call what `alias` does --
+                          +    no update_registry access, unlike every other call in this
+                          +    loop. Returns None for a non-character event.
+                          +    """
+                          +    request = JudgmentRequest(
+                          +        prompt=(
+                          +            f"You are {alias}, deciding what to do next. Base this "
+                          +            f"only on what {alias} would perceive (view_entity on "
+                          +            f"{alias}'s own position and nearby entities) -- do not "
+                          +            f"read anything {alias} couldn't know. Describe the "
+                          +            f"action in plain text. Do NOT call update_registry here "
+                          +            f"-- this step only decides; resolve_event, next, is the "
+                          +            f"one with real write authority."
+                          +        ),
+                          +        origin="decide_event",
+                          +    )
+                          +    return await replay.resolve(request, responder=event_responder(), session=session)
+                          +
+                          +
+                           async def resolve_event(
+                          -    alias: str, replay: TurnReplay, end_time: float, session
+                          +    alias: str, replay: TurnReplay, end_time: float, session, decision: str | None = None
+                           ) -> str:
+                               request = JudgmentRequest(
+                                   prompt=(
+                                       f"{alias}'s end_time (world time {end_time:g}) has been "
+                                       f"reached. Nothing else with an earlier end_time is still "
+                                       f"unresolved -- ..."
+                          +            + (
+                          +                f"\n\n{alias} already decided what to do: {decision!r} "
+                          +                f"-- record that decision's consequences now, don't "
+                          +                f"re-decide it." if decision else ""
+                          +            )
+                                   ),
+                                   origin="resolve_event",
+                               )
+                               return await replay.resolve(request, responder=event_responder(), session=session)
+
+                           async def process_event(registrar: Registrar, alias: str, replay: TurnReplay, session) -> tuple[str, str]:
+                               end_time = advance_clock(registrar, alias)
+                               registrar.update(
+                                   yaml_strings={SOURCE_KEY: f"{WORLD_CLOCK_ALIAS}:\n    - world_clock:\n        value: {end_time}\n"},
+                               )
+                          -    resolve_narration = await resolve_event(alias, replay, end_time, session)
+                          +    decision = await decide_event(alias, replay, session) if is_character_event(registrar, alias) else None
+                          +    resolve_narration = await resolve_event(alias, replay, end_time, session, decision=decision)
+                               plan_narration = await plan_events(alias, replay, session)
+                               return resolve_narration, plan_narration
                 - work_state: new
             fold_decide_into_resolve_event:
                 - description: >
@@ -524,6 +622,30 @@ unsorted_requirements_and_solutions:
                       resolve_event's prompt-building for character-flagged
                       events. Smallest diff of the three candidates here,
                       proportional to how little it actually solves.
+                - code_example:
+                      language: diff
+                      value: |
+                          --- a/story_simulator/core.py
+                          +++ b/story_simulator/core.py
+                          @@ async def resolve_event(alias: str, replay: TurnReplay, end_time: float, session) -> str:
+                          +    # NOTE: needs `registrar` threaded in to call is_character_event --
+                          +    # resolve_event doesn't take it today. Already a sign this option
+                          +    # doesn't stay as clean as it first looks.
+                               request = JudgmentRequest(
+                                   prompt=(
+                                       f"{alias}'s end_time (world time {end_time:g}) has been "
+                                       f"reached. "
+                          +            + (
+                          +                f"Decide what {alias} does, based only on what they'd "
+                          +                f"perceive, then record it -- this one call covers "
+                          +                f"both the decision and the write. "
+                          +                if is_character_event(registrar, alias) else ""
+                          +            )
+                                       f"..."
+                                   ),
+                                   origin="resolve_event",
+                               )
+                               return await replay.resolve(request, responder=event_responder(), session=session)
                 - work_state: new
             enforce_via_tool_allowlist:
                 - description: >
@@ -549,6 +671,27 @@ unsorted_requirements_and_solutions:
                       Largest and riskiest diff of any candidate in this
                       tree -- consistent with being tracked as a follow-up
                       rather than part of this design.
+                - code_example:
+                      language: diff
+                      value: |
+                          --- a/story_simulator/resolve.py
+                          +++ b/story_simulator/resolve.py
+                          @@ class TurnReplay:
+                               answers: list[str] = field(default_factory=list)
+                               call_index: int = field(default=0, init=False)
+                               deadline: float | None = None
+                          +    # SPECULATIVE -- no enforcement mechanism exists at the MCP
+                          +    # boundary today; this field alone changes nothing on its own.
+                          +    allowed_tools: frozenset[str] | None = None
+
+                          --- a/story_simulator/mcp_server.py
+                          +++ b/story_simulator/mcp_server.py
+                          @@
+                          +# SPECULATIVE -- FastMCP has no per-call tool-visibility hook today.
+                          +# Sketch only, not achievable without new plumbing at this boundary:
+                          +#
+                          +#   if replay.allowed_tools is not None:
+                          +#       server.restrict_tools_for_session(session, replay.allowed_tools)
                 - work_state: new
         perceive_and_advance_npc_turn_tool_surface:
             data:
@@ -578,6 +721,48 @@ unsorted_requirements_and_solutions:
                       event-entity loop. Small additive change in core.py
                       (~10 lines) to expose a callable entry point those
                       tools can share with process_event.
+                - code_example:
+                      language: diff
+                      value: |
+                          --- a/story_simulator/mcp_server.py
+                          +++ b/story_simulator/mcp_server.py
+                          @@
+                           from mcp.server.fastmcp import Context, FastMCP
+
+                           from story_simulator import core
+                          +from story_simulator.resolve import TurnReplay
+
+                          @@ async def advance_simulation(ctx: Context, resume_token: str | None = None, answer: str | None = None) -> dict:
+                               __iacs__ = {"solution of": "story_simulator_mission.tool_catalog.advance_simulation"}
+                               return await core.advance_simulation(ctx.request_context.session, resume_token, answer)
+
+
+                          +@server.tool()
+                          +async def perceive(alias: str, ctx: Context) -> str:
+                          +    """Return what `alias` can currently perceive -- callable any
+                          +    time, not only from inside advance_simulation's own loop."""
+                          +    __iacs__ = {"solution of": "story_simulator_mission.tool_catalog.perceive"}
+                          +    registrar = core.registrar_sessions.get_registrar(ctx.request_context.session)
+                          +    return core.narrate_to_character(registrar, alias)
+                          +
+                          +
+                          +@server.tool()
+                          +async def advance_npc_turn(alias: str, ctx: Context) -> str:
+                          +    """Decide, narrate, and record one NPC's whole turn on demand,
+                          +    via the same decide_event/resolve_event pair process_event
+                          +    uses internally for a character-flagged event."""
+                          +    __iacs__ = {"solution of": "story_simulator_mission.tool_catalog.advance_npc_turn"}
+                          +    session = ctx.request_context.session
+                          +    registrar = core.registrar_sessions.get_registrar(session)
+                          +    resolve_narration, _plan_narration = await core.process_event(
+                          +        registrar, alias, TurnReplay(answers=[]), session
+                          +    )
+                          +    return resolve_narration
+                          +
+                          +
+                           # Mounts view_registry/view_entity/update_registry/consolidate_review --
+                           # see this module's own docstring for why open_registry is excluded.
+                           core.registrar_sessions.mount(server, exclude={"open_registry"})
                 - work_state: new
         world_time_source_for_npc_turns:
             data:

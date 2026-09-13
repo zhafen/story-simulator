@@ -751,7 +751,11 @@ unsorted_requirements_and_solutions:
                       deciding a character's action depends on who's
                       behind that character -- an NPC's autonomous
                       judgment call and a human player's own narration are
-                      two distinct context-restriction problems, not one.
+                      two distinct context-restriction problems (who
+                      answers), and both draw on a third, shared one: what
+                      a character can actually perceive must itself be a
+                      real, computed restriction, not assumed or left to
+                      prompt trust.
                 - requirement
                 - requirement_priority: 1
             npc_context_is_restricted:
@@ -816,6 +820,38 @@ unsorted_requirements_and_solutions:
                       candidate solutions not yet explored.
                 - requirement
                 - requirement_priority: 0.6
+            character_context_is_restrictive:
+                data:
+                    - description: >
+                          A character's perceptible view of the world must
+                          be an actual, computed restriction -- not
+                          assumed, and not left to prompt trust alone.
+                          Shared substrate underneath both
+                          npc_context_is_restricted and
+                          human_context_is_restricted: whichever responder
+                          answers for a character (subagent_responder,
+                          keyed_subagent_responder, or a human's own
+                          narration), it needs real perceptible-entities
+                          data to reason from, not just an instruction to
+                          pretend it doesn't know things.
+                    - requirement
+                    - requirement_priority: 1
+                perceive:
+                    - description: >
+                          The old perceive mechanism (spatial.py's
+                          perceptible_entities/entities_within): a
+                          relational query -- left join between positions
+                          and sizes, then filtered by a per-entity
+                          visibility distance computed from each
+                          candidate's own size component, not a single
+                          flat cutoff. Tags results active (replacing
+                          whatever was previously active) and permanently
+                          merges them into the viewing character's memory.
+                          Feeds the decide phase's actual bounded content,
+                          regardless of which responder answers it.
+                    - solution
+                    - selected: true
+                    - work_state: new
         perceive_and_reaction_stay_event_scheduled:
             - description: >
                   Dropped from this design's own requirement tree: perceive

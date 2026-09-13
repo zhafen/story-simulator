@@ -952,29 +952,6 @@ unsorted_requirements_and_solutions:
                       advance_npc_turn as standalone, out-of-loop MCP
                       tools after all.
                   priority: 0.2
-        world_time_source_for_npc_turns:
-            data:
-                - description: >
-                      Whether NPC turns need their own notion of "now,"
-                      distinct from world_clock.
-                - requirement
-                - requirement_priority: 0.3
-            reuse_world_clock:
-                - description: >
-                      No new mechanism needed -- a character event's
-                      end_time advances the same world_clock entity every
-                      other event already does (core._next_time_stamp).
-                - solution of: world_time_concept
-                - selected: true
-                - pro: >
-                      world_time_concept is already fully satisfied by
-                      current core.py; nothing new to design here.
-                - estimated_diff: >
-                      0 lines -- core._next_time_stamp/world_clock already
-                      does this for every event, character-flagged or not.
-                      Nothing to implement.
-                - work_state: new
-
     live_model_test_coverage:
         - description: >
               generate_terrain/resolve_physics/advance_npc_turn's actual LLM

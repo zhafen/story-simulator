@@ -392,6 +392,163 @@ unsorted_requirements_and_solutions:
               - type: regression_risk
                 value: 0.1
         - work_state: in progress
+    character_aware_event_loop_reentry:
+        data:
+            - description: >
+                  Epic C (story-simulator#48) item 1: design how a
+                  character-aware branch re-enters _run_event_loop/
+                  process_event now that TurnReplay/NeedsExternalInput and
+                  the host/subagent responder split (#42) exist. The old
+                  _process_due_entity seam and the next_due-based
+                  spatial.pop_event scheduler it used to dispatch to
+                  (removed in 5a00660/b728efa) are both gone -- nothing
+                  below is a restoration, it's a fresh design against the
+                  current event-entity loop. Awaiting sign-off before Epic
+                  C's file-restoration/re-wiring steps begin.
+            - requirement
+            - requirement_priority: 1
+            - impact:
+                  type: architecture_clarity
+                  value: 0.5
+            - work_state: in progress
+        entities_can_take_turns_via_the_event_model:
+            data:
+                - description: >
+                      A character/NPC needs a turn to become schedulable at
+                      all under today's event-entity model (event.start_time
+                      + event.duration, popped by end_time) -- the next_due
+                      component this used to run on no longer exists.
+                - requirement
+                - requirement_priority
+            character_turn_is_its_own_event_type:
+                - description: >
+                      A character's turn is an ordinary `event` entity like
+                      any other, linked to a `character` via
+                      involved_entity -- plan_events schedules the next one
+                      exactly like it schedules anything else. No second
+                      pop/scheduler: core.pop_event's existing
+                      soonest-end_time rule already covers it.
+                - solution
+                - selected: true
+                - pro: Zero changes to pop_event/is_event_valid/advance_clock.
+                - pro: >
+                      A character's turn advances the same world_clock
+                      every other event already does (see
+                      world_time_concept) instead of a separate cadence.
+                - con: >
+                      resolve_event's prompt is generic today; a
+                      character-flagged event needs its own prompt branch
+                      (see decide_then_record_split below).
+                - work_state: new
+            separate_character_pop_layered_on_core:
+                - description: >
+                      Bring back a spatial.pop_event-shaped function that
+                      prioritizes character entities, merged with
+                      core.pop_event the way the old up-front
+                      character_enabled branch did.
+                - solution
+                - con: >
+                      Reintroduces the two-scheduler complexity b728efa
+                      deleted on purpose -- no dispatch seam or
+                      enabled_modules() toggle exists to hang this on anymore.
+                - work_state: new
+        npc_decide_step_is_authority_restricted:
+            data:
+                - description: >
+                      Traces to Epic B's folded-in npc_authority_separation
+                      (story-simulator#48's own body): an NPC's decide step
+                      must stay perceive-scoped and tool-free, while its
+                      resolve+record step needs update_registry access --
+                      without implicitly inheriting a human-narrating
+                      host's full write authority just because both use
+                      responder="host".
+                - requirement
+                - requirement_priority: 1
+            decide_then_record_split:
+                - description: >
+                      process_event gains a decide_event box, run first for
+                      character-flagged events: a perception-only,
+                      tool-free JudgmentRequest (perception helpers ported
+                      from shelved/spatial.py) whose answer feeds into
+                      resolve_event's own prompt -- resolve_event is the
+                      one call that actually has write authority to record
+                      it. A third JudgmentRequest per turn, same
+                      TurnReplay/NeedsExternalInput mechanism resolve_event/
+                      plan_events already use.
+                - solution
+                - selected: true
+                - pro: Only additive to existing resume/replay plumbing -- no new mechanism.
+                - pro: Matches Epic B's "restricted then broader" ordering directly.
+                - con: >
+                      Same as the open TODO on "subagent" in
+                      _frame_for_responder -- "don't call update_registry"
+                      is a prompt instruction, not an enforced restriction.
+                - work_state: new
+            fold_decide_into_resolve_event:
+                - description: >
+                      Treat the NPC-scoped, perception-only framing as part
+                      of a single resolve_event call instead of a separate step.
+                - solution
+                - con: >
+                      Doesn't separate authority at all -- one call, one
+                      responder turn, full update_registry access
+                      throughout. Fails the requirement outright.
+                - work_state: new
+            enforce_via_tool_allowlist:
+                - description: >
+                      Give the decide step's responder turn a genuinely
+                      restricted MCP tool set (no update_registry exposed
+                      at all), the way perceive used to be a read-only tool.
+                - solution
+                - dependence: session-scoped, per-call tool-visibility control in mcp_server.py (doesn't exist yet)
+                - pro: >
+                      Real enforcement instead of trust-based -- closes the
+                      same gap resolve.py's own TODO already names for "subagent".
+                - con: >
+                      Bigger surface change with no precedent in this
+                      codebase for scoping tool visibility per judgment
+                      call. Worth its own follow-up issue, not a blocker here.
+                - work_state: new
+        perceive_and_advance_npc_turn_tool_surface:
+            data:
+                - description: >
+                      Whether perceive/advance_npc_turn come back as
+                      directly callable MCP tools or exist only inside
+                      advance_simulation's loop.
+                - requirement
+                - requirement_priority: 0.6
+            standalone_tools_restored:
+                - description: >
+                      Restore perceive/advance_npc_turn as their own
+                      @server.tool() functions, delegating to the same
+                      decide_then_record_split/spatial helpers
+                      process_event uses internally -- callable ad hoc as
+                      well as from inside the loop.
+                - solution
+                - selected: true
+                - pro: >
+                      Already mandated by Epic C's own checklist item 3 --
+                      listed here for traceability, not as an open question.
+                - work_state: new
+        world_time_source_for_npc_turns:
+            data:
+                - description: >
+                      Whether NPC turns need their own notion of "now,"
+                      distinct from world_clock.
+                - requirement
+                - requirement_priority: 0.3
+            reuse_world_clock:
+                - description: >
+                      No new mechanism needed -- a character event's
+                      end_time advances the same world_clock entity every
+                      other event already does (core._next_time_stamp).
+                - solution of: world_time_concept
+                - selected: true
+                - pro: >
+                      world_time_concept is already fully satisfied by
+                      current core.py; nothing new to design here.
+                - work_state: new
+
     live_model_test_coverage:
         - description: >
               generate_terrain/resolve_physics/advance_npc_turn's actual LLM

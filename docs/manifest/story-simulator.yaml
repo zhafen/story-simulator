@@ -439,6 +439,11 @@ unsorted_requirements_and_solutions:
                       resolve_event's prompt is generic today; a
                       character-flagged event needs its own prompt branch
                       (see decide_then_record_split below).
+                - estimated_diff: >
+                      ~20 lines, core.py only -- plan_events prompt wording
+                      plus a small is_character_event(registrar, alias)
+                      helper (checks involved_entity for a character
+                      component). Additive, no removals; no new files.
                 - work_state: new
             separate_character_pop_layered_on_core:
                 - description: >
@@ -451,6 +456,15 @@ unsorted_requirements_and_solutions:
                       Reintroduces the two-scheduler complexity b728efa
                       deleted on purpose -- no dispatch seam or
                       enabled_modules() toggle exists to hang this on anymore.
+                - estimated_diff: >
+                      ~150+ lines across 4 files: restore next_due_entity/
+                      pop_event from shelved/spatial.py (~40 lines),
+                      a new merge-pop function plus branch in core.py/
+                      _run_event_loop (~40-60 lines), a re-added next_due
+                      component in manifest/builtins.yaml (~10 lines), and
+                      a replacement for the deleted enabled_modules() toggle
+                      in config.py (~10-20 lines). Largest diff of the
+                      entities_can_take_turns_via_the_event_model candidates.
                 - work_state: new
         npc_decide_step_is_authority_restricted:
             data:
@@ -483,6 +497,18 @@ unsorted_requirements_and_solutions:
                       Same as the open TODO on "subagent" in
                       _frame_for_responder -- "don't call update_registry"
                       is a prompt instruction, not an enforced restriction.
+                - estimated_diff: >
+                      ~150-180 lines across 2-3 files: a new decide_event
+                      function in core.py (~30-40 lines, builds the
+                      perception-only JudgmentRequest and calls it ahead of
+                      resolve_event), a conditional branch in process_event
+                      wiring decide_event's answer into resolve_event's own
+                      prompt (~10-15 lines), and perception helpers
+                      (entities_within/perceptible_entities/
+                      entity_descriptions) ported and trimmed from
+                      shelved/spatial.py into a restored, perception-only
+                      module (~80-100 lines). No changes to resolve.py --
+                      reuses TurnReplay/NeedsExternalInput as-is.
                 - work_state: new
             fold_decide_into_resolve_event:
                 - description: >
@@ -493,6 +519,11 @@ unsorted_requirements_and_solutions:
                       Doesn't separate authority at all -- one call, one
                       responder turn, full update_registry access
                       throughout. Fails the requirement outright.
+                - estimated_diff: >
+                      ~15 lines, core.py only -- a conditional branch in
+                      resolve_event's prompt-building for character-flagged
+                      events. Smallest diff of the three candidates here,
+                      proportional to how little it actually solves.
                 - work_state: new
             enforce_via_tool_allowlist:
                 - description: >
@@ -508,6 +539,16 @@ unsorted_requirements_and_solutions:
                       Bigger surface change with no precedent in this
                       codebase for scoping tool visibility per judgment
                       call. Worth its own follow-up issue, not a blocker here.
+                - estimated_diff: >
+                      ~200+ lines across 3+ files: a per-call allowed-tools
+                      concept threaded through TurnReplay/NeedsExternalInput
+                      (resolve.py, ~40-60 lines), enforcement at the MCP
+                      boundary in mcp_server.py (dynamic tool
+                      registration/visibility per turn, ~80-120 lines), plus
+                      new tests covering the restriction actually holds.
+                      Largest and riskiest diff of any candidate in this
+                      tree -- consistent with being tracked as a follow-up
+                      rather than part of this design.
                 - work_state: new
         perceive_and_advance_npc_turn_tool_surface:
             data:
@@ -529,6 +570,14 @@ unsorted_requirements_and_solutions:
                 - pro: >
                       Already mandated by Epic C's own checklist item 3 --
                       listed here for traceability, not as an open question.
+                - estimated_diff: >
+                      ~70-90 lines, mostly mcp_server.py -- two new
+                      @server.tool() functions (perceive, advance_npc_turn)
+                      delegating to decide_then_record_split's own helpers,
+                      matching the old shelved shape trimmed to the current
+                      event-entity loop. Small additive change in core.py
+                      (~10 lines) to expose a callable entry point those
+                      tools can share with process_event.
                 - work_state: new
         world_time_source_for_npc_turns:
             data:
@@ -547,6 +596,10 @@ unsorted_requirements_and_solutions:
                 - pro: >
                       world_time_concept is already fully satisfied by
                       current core.py; nothing new to design here.
+                - estimated_diff: >
+                      0 lines -- core._next_time_stamp/world_clock already
+                      does this for every event, character-flagged or not.
+                      Nothing to implement.
                 - work_state: new
 
     live_model_test_coverage:

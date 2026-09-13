@@ -135,6 +135,40 @@ def event_responder() -> str:
     return value
 
 
+_DECIDE_RESPONDERS = ("host", "subagent", "keyed_subagent")
+
+
+def decide_responder() -> str:
+    """Which responder `core.decide_event` should ask for a character's
+    decide-phase judgment call -- deciding what a character does, before
+    `core.resolve_event` records the consequences.
+
+    A separate knob from `event_responder()`: the two calls have
+    different needs. "subagent" (default) asks the connected host to
+    delegate to its own isolated subagent mechanism, giving an NPC's
+    decide step real context isolation without story-simulator needing
+    its own API key -- selected over "keyed_subagent" specifically
+    because not every deployment has one of those configured, and over
+    "host" because a decide step answered by the same host that's
+    already narrating everything else isn't meaningfully isolated at
+    all. "host"/"keyed_subagent" remain available for a deployment that
+    wants them instead (see
+    character_aware_event_loop_reentry.available_context_depends_on_viewer
+    .npc_context_is_restricted in docs/manifest/story-simulator.yaml for
+    the tradeoffs).
+
+    Read from STORY_SIM_DECIDE_RESPONDER, independent of
+    STORY_SIM_RESPONDER (event_responder's own env var) -- a deployment
+    may reasonably want subagent-isolated decisions but host-driven
+    resolution, or vice versa. An unrecognized value raises rather than
+    silently falling back, matching event_responder's own behavior.
+    """
+    value = os.environ.get("STORY_SIM_DECIDE_RESPONDER", "subagent")
+    if value not in _DECIDE_RESPONDERS:
+        raise ValueError(f"STORY_SIM_DECIDE_RESPONDER must be one of {_DECIDE_RESPONDERS}, got {value!r}")
+    return value
+
+
 def keyed_subagent_model() -> str:
     """Which LiteLLM model string the "keyed_subagent" responder calls
     directly (see `story_simulator.resolve`/`story_simulator.keyed_subagent`).

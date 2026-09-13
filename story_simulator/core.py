@@ -36,12 +36,14 @@ from emc2p.registrar import Registrar
 from story_simulator.config import (
     DEFAULT_WORLD_DIR,
     MANIFEST_DIR,
+    decide_responder,
     event_responder,
     keyed_subagent_time_budget_seconds,
     registry_schema_name,
     registry_url,
     resolve_database_dsn,
 )
+from story_simulator import spatial
 from story_simulator.resolve import JudgmentRequest, NeedsExternalInput, TurnReplay
 
 # save_dir's two export subdirectories, each holding one EC yaml file per
@@ -298,7 +300,9 @@ def _ensure_postgres_schema(save_dir: Path) -> None:
 # Turn resolution
 
 
-async def resolve_event(alias: str, replay: TurnReplay, end_time: float, session) -> str:
+async def resolve_event(
+    alias: str, replay: TurnReplay, end_time: float, session, decision: str | None = None
+) -> str:
     """Resolve box: ask a responder to interpret `alias` now that its
     end_time has been reached, and hand back whatever it says, for narration.
 
@@ -354,13 +358,20 @@ async def resolve_event(alias: str, replay: TurnReplay, end_time: float, session
     rather than adding a second, redundant field elsewhere for the same
     fact.
 
-    Never responder="human": no player is ever behind an event here
-    (there's no `character.interaction_type` to branch on, since the
-    character module isn't what's driving this popped entity). Between
-    "host" and "subagent" -- see `story_simulator.resolve`'s module
-    docstring for what "subagent" buys -- `config.event_responder()`
-    decides, defaulting to "host" so nothing changes unless a deployment
-    opts in via STORY_SIM_RESPONDER.
+    Never responder="human": no player is ever directly asked here --
+    `process_event` still resolves every event (including a character's
+    own turn) through this same call, `event_responder()` deciding
+    "host" vs "subagent" the same way regardless of whether a character
+    is involved. A character-flagged event's own `decision` (see
+    `decide_event`) is threaded in as additional context when there is
+    one, rather than resolve_event branching on `character.interaction_type`
+    itself -- keeping this function's own responder choice independent of
+    whether an NPC's decide step ran first.
+
+    `decision`, when given, is an NPC's own already-decided action (see
+    `decide_event`/`process_event`) -- resolve_event's job then narrows
+    from "what happens" to "record the consequences of what's already
+    decided," not re-decide it.
     """
     request = JudgmentRequest(
         prompt=(
@@ -383,6 +394,11 @@ async def resolve_event(alias: str, replay: TurnReplay, end_time: float, session
             f"if you're unsure which one or how to phrase it), not only "
             f"described in {alias}'s own outcome text -- all via "
             f"update_registry."
+            + (
+                f"\n\nWhat happens has already been decided: {decision!r} "
+                f"-- record its consequences now; don't re-decide it."
+                if decision else ""
+            )
         ),
         origin="resolve_event",
     )
@@ -402,16 +418,56 @@ async def plan_events(alias: str, replay: TurnReplay, session) -> str:
             f"Given how {alias} just resolved, does anything new need to "
             f"happen as a result? If so, create it now: one or more new "
             f"event entities (their own start_time/duration/event_state/"
-            f"involved_entity) via update_registry. If nothing follows "
-            f"from this, just say so -- no new events needed."
+            f"involved_entity) via update_registry -- including this "
+            f"character's own next turn, if they have more to do in this "
+            f"scene: schedule it the same way as anything else, linked "
+            f"back via involved_entity. If nothing follows from this, "
+            f"just say so -- no new events needed."
         ),
         origin="plan_events",
     )
     return await replay.resolve(request, responder=event_responder(), session=session)
 
 
+async def decide_event(registrar: Registrar, alias: str, replay: TurnReplay, session) -> str:
+    """Decide box: ask what `alias` (an NPC) does next, restricted to
+    only what it would currently perceive -- no update_registry access,
+    unlike every other call in this loop. `resolve_event`, next, is the
+    one with real write authority to record the consequences.
+
+    Only reached for an NPC-controlled character (see `process_event`'s
+    own branch) -- a human-voiced character's own stated action is
+    already known to the host from the ongoing conversation, so there's
+    nothing to autonomously decide for one of those.
+
+    The perceived-entities text embedded in the prompt (via
+    `spatial.narrate_to_character`) is what makes this a real, computed
+    content restriction rather than a bare instruction to imagine one --
+    see character_aware_event_loop_reentry's own
+    character_context_is_restricted requirement. Nothing here stops the
+    responder from calling other tools anyway (see the con already
+    recorded on this requirement's decide_then_record_split solution);
+    only the *given* content is scoped, not enforced access.
+    """
+    perceived = spatial.narrate_to_character(registrar, alias)
+    request = JudgmentRequest(
+        prompt=(
+            f"{alias} is deciding what to do next. Base this only on "
+            f"what {alias} can currently perceive, given below -- do "
+            f"not use any other information about the world:\n\n"
+            f"{perceived}\n\n"
+            f"Describe {alias}'s action in plain text. Do NOT call "
+            f"update_registry here -- this step only decides; a "
+            f"separate step (resolve_event, next) has the real write "
+            f"authority to record it."
+        ),
+        origin="decide_event",
+    )
+    return await replay.resolve(request, responder=decide_responder(), session=session)
+
+
 async def process_event(registrar: Registrar, alias: str, replay: TurnReplay, session) -> tuple[str, str]:
-    """Process event box: Advance clock -> Resolve event -> Plan events.
+    """Process event box: Advance clock -> [Decide event] -> Resolve event -> Plan events.
 
     Advance clock is the one exception to "resolve_event/plan_events
     persist everything themselves": `end_time` itself is written here,
@@ -425,12 +481,21 @@ async def process_event(registrar: Registrar, alias: str, replay: TurnReplay, se
     afterward -- unlike the next_due_in mechanism this replaces, which
     needed a code-driven predict/push reschedule step because a plain
     float answer had nothing else able to act on it.
+
+    Decide event only runs when `alias`'s event involves an NPC-controlled
+    character (`spatial.character_in_event`/`character_interaction_type`)
+    -- an ordinary base-module event, or a human-voiced character's own
+    event, skips straight to resolve_event, same as before this design.
     """
     end_time = advance_clock(registrar, alias)
     registrar.update(
         yaml_strings={SOURCE_KEY: f"{WORLD_CLOCK_ALIAS}:\n    - world_clock:\n        value: {end_time}\n"},
     )
-    resolve_narration = await resolve_event(alias, replay, end_time, session)
+    decision = None
+    character_alias = spatial.character_in_event(registrar, alias)
+    if character_alias is not None and spatial.character_interaction_type(registrar, character_alias) == "npc":
+        decision = await decide_event(registrar, character_alias, replay, session)
+    resolve_narration = await resolve_event(alias, replay, end_time, session, decision=decision)
     plan_narration = await plan_events(alias, replay, session)
     return resolve_narration, plan_narration
 
@@ -678,13 +743,14 @@ async def advance_simulation(session, resume_token: str | None = None, answer: s
     reaches its own end_time -- start_time + duration
     (manifest/builtins.yaml's event_components) -- not the acting
     entities (a car, a door, ...) themselves, which carry no schedule of
-    their own. Every such event goes through two separate
-    responder calls in turn -- resolve (what happened) and plan (what, if
-    anything, follows from that) -- each via responder="host" or
-    "subagent" (see `config.event_responder`); a fresh event typically
-    means two pauses in a row, one per call, before the loop reaches the
-    next one. No character/NPC concept at all -- that behavior is
-    currently shelved (see `docs/architecture.md`), pending a rewrite.
+    their own. Every such event goes through resolve (what happened) and
+    plan (what, if anything, follows from that), each via responder="host"
+    or "subagent" (see `config.event_responder`); an NPC-controlled
+    character's own event gets one more call first -- decide (see
+    `decide_event`), via `config.decide_responder()` -- so a fresh NPC
+    event typically means three pauses in a row rather than two before
+    the loop reaches the next one. A human-voiced character's own event,
+    and an ordinary base-module event, both stay at two.
 
     Call with neither argument to start (or continue after a prior call
     finished with nothing left scheduled). That, and every later call,

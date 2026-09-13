@@ -45,11 +45,13 @@ loop itself). The docstrings here are what a connected host actually reads
 (the MCP tool contract); `core.py`'s docstrings on the equivalently-named
 functions describe the behavior itself.
 
-Character/NPC/terrain/physics/spatial-perception behavior (`perceive`,
-`advance_npc_turn`, `generate_terrain`, `resolve_physics`, and a
-character-aware branch of this file's event loop) is currently shelved
-(see `docs/architecture.md`) pending a rewrite -- not deleted, and easy
-to pull back in piece by piece.
+The event loop's character-aware branch (an NPC's own decide step,
+`core.decide_event`) is live -- see `advance_simulation`'s own docstring.
+`perceive`/`advance_npc_turn`/`generate_terrain`/`resolve_physics` as
+standalone, directly callable tools are still shelved (see
+`docs/architecture.md`): perception and an NPC's turn are handled inside
+the event loop itself now, not forced out-of-band -- not deleted, and
+easy to pull back in piece by piece if that turns out to be wrong.
 
 The judgment resolver behind all of this (`story_simulator.resolve`) is
 what lets `core.resolve_event` reach a real decision from any nesting depth
@@ -77,20 +79,32 @@ server = FastMCP(
         "schedule of their own. An event usually also carries involved_entity links "
         "naming who/what it concerns.\n\n"
         "Call start_world once, at the beginning, to open or seed a save. Then call "
-        "advance_simulation with no arguments: it pauses on every such event, in two separate "
-        "steps -- resolve, then plan -- each returning "
-        "{\"status\": \"input_required\", \"prompt\": ..., \"responder\": \"host\" or "
-        "\"subagent\", \"resume_token\": ...}. If responder is \"host\", decide what happens "
-        "yourself, from your own context. If it's \"subagent\", the prompt itself asks you to "
-        "delegate to your own isolated subagent mechanism (e.g. an Agent/Task tool) instead of "
-        "answering inline -- follow that instruction rather than answering directly. Either "
-        "way:\n"
-        "- On a resolve prompt: look up whatever you need (view_entity/view_registry, "
-        "including the event's own involved_entity links) to work out what happened, then "
-        "record it yourself via update_registry -- that event's own `outcome` (a "
-        "natural-language description, plus whether this leaves it \"complete\" or "
-        "\"interrupted\"), that event's own `event_state` transition, and anything it changes "
-        "about the entities it involves.\n"
+        "advance_simulation with no arguments: it pauses on every such event, in two or three "
+        "separate steps -- decide (NPC-controlled events only), then resolve, then plan -- "
+        "each returning {\"status\": \"input_required\", \"prompt\": ..., \"responder\": "
+        "\"host\" or \"subagent\", \"resume_token\": ...}. If responder is \"host\", decide "
+        "what happens yourself, from your own context. If it's \"subagent\", the prompt itself "
+        "asks you to delegate to your own isolated subagent mechanism (e.g. an Agent/Task "
+        "tool) instead of answering inline -- follow that instruction rather than answering "
+        "directly. Either way:\n"
+        "- On a decide prompt (an NPC's own turn only -- a human-voiced character's event "
+        "skips straight to resolve, since their action is already whatever they told you): "
+        "the prompt already includes everything that NPC currently perceives -- decide their "
+        "action from that alone, do not also call view_registry/view_entity to see more than "
+        "you were given, and do NOT call update_registry -- just describe the action in plain "
+        "text; the resolve step, next, is what actually records it.\n"
+        "- On a resolve prompt: for an NPC whose decide step already ran, the prompt tells you "
+        "what it decided -- record that decision's consequences, don't re-decide it. For a "
+        "human-voiced character's own event, ground what you record and what you narrate back "
+        "to the player in that character's own bounded view -- look up what they'd actually "
+        "perceive (nearby entities, their own current description/state) rather than "
+        "everything the registry happens to know, the same restriction an NPC's decide step "
+        "gets, just enforced by you instead of a separate call. Either way, look up whatever "
+        "else you need (view_entity/view_registry, including the event's own involved_entity "
+        "links) to work out what happened, then record it yourself via update_registry -- "
+        "that event's own `outcome` (a natural-language description, plus whether this leaves "
+        "it \"complete\" or \"interrupted\"), that event's own `event_state` transition, and "
+        "anything it changes about the entities it involves.\n"
         "- On a plan prompt: decide whether anything new needs to be scheduled as a result, "
         "and if so create it yourself via update_registry -- one or more new `event` entities, "
         "each with its own start_time/duration/event_state/involved_entity. If nothing "
@@ -152,12 +166,13 @@ async def advance_simulation(ctx: Context, resume_token: str | None = None, answ
     The event-driven simulation (see `core.py`) -- world state is `event`
     entities, each ready to resolve once world time reaches its own
     end_time (start_time + duration), not the acting entities they
-    concern. Every such event asks two separate responder calls in turn
-    -- resolve (what happened), then
-    plan (what, if anything, follows) -- each via responder="host" or
+    concern. Every such event asks resolve (what happened), then plan
+    (what, if anything, follows) -- each via responder="host" or
     "subagent" (see `config.event_responder`); expect two pauses per
-    event, not one. No character/NPC concept at all -- that behavior is
-    currently shelved (see `docs/architecture.md`), pending a rewrite.
+    event. An NPC-controlled character's own event asks one more thing
+    first -- decide, via `config.decide_responder()` -- so expect three
+    pauses for one of those. A human-voiced character's own event stays
+    at two, same as an ordinary base-module event.
 
     Call with neither argument to start (or continue after a prior call
     finished with nothing left scheduled). That, and every later call,

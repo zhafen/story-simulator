@@ -427,7 +427,18 @@ unsorted_requirements_and_solutions:
                       involved_entity -- plan_events schedules the next one
                       exactly like it schedules anything else. No second
                       pop/scheduler: core.pop_event's existing
-                      soonest-end_time rule already covers it.
+                      soonest-end_time rule already covers it. Also
+                      introduces is_character_event(registrar, alias) --
+                      the predicate that answers "is this event a
+                      character's turn" -- since something has to exist
+                      before characters_cannot_modify_world_data_directly's
+                      own solutions (decide_then_record_split's
+                      process_event branch, fold_decide_into_resolve_event's
+                      resolve_event branch) can call it. Defined here
+                      rather than there because it's about what a
+                      character-flagged event *is*, this requirement's own
+                      question -- not about what happens once one is found,
+                      the sibling requirement's question.
                 - solution
                 - selected: true
                 - pro: Zero changes to pop_event/is_event_valid/advance_clock.

@@ -737,9 +737,14 @@ unsorted_requirements_and_solutions:
                       Give any character's decide-shaped responder turn
                       (NPC or human-voiced) a genuinely restricted MCP tool
                       set (no update_registry exposed at all), the way
-                      perceive used to be a read-only tool.
+                      perceive used to be a read-only tool. Needs
+                      session-scoped, per-call tool-visibility control in
+                      mcp_server.py -- doesn't exist yet, and isn't an
+                      actual entity to point a dependence relation at
+                      (dependence.value is entity_ref-typed; a
+                      not-yet-built mechanism has nothing real to
+                      resolve to).
                 - solution
-                - dependence: session-scoped, per-call tool-visibility control in mcp_server.py (doesn't exist yet)
                 - pro: >
                       Real enforcement instead of trust-based -- closes the
                       same gap resolve.py's own TODO already names for "subagent".

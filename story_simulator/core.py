@@ -405,24 +405,34 @@ async def resolve_event(
     return await replay.resolve(request, responder=event_responder(), session=session)
 
 
-async def plan_events(alias: str, replay: TurnReplay, session) -> str:
+async def plan_events(alias: str, replay: TurnReplay, session, character_alias: str | None = None) -> str:
     """Plan box: ask a responder whether anything new needs to be
     scheduled as a result of `alias` resolving, creating new `event` entities if so.
 
     Always asked, even when nothing ends up being scheduled -- "nothing
     follows from this" is this step's own answer to reach, not a case the
     loop skips based on `alias`'s outcome alone (see `process_event`).
+
+    `character_alias`, when given (see `process_event`'s own branch),
+    adds a reminder to schedule that character's own next turn if they
+    have more to do -- omitted entirely for an ordinary base-module
+    event, so a scenario with no characters at all (e.g. the parking
+    puzzle) never sees character-turn language in its own plan prompt.
     """
+    character_reminder = (
+        f" -- including {character_alias}'s own next turn, if they have "
+        f"more to do in this scene: schedule it the same way as anything "
+        f"else, linked back via involved_entity"
+        if character_alias
+        else ""
+    )
     request = JudgmentRequest(
         prompt=(
             f"Given how {alias} just resolved, does anything new need to "
             f"happen as a result? If so, create it now: one or more new "
             f"event entities (their own start_time/duration/event_state/"
-            f"involved_entity) via update_registry -- including this "
-            f"character's own next turn, if they have more to do in this "
-            f"scene: schedule it the same way as anything else, linked "
-            f"back via involved_entity. If nothing follows from this, "
-            f"just say so -- no new events needed."
+            f"involved_entity) via update_registry{character_reminder}. If "
+            f"nothing follows from this, just say so -- no new events needed."
         ),
         origin="plan_events",
     )
@@ -496,7 +506,7 @@ async def process_event(registrar: Registrar, alias: str, replay: TurnReplay, se
     if character_alias is not None and spatial.character_interaction_type(registrar, character_alias) == "npc":
         decision = await decide_event(registrar, character_alias, replay, session)
     resolve_narration = await resolve_event(alias, replay, end_time, session, decision=decision)
-    plan_narration = await plan_events(alias, replay, session)
+    plan_narration = await plan_events(alias, replay, session, character_alias=character_alias)
     return resolve_narration, plan_narration
 
 

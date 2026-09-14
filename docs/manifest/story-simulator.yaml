@@ -506,7 +506,19 @@ unsorted_requirements_and_solutions:
                                    ),
                                    origin="plan_events",
                                )
-                - work_state: new
+                - work_state: done
+                - todo:
+                      value: >
+                          Landed slightly differently than this preview:
+                          is_character_event/character_in_event live in
+                          restored story_simulator/spatial.py, not
+                          core.py -- a better fit for core.py's own
+                          module-agnostic docstring. plan_events' reminder
+                          is also conditional on an actual character being
+                          found, not unconditional as shown here (a
+                          no-characters scenario's exact prompt text must
+                          stay unchanged). See PR for story-simulator#48.
+                      priority: 0.1
             separate_character_pop_layered_on_core:
                 - description: >
                       Bring back a spatial.pop_event-shaped function that
@@ -686,7 +698,20 @@ unsorted_requirements_and_solutions:
                           +    resolve_narration = await resolve_event(alias, replay, end_time, session, decision=decision)
                                plan_narration = await plan_events(alias, replay, session)
                                return resolve_narration, plan_narration
-                - work_state: new
+                - work_state: done
+                - todo:
+                      value: >
+                          decide_event only fires for an NPC-controlled
+                          character specifically (character_interaction_type
+                          == "npc"), not any character-flagged event as
+                          this preview's boolean is_character_event
+                          implied -- a human-voiced character's own event
+                          skips straight to resolve_event, since their
+                          action is already known from the conversation.
+                          decide_event also takes registrar directly
+                          (needed to build its perceive-scoped prompt),
+                          which this preview omitted.
+                      priority: 0.1
             fold_decide_into_resolve_event:
                 - description: >
                       Treat the character-scoped, perception-only framing
@@ -844,7 +869,7 @@ unsorted_requirements_and_solutions:
                           host actually delegated rather than answering
                           inline (open TODO in resolve.py's
                           _frame_for_responder).
-                    - work_state: new
+                    - work_state: done
                 keyed_subagent_responder:
                     - description: >
                           decide_event asks via responder="keyed_subagent":
@@ -896,7 +921,7 @@ unsorted_requirements_and_solutions:
                           subagent_responder) -- a weak or careless host
                           can still narrate metagame information nothing
                           in the mechanism actually blocks.
-                    - work_state: new
+                    - work_state: done
                 no_special_case_for_humans:
                     - description: >
                           Leave human narration unrestricted -- rely
@@ -940,7 +965,7 @@ unsorted_requirements_and_solutions:
                           regardless of which responder answers it.
                     - solution:
                           selected: true
-                    - work_state: new
+                    - work_state: done
         perceive_and_reaction_stay_event_scheduled:
             - description: >
                   Dropped from this design's own requirement tree: perceive

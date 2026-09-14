@@ -57,8 +57,10 @@ but is not attached to, or needed by, an actual played session.
 > **The event loop's character-aware branch is back** (Epic C item 1,
 > [story-simulator#48](https://github.com/zhafen/story-simulator/issues/48)):
 > an NPC-controlled character's own event gets a `decide_event` step
-> (`core.py`) before resolve, using restored perception helpers
-> (`story_simulator/spatial.py`, ported from `shelved/`). `perceive`,
+> (`story_simulator/character.py` -- everything dependent on being a
+> character lives there, separate from `story_simulator/spatial.py`'s
+> own position/distance/perception primitives, generic over any entity)
+> before resolve. `perceive`,
 > `advance_npc_turn`, `generate_terrain`, and `resolve_physics` as
 > **standalone, directly callable tools** are still shelved — perception
 > and an NPC's turn are handled inside the loop itself now, not forced

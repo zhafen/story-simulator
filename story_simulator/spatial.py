@@ -1,12 +1,16 @@
-"""Position/distance/perception helpers, and the character-event predicate
-`process_event` uses to decide whether a decide step runs.
+"""Position/distance/perception primitives -- generic over any entity,
+independent of whether it's a character.
 
 Restored from `shelved/story_simulator/spatial.py` (see
 docs/architecture.md and shelved/README.md for the shelving history) --
-perception only, not the whole original module. The old module's
-character-scheduling functions (`next_due_entity`, `pop_event`,
-`select_character`, and the `next_due`-based scheduler they supported)
-are deliberately NOT restored: this design's own
+these geometry/generic-perception functions only, not the whole original
+module. Character-specific behavior built on top of these (narrating to
+a character, its memory, the character-event predicate `process_event`
+uses) lives in `story_simulator.character` instead -- see that module's
+own docstring for why the split. The old module's character-scheduling
+functions (`next_due_entity`, `pop_event`, `select_character`, and the
+`next_due`-based scheduler they supported) are deliberately NOT restored
+at all: this design's own
 character_aware_event_loop_reentry.entities_can_take_turns_via_the_event_model
 requirement selected `character_turn_is_its_own_event_type` instead --
 a character's turn is an ordinary `event` entity, scheduled by
@@ -95,6 +99,10 @@ def visibility_distance(size: float) -> float:
 def perceptible_entities(registrar: Registrar, center: "str | tuple[float, float]") -> set[str]:
     """Return the aliases of every positioned entity `center` can perceive.
 
+    `center` is any positioned entity (or a bare point) -- no character
+    concept here at all; `story_simulator.character.narrate_to_character`
+    is what calls this specifically for a character.
+
     Each candidate's own visibility distance is computed from its `size`
     component (falling back to `game_config.DEFAULT_ENTITY_SIZE`) via the
     same geometry `visibility_distance` uses -- so a mountain stays
@@ -148,36 +156,6 @@ def sync_active_tags(registrar: Registrar, active_aliases: set[str]) -> None:
     registrar.update(yaml_strings={SOURCE_KEY: yaml.safe_dump(data, sort_keys=False)})
 
 
-def memory_aliases(registrar: Registrar, owner_alias: str) -> set[str]:
-    """Return every alias `owner_alias` has ever perceived (see `record_memory`)."""
-    df = registrar.safe_view("memory.value").to_pandas()
-    if df.empty:
-        return set()
-    owner_id = registrar.get_entity_id(owner_alias)
-    if owner_id is None:
-        return set()
-    return set(df[df["entity_id"] == owner_id]["memory.value"])
-
-
-def record_memory(registrar: Registrar, owner_alias: str, perceived_aliases: set[str]) -> None:
-    """Merge `perceived_aliases` into `owner_alias`'s permanent `memory` relation.
-
-    Unlike `active`, `memory` is never cleared -- a character's memory only
-    grows. Re-merging an already-known alias is a harmless no-op (emc2p's
-    own Registry.merge dedupes exact repeats), so this is safe to call
-    every time `perceive` runs.
-    """
-    if not perceived_aliases:
-        return
-    data = {
-        f"{owner_alias}_memory_update": [
-            {"same_as": {"value": owner_alias}},
-            {"memory": [{"value": alias} for alias in sorted(perceived_aliases)]},
-        ]
-    }
-    registrar.update(yaml_strings={SOURCE_KEY: yaml.safe_dump(data, sort_keys=False)})
-
-
 def entity_descriptions(registrar: Registrar, aliases: set[str]) -> str:
     """Return one `alias: description (state: ...)` line per alias with a `description` or `state`.
 
@@ -212,68 +190,3 @@ def active_aliases(registrar: Registrar) -> set[str]:
     if df.empty:
         return set()
     return set(df["entity_id.alias"])
-
-
-def narrate_to_character(registrar: Registrar, alias: str) -> str:
-    """What `alias` can currently perceive, and record it.
-
-    Tags each perceived entity `active` (replacing whatever was previously
-    tagged active) and merges them into `alias`'s permanent `memory`. The
-    bounded content `core.decide_event` builds its prompt from -- see
-    character_aware_event_loop_reentry's own character_context_is_restricted
-    requirement for why this exists as a real computed restriction rather
-    than a prompt instruction alone.
-    """
-    nearby = perceptible_entities(registrar, alias)
-    sync_active_tags(registrar, nearby)
-    record_memory(registrar, alias, nearby)
-    if not nearby:
-        return f"Nothing else is within perceptible range of {alias}."
-    details = entity_descriptions(registrar, nearby)
-    parts = [f"Entities near {alias}: {', '.join(sorted(nearby))}"]
-    if details:
-        parts.append(details)
-    return "\n".join(parts)
-
-
-def character_in_event(registrar: Registrar, event_alias: str) -> str | None:
-    """Return the alias of the character `event_alias`'s event involves, if any.
-
-    An event can carry several involved_entity rows; this returns
-    whichever one resolves to an entity with a `character` component
-    (sorted, for a deterministic answer if more than one somehow does).
-    None for an ordinary base-module event -- no involved_entity at all,
-    or none of its involved entities is a character.
-    """
-    if "involved_entity" not in registrar.registry.component_types:
-        return None
-    if "character" not in registrar.registry.component_types:
-        return None
-    entity_id = registrar.get_entity_id(event_alias)
-    if entity_id is None:
-        return None
-    involved = registrar.view_current(["involved_entity.value"]).to_pandas()
-    linked_aliases = set(involved[involved["entity_id"] == entity_id]["involved_entity.value"])
-    if not linked_aliases:
-        return None
-    characters = set(registrar.view_current(["character.interaction_type"]).to_pandas()["entity_id.alias"])
-    matches = linked_aliases & characters
-    return min(matches) if matches else None
-
-
-def is_character_event(registrar: Registrar, event_alias: str) -> bool:
-    """True if `event_alias`'s event involves a character -- this event
-    IS that character's own turn, not an ordinary base-module event."""
-    return character_in_event(registrar, event_alias) is not None
-
-
-def character_interaction_type(registrar: Registrar, alias: str) -> str | None:
-    """Return `alias`'s `character.interaction_type` ("player"/"npc"), or None if unset."""
-    entity_id = registrar.get_entity_id(alias)
-    if entity_id is None:
-        return None
-    df = registrar.safe_view("character.interaction_type").to_pandas()
-    if df.empty:
-        return None
-    match = df[df["entity_id"] == entity_id]
-    return None if match.empty else str(match.iloc[0]["character.interaction_type"])

@@ -139,7 +139,7 @@ _DECIDE_RESPONDERS = ("host", "subagent", "keyed_subagent")
 
 
 def decide_responder() -> str:
-    """Which responder `core.decide_event` should ask for a character's
+    """Which responder `character.decide_event` should ask for a character's
     decide-phase judgment call -- deciding what a character does, before
     `core.resolve_event` records the consequences.
 

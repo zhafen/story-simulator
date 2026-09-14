@@ -1,6 +1,7 @@
-"""Tests for story_simulator.spatial -- perception helpers and the
-character-event predicate process_event uses to decide whether a decide
-step runs.
+"""Tests for story_simulator.spatial -- position/distance/perception
+primitives, generic over any entity, independent of whether it's a
+character. Character-specific tests (memory, narrate_to_character,
+character_in_event, decide_event) live in tests/test_character.py instead.
 """
 
 import math
@@ -14,15 +15,10 @@ from story_simulator import game_config
 from story_simulator.config import MANIFEST_DIR
 from story_simulator.spatial import (
     active_aliases,
-    character_in_event,
-    character_interaction_type,
     entity_descriptions,
     entity_position,
-    is_character_event,
     latest_positions,
-    memory_aliases,
     perceptible_entities,
-    record_memory,
     sync_active_tags,
     visibility_distance,
 )
@@ -84,20 +80,6 @@ def test_sync_active_tags_replaces_rather_than_unions():
     sync_active_tags(registrar, {"nearby_npc"})
     sync_active_tags(registrar, {"distant_rock"})
     assert active_aliases(registrar) == {"distant_rock"}
-
-
-def test_record_memory_persists_across_active_changes():
-    registrar = _registrar_from_yaml(_SAMPLE_WORLD_YAML)
-    record_memory(registrar, "player", {"nearby_npc"})
-    sync_active_tags(registrar, set())
-    assert memory_aliases(registrar, "player") == {"nearby_npc"}
-
-
-def test_record_memory_accumulates_across_calls():
-    registrar = _registrar_from_yaml(_SAMPLE_WORLD_YAML)
-    record_memory(registrar, "player", {"nearby_npc"})
-    record_memory(registrar, "player", {"distant_rock"})
-    assert memory_aliases(registrar, "player") == {"nearby_npc", "distant_rock"}
 
 
 def test_entity_descriptions_returns_known_descriptions():
@@ -227,59 +209,3 @@ def test_latest_positions_resolves_to_highest_time():
     latest = latest_positions(registrar)
     row = latest[latest["entity_id.alias"] == "player"].iloc[0]
     assert (float(row["position.x"]), float(row["position.y"])) == (5.0, 5.0)
-
-
-# character_in_event / is_character_event
-
-
-def test_character_in_event_finds_the_involved_character():
-    registrar = _registrar_from_yaml(
-        "player:\n"
-        "    - character:\n"
-        "        interaction_type: player\n"
-        "talk_event:\n"
-        "    - event:\n"
-        "        start_time: 0.0\n"
-        "        duration: 1.0\n"
-        "    - involved_entity:\n"
-        "        value: player\n"
-    )
-    assert character_in_event(registrar, "talk_event") == "player"
-    assert is_character_event(registrar, "talk_event") is True
-
-
-def test_character_in_event_none_for_a_base_event():
-    registrar = _registrar_from_yaml(
-        "gizmo_event:\n"
-        "    - event:\n"
-        "        start_time: 0.0\n"
-        "        duration: 1.0\n"
-    )
-    assert character_in_event(registrar, "gizmo_event") is None
-    assert is_character_event(registrar, "gizmo_event") is False
-
-
-def test_character_in_event_none_when_involved_entity_is_not_a_character():
-    registrar = _registrar_from_yaml(
-        "rock:\n"
-        "    - object:\n"
-        "        type: rock\n"
-        "rock_event:\n"
-        "    - event:\n"
-        "        start_time: 0.0\n"
-        "        duration: 1.0\n"
-        "    - involved_entity:\n"
-        "        value: rock\n"
-    )
-    assert character_in_event(registrar, "rock_event") is None
-
-
-def test_character_interaction_type_reads_the_field():
-    registrar = _registrar_from_yaml(_SAMPLE_WORLD_YAML)
-    assert character_interaction_type(registrar, "player") == "player"
-    assert character_interaction_type(registrar, "nearby_npc") == "npc"
-
-
-def test_character_interaction_type_none_for_non_character():
-    registrar = _registrar_from_yaml(_SAMPLE_WORLD_YAML)
-    assert character_interaction_type(registrar, "distant_rock") is None

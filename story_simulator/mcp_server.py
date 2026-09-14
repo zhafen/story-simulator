@@ -46,7 +46,7 @@ loop itself). The docstrings here are what a connected host actually reads
 functions describe the behavior itself.
 
 The event loop's character-aware branch (an NPC's own decide step,
-`core.decide_event`) is live -- see `advance_simulation`'s own docstring.
+`character.decide_event`) is live -- see `advance_simulation`'s own docstring.
 `perceive`/`advance_npc_turn`/`generate_terrain`/`resolve_physics` as
 standalone, directly callable tools are still shelved (see
 `docs/architecture.md`): perception and an NPC's turn are handled inside

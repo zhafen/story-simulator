@@ -511,10 +511,14 @@ unsorted_requirements_and_solutions:
                       value: >
                           Landed slightly differently than this preview:
                           is_character_event/character_in_event live in
-                          restored story_simulator/spatial.py, not
-                          core.py -- a better fit for core.py's own
-                          module-agnostic docstring. plan_events' reminder
-                          is also conditional on an actual character being
+                          story_simulator/character.py -- a new module for
+                          anything dependent on being a character,
+                          separate from spatial.py's own position/
+                          distance/perception primitives (generic over
+                          any entity) -- not core.py, a better fit for
+                          core.py's own module-agnostic docstring.
+                          plan_events' reminder is also conditional on an
+                          actual character being
                           found, not unconditional as shown here (a
                           no-characters scenario's exact prompt text must
                           stay unchanged). See PR for story-simulator#48.
@@ -710,7 +714,14 @@ unsorted_requirements_and_solutions:
                           action is already known from the conversation.
                           decide_event also takes registrar directly
                           (needed to build its perceive-scoped prompt),
-                          which this preview omitted.
+                          which this preview omitted. Lives in
+                          story_simulator/character.py, not core.py --
+                          alongside every other character-dependent
+                          function (character_in_event,
+                          character_interaction_type, narrate_to_character,
+                          memory), so core.py's own docstring can keep
+                          promising it works with no character concept at
+                          all active.
                       priority: 0.1
             fold_decide_into_resolve_event:
                 - description: >

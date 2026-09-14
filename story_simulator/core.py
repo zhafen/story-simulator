@@ -36,14 +36,13 @@ from emc2p.registrar import Registrar
 from story_simulator.config import (
     DEFAULT_WORLD_DIR,
     MANIFEST_DIR,
-    decide_responder,
     event_responder,
     keyed_subagent_time_budget_seconds,
     registry_schema_name,
     registry_url,
     resolve_database_dsn,
 )
-from story_simulator import spatial
+from story_simulator import character
 from story_simulator.resolve import JudgmentRequest, NeedsExternalInput, TurnReplay
 
 # save_dir's two export subdirectories, each holding one EC yaml file per
@@ -439,43 +438,6 @@ async def plan_events(alias: str, replay: TurnReplay, session, character_alias: 
     return await replay.resolve(request, responder=event_responder(), session=session)
 
 
-async def decide_event(registrar: Registrar, alias: str, replay: TurnReplay, session) -> str:
-    """Decide box: ask what `alias` (an NPC) does next, restricted to
-    only what it would currently perceive -- no update_registry access,
-    unlike every other call in this loop. `resolve_event`, next, is the
-    one with real write authority to record the consequences.
-
-    Only reached for an NPC-controlled character (see `process_event`'s
-    own branch) -- a human-voiced character's own stated action is
-    already known to the host from the ongoing conversation, so there's
-    nothing to autonomously decide for one of those.
-
-    The perceived-entities text embedded in the prompt (via
-    `spatial.narrate_to_character`) is what makes this a real, computed
-    content restriction rather than a bare instruction to imagine one --
-    see character_aware_event_loop_reentry's own
-    character_context_is_restricted requirement. Nothing here stops the
-    responder from calling other tools anyway (see the con already
-    recorded on this requirement's decide_then_record_split solution);
-    only the *given* content is scoped, not enforced access.
-    """
-    perceived = spatial.narrate_to_character(registrar, alias)
-    request = JudgmentRequest(
-        prompt=(
-            f"{alias} is deciding what to do next. Base this only on "
-            f"what {alias} can currently perceive, given below -- do "
-            f"not use any other information about the world:\n\n"
-            f"{perceived}\n\n"
-            f"Describe {alias}'s action in plain text. Do NOT call "
-            f"update_registry here -- this step only decides; a "
-            f"separate step (resolve_event, next) has the real write "
-            f"authority to record it."
-        ),
-        origin="decide_event",
-    )
-    return await replay.resolve(request, responder=decide_responder(), session=session)
-
-
 async def process_event(registrar: Registrar, alias: str, replay: TurnReplay, session) -> tuple[str, str]:
     """Process event box: Advance clock -> [Decide event] -> Resolve event -> Plan events.
 
@@ -492,19 +454,20 @@ async def process_event(registrar: Registrar, alias: str, replay: TurnReplay, se
     needed a code-driven predict/push reschedule step because a plain
     float answer had nothing else able to act on it.
 
-    Decide event only runs when `alias`'s event involves an NPC-controlled
-    character (`spatial.character_in_event`/`character_interaction_type`)
-    -- an ordinary base-module event, or a human-voiced character's own
-    event, skips straight to resolve_event, same as before this design.
+    Decide event (`character.decide_event`) only runs when `alias`'s
+    event involves an NPC-controlled character
+    (`character.character_in_event`/`character_interaction_type`) -- an
+    ordinary base-module event, or a human-voiced character's own event,
+    skips straight to resolve_event, same as before this design.
     """
     end_time = advance_clock(registrar, alias)
     registrar.update(
         yaml_strings={SOURCE_KEY: f"{WORLD_CLOCK_ALIAS}:\n    - world_clock:\n        value: {end_time}\n"},
     )
     decision = None
-    character_alias = spatial.character_in_event(registrar, alias)
-    if character_alias is not None and spatial.character_interaction_type(registrar, character_alias) == "npc":
-        decision = await decide_event(registrar, character_alias, replay, session)
+    character_alias = character.character_in_event(registrar, alias)
+    if character_alias is not None and character.character_interaction_type(registrar, character_alias) == "npc":
+        decision = await character.decide_event(registrar, character_alias, replay, session)
     resolve_narration = await resolve_event(alias, replay, end_time, session, decision=decision)
     plan_narration = await plan_events(alias, replay, session, character_alias=character_alias)
     return resolve_narration, plan_narration

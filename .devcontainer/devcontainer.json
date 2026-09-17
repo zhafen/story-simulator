@@ -1,0 +1,22 @@
+{
+  "name": "story-simulator",
+  "dockerComposeFile": "docker-compose.yml",
+  "service": "app",
+  "workspaceFolder": "/workspace",
+  "features": {
+    "ghcr.io/va-h/devcontainers-features/uv:1": {}
+  },
+  // Mirrors .github/workflows/ci.yml's setup steps, plus jupyter/ipykernel
+  // (not a project dependency -- only needed to execute notebooks/*.ipynb)
+  // so the playtest notebook can run against the "db" service above.
+  "postCreateCommand": "uv python install && uv sync --locked && uv pip install ipykernel jupyter",
+  "forwardPorts": [5432],
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "ms-toolsai.jupyter"
+      ]
+    }
+  }
+}

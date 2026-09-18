@@ -94,6 +94,23 @@ def pop_event(registrar: Registrar) -> str | None:
     return events.assign(_end_time=end_time).sort_values("_end_time").iloc[0]["entity_id.alias"]
 
 
+def _no_event_ever_recorded(registrar: Registrar) -> bool:
+    """True if no `event` entity has ever been written to this world at
+    all -- not merely that none are currently eligible (see `pop_event`).
+
+    Distinguishes a world that's actually run its schedule to completion
+    (every event reached a terminal state) from one that likely never had
+    a schedule in the first place -- e.g. a scenario/manifest that forgot
+    to write any `event` entity -- which `pop_event` alone can't tell
+    apart: both return None. Unlike `pop_event`, this doesn't filter on
+    start_time/duration/event_state at all -- even a half-written event
+    entity (missing one of those) still counts as "something was recorded".
+    """
+    if "event" not in registrar.registry.component_types:
+        return True
+    return registrar.view_current(["event.start_time"]).to_pandas().empty
+
+
 def is_event_valid(registrar: Registrar, alias: str) -> bool:
     """Valid? box: is `alias` still a real, eligible entity.
 
@@ -536,6 +553,18 @@ async def _run_event_loop(
         if alias is None:
             alias = pop_event(registrar)
             if alias is None:
+                if _no_event_ever_recorded(registrar):
+                    return (
+                        None,
+                        None,
+                        "No events have ever been scheduled in this world -- there's nothing to "
+                        "advance, and nothing has actually happened yet. If that's unexpected, "
+                        "check that the scenario/manifest actually wrote an `event` entity "
+                        "(view_registry('event') will be empty) -- this is not the same as a "
+                        "world that's run its schedule to completion.",
+                        None,
+                        False,
+                    )
                 return None, None, "Nothing scheduled.", None, False
             if not is_event_valid(registrar, alias):
                 alias = None

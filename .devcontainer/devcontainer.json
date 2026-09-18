@@ -7,11 +7,14 @@
     "ghcr.io/va-h/devcontainers-features/uv:1": {},
     "ghcr.io/devcontainers/features/node:1": {}
   },
-  // Mirrors .github/workflows/ci.yml's setup steps, plus jupyter/ipykernel
-  // (not a project dependency -- only needed to execute notebooks/*.ipynb)
-  // so the playtest notebook can run against the "db" service above, plus
-  // the Claude Code CLI itself.
-  "postCreateCommand": "uv python install && uv sync --locked && uv pip install ipykernel jupyter && npm install -g @anthropic-ai/claude-code",
+  // Mirrors .github/workflows/ci.yml's setup steps (ipykernel/nbclient/
+  // nbformat, needed to execute notebooks/*.ipynb, are now locked project
+  // dependencies -- see pyproject.toml -- so `uv sync --locked` alone
+  // covers them here too, not just interactively), plus the standalone
+  // `jupyter` CLI/notebook server for opening the playtest notebook
+  // directly (outside VS Code's own Jupyter extension) against the "db"
+  // service above, plus the Claude Code CLI itself.
+  "postCreateCommand": "uv python install && uv sync --locked && uv pip install jupyter && npm install -g @anthropic-ai/claude-code",
   "forwardPorts": [5432],
   "customizations": {
     "vscode": {

@@ -1,0 +1,20 @@
+npc_a:
+    - character:
+        interaction_type: npc
+    - position:
+        x: -1
+        y: 0
+
+npc_b:
+    - character:
+        interaction_type: npc
+    - position:
+        x: 1
+        y: 0
+
+npc_meeting:
+    - event:
+        start_time: 0
+        duration: 0
+    - event_state:
+        value: planned

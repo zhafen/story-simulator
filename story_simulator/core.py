@@ -496,7 +496,7 @@ async def _run_event_loop(
     *,
     resume_alias: str | None = None,
     replay: TurnReplay | None = None,
-) -> tuple[str | None, TurnReplay | None, str, str | None, bool]:
+) -> tuple[str | None, TurnReplay | None, str, str | None, bool, str | None]:
     """The Event-driven simulation subgraph itself: Pop event -> Valid? ->
     Process event, looping until it pauses or the queue empties.
 
@@ -530,14 +530,18 @@ async def _run_event_loop(
     *before* `process_event` in this function's own source order too, not
     just at runtime for the common case.
 
-    Returns (alias, replay, prompt, responder, is_checkpoint): `alias`/
-    `replay`/`responder` are None only when the queue is empty (nothing
-    left to stash); otherwise `alias`/`replay` are exactly what
-    `advance_simulation` needs to encode into a `resume_token` for
+    Returns (alias, replay, prompt, responder, is_checkpoint, origin):
+    `alias`/`replay`/`responder`/`origin` are None only when the queue is
+    empty (nothing left to stash); otherwise `alias`/`replay` are exactly
+    what `advance_simulation` needs to encode into a `resume_token` for
     resuming this same pause point, and `responder` ("host" or "subagent",
     never "human" -- see `resolve_event`) says who it's asking.
     `is_checkpoint` passes through `NeedsExternalInput.is_checkpoint`
     (False when the queue emptied) -- see that attribute's docstring.
+    `origin` passes through `NeedsExternalInput.origin` -- which of
+    decide_event/resolve_event/plan_events actually raised this, so the
+    caller can tell a connected host which step is asking (see
+    `_wrap_loop_result`'s own `step` field).
     """
     if resume_alias is not None:
         assert replay is not None
@@ -564,8 +568,9 @@ async def _run_event_loop(
                         "world that's run its schedule to completion.",
                         None,
                         False,
+                        None,
                     )
-                return None, None, "Nothing scheduled.", None, False
+                return None, None, "Nothing scheduled.", None, False, None
             if not is_event_valid(registrar, alias):
                 alias = None
                 continue
@@ -573,7 +578,7 @@ async def _run_event_loop(
         try:
             await process_event(registrar, alias, replay, session)
         except NeedsExternalInput as e:
-            return alias, replay, e.prompt, e.responder, e.is_checkpoint
+            return alias, replay, e.prompt, e.responder, e.is_checkpoint, e.origin
         # No exception: both resolve and plan answered fully -- reset alias
         # to force a fresh pop next iteration.
         alias = None
@@ -657,13 +662,21 @@ def _wrap_loop_result(
     prompt: str,
     responder: str | None,
     is_checkpoint: bool = False,
+    origin: str | None = None,
 ) -> dict:
-    """Shared result shape for `advance_simulation`."""
+    """Shared result shape for `advance_simulation`.
+
+    `origin` (one of "decide_event"/"resolve_event"/"plan_events" -- see
+    `NeedsExternalInput.origin`) becomes `step`: which of those three
+    calls is actually asking, so a connected host doesn't have to infer
+    that purely from the prompt's own wording.
+    """
     if alias is None:
         return {"status": "done", "narration": prompt}
     return {
         "status": "input_required",
         "prompt": prompt,
+        "step": origin,
         "responder": responder,
         "resume_token": _save_pending(registrar, alias, replay.answers, is_checkpoint),
     }
@@ -757,8 +770,12 @@ async def advance_simulation(session, resume_token: str | None = None, answer: s
     Call with neither argument to start (or continue after a prior call
     finished with nothing left scheduled). That, and every later call,
     returns either ``{"status": "done", "narration": ...}`` or
-    ``{"status": "input_required", "prompt": ..., "responder": "host" or
-    "subagent", "resume_token": ...}``. On the latter, decide what happens
+    ``{"status": "input_required", "prompt": ..., "step": "decide_event" or
+    "resolve_event" or "plan_events", "responder": "host" or "subagent",
+    "resume_token": ...}``. `step` says which of the two-or-three calls a
+    fresh/resumed event goes through (see this docstring's own paragraph
+    above) is actually asking -- so it doesn't have to be inferred purely
+    from `prompt`'s own wording. On the latter, decide what happens
     yourself if `responder` is "host", or follow `prompt`'s own instruction
     to delegate to an isolated subagent if it's "subagent" -- either way,
     record whatever you decide yourself via update_registry (there's no
@@ -781,7 +798,7 @@ async def advance_simulation(session, resume_token: str | None = None, answer: s
     """
     registrar = registrar_sessions.get_registrar(session)
     resume_alias, replay = _resolve_args(registrar, resume_token, answer)
-    alias, replay, prompt, responder, is_checkpoint = await _run_event_loop(
+    alias, replay, prompt, responder, is_checkpoint, origin = await _run_event_loop(
         registrar, session, resume_alias=resume_alias, replay=replay
     )
-    return _wrap_loop_result(registrar, alias, replay, prompt, responder, is_checkpoint)
+    return _wrap_loop_result(registrar, alias, replay, prompt, responder, is_checkpoint, origin)

@@ -57,6 +57,7 @@ def test_npc_event_pauses_for_decide_before_resolve(tmp_path, monkeypatch):
 
     result = asyncio.run(advance_simulation(ctx))
     assert result["status"] == "input_required"
+    assert result["step"] == "decide_event"
     assert "guard is deciding what to do next" in result["prompt"]
     assert "Do NOT call update_registry" in result["prompt"]
 
@@ -64,6 +65,7 @@ def test_npc_event_pauses_for_decide_before_resolve(tmp_path, monkeypatch):
         advance_simulation(ctx, resume_token=result["resume_token"], answer="The guard paces the corridor.")
     )
     assert result["status"] == "input_required"
+    assert result["step"] == "resolve_event"
     assert "guard_event's end_time" in result["prompt"]
     assert "already been decided: 'The guard paces the corridor.'" in result["prompt"]
 
@@ -77,6 +79,7 @@ def test_human_voiced_character_event_skips_decide(tmp_path):
 
     result = asyncio.run(advance_simulation(ctx))
     assert result["status"] == "input_required"
+    assert result["step"] == "resolve_event"
     assert "hero_event's end_time" in result["prompt"]
     assert "already been decided" not in result["prompt"]
 

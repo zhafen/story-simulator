@@ -83,8 +83,11 @@ server = FastMCP(
         "Call start_world once, at the beginning, to open or seed a save. Then call "
         "advance_simulation with no arguments: it pauses on every such event, in two or three "
         "separate steps -- decide (NPC-controlled events only), then resolve, then plan -- "
-        "each returning {\"status\": \"input_required\", \"prompt\": ..., \"responder\": "
-        "\"host\" or \"subagent\", \"resume_token\": ...}. If responder is \"host\", decide "
+        "each returning {\"status\": \"input_required\", \"prompt\": ..., \"step\": "
+        "\"decide_event\" or \"resolve_event\" or \"plan_events\", \"responder\": "
+        "\"host\" or \"subagent\", \"resume_token\": ...}. `step` names exactly which of the "
+        "three below is asking, so you don't have to infer it from `prompt`'s own wording. "
+        "If responder is \"host\", decide "
         "what happens yourself, from your own context. If it's \"subagent\", the prompt itself "
         "asks you to delegate to your own isolated subagent mechanism (e.g. an Agent/Task "
         "tool) instead of answering inline -- follow that instruction rather than answering "
@@ -195,8 +198,11 @@ async def advance_simulation(ctx: Context, resume_token: str | None = None, answ
     Call with neither argument to start (or continue after a prior call
     finished with nothing left scheduled). That, and every later call,
     returns either ``{"status": "done", "narration": ...}`` or
-    ``{"status": "input_required", "prompt": ..., "responder": "host" or
-    "subagent", "resume_token": ...}``. On the latter, decide what happens
+    ``{"status": "input_required", "prompt": ..., "step": "decide_event" or
+    "resolve_event" or "plan_events", "responder": "host" or "subagent",
+    "resume_token": ...}``. `step` names which of decide/resolve/plan this
+    particular pause is, without having to infer it from `prompt` itself.
+    On the latter, decide what happens
     yourself if `responder` is "host", or follow `prompt`'s own instruction
     to delegate to an isolated subagent if it's "subagent" -- either way,
     record it yourself via update_registry (there's no structured return

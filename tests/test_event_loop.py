@@ -124,6 +124,7 @@ def test_one_event_pauses_for_both_resolve_and_plan_before_finishing(tmp_path):
 
     result = asyncio.run(advance_simulation(ctx))
     assert result["status"] == "input_required"
+    assert result["step"] == "resolve_event"
     assert "gizmo_event's end_time" in result["prompt"]
 
     _mark_resolved(ctx, "gizmo_event")
@@ -131,6 +132,7 @@ def test_one_event_pauses_for_both_resolve_and_plan_before_finishing(tmp_path):
         advance_simulation(ctx, resume_token=result["resume_token"], answer="Gizmo did its thing.")
     )
     assert result["status"] == "input_required"
+    assert result["step"] == "plan_events"
     assert "gizmo_event just resolved" in result["prompt"]
 
     result = asyncio.run(

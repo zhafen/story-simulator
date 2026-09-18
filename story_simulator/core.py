@@ -317,7 +317,12 @@ def _ensure_postgres_schema(save_dir: Path) -> None:
 
 
 async def resolve_event(
-    alias: str, replay: TurnReplay, end_time: float, session, decision: str | None = None
+    alias: str,
+    replay: TurnReplay,
+    end_time: float,
+    session,
+    decision: str | None = None,
+    human_character_alias: str | None = None,
 ) -> str:
     """Resolve box: ask a responder to interpret `alias` now that its
     end_time has been reached, and hand back whatever it says, for narration.
@@ -374,20 +379,36 @@ async def resolve_event(
     rather than adding a second, redundant field elsewhere for the same
     fact.
 
-    Never responder="human": no player is ever directly asked here --
-    `process_event` still resolves every event (including a character's
-    own turn) through this same call, `event_responder()` deciding
-    "host" vs "subagent" the same way regardless of whether a character
-    is involved. A character-flagged event's own `decision` (see
-    `decide_event`) is threaded in as additional context when there is
-    one, rather than resolve_event branching on `character.interaction_type`
-    itself -- keeping this function's own responder choice independent of
-    whether an NPC's decide step ran first.
+    Never responder="human": no player is ever directly asked *through
+    the MCP protocol* here -- `process_event` still resolves every event
+    (including a character's own turn) through this same call,
+    `event_responder()` deciding "host" vs "subagent" the same way
+    regardless of whether a character is involved (see resolve.py's own
+    docstring for why "host" doesn't actually mean something different
+    from "human" mechanically -- both round-trip to the same connected
+    agent; "host" already usually *is* an agent relaying to/from a real
+    player over ordinary conversation, just not through this protocol's
+    own MRTR pause). A character-flagged event's own `decision` (see
+    `decide_event`) or `human_character_alias` is threaded in as
+    additional context when there is one, rather than resolve_event
+    branching on `character.interaction_type` itself -- keeping this
+    function's own responder choice independent of whether an NPC's
+    decide step ran first.
 
     `decision`, when given, is an NPC's own already-decided action (see
     `decide_event`/`process_event`) -- resolve_event's job then narrows
     from "what happens" to "record the consequences of what's already
     decided," not re-decide it.
+
+    `human_character_alias`, when given, is a human-voiced character
+    involved in this event (see `process_event`'s own branch) -- unlike
+    an NPC, there's no separate decide step for one (their action is
+    normally already known to the host from the ongoing conversation),
+    but nothing here guarantees that's actually true (e.g. a
+    non-interactive harness driving advance_simulation with nobody
+    having said anything yet). The prompt below tells the host outright
+    to check that assumption and ask before deciding, rather than
+    silently inventing what the player did.
     """
     request = JudgmentRequest(
         prompt=(
@@ -414,6 +435,15 @@ async def resolve_event(
                 f"\n\nWhat happens has already been decided: {decision!r} "
                 f"-- record its consequences now; don't re-decide it."
                 if decision else ""
+            )
+            + (
+                f"\n\n{human_character_alias} is the player's own character, involved in "
+                f"this event. If you don't already know what {human_character_alias} "
+                f"actually did or said here from the conversation so far, ask them "
+                f"directly before deciding what happened -- don't invent or assume "
+                f"their action. If you already know it (they told you earlier in this "
+                f"conversation), just use that; there's no need to ask again."
+                if human_character_alias else ""
             )
         ),
         origin="resolve_event",
@@ -474,18 +504,29 @@ async def process_event(registrar: Registrar, alias: str, replay: TurnReplay, se
     Decide event (`character.decide_event`) only runs when `alias`'s
     event involves an NPC-controlled character
     (`character.character_in_event`/`character_interaction_type`) -- an
-    ordinary base-module event, or a human-voiced character's own event,
-    skips straight to resolve_event, same as before this design.
+    ordinary base-module event skips straight to resolve_event unchanged.
+    A human-voiced character's own event also skips decide_event (there's
+    nothing to autonomously decide for one), but is still flagged to
+    resolve_event via `human_character_alias`, below, so that call's own
+    prompt can tell the host to actually check it knows the player's
+    action rather than assuming so.
     """
     end_time = advance_clock(registrar, alias)
     registrar.update(
         yaml_strings={SOURCE_KEY: f"{WORLD_CLOCK_ALIAS}:\n    - world_clock:\n        value: {end_time}\n"},
     )
     decision = None
+    human_character_alias = None
     character_alias = character.character_in_event(registrar, alias)
-    if character_alias is not None and character.character_interaction_type(registrar, character_alias) == "npc":
-        decision = await character.decide_event(registrar, character_alias, replay, session)
-    resolve_narration = await resolve_event(alias, replay, end_time, session, decision=decision)
+    if character_alias is not None:
+        interaction_type = character.character_interaction_type(registrar, character_alias)
+        if interaction_type == "npc":
+            decision = await character.decide_event(registrar, character_alias, replay, session)
+        elif interaction_type == "player":
+            human_character_alias = character_alias
+    resolve_narration = await resolve_event(
+        alias, replay, end_time, session, decision=decision, human_character_alias=human_character_alias
+    )
     plan_narration = await plan_events(alias, replay, session, character_alias=character_alias)
     return resolve_narration, plan_narration
 

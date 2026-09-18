@@ -72,7 +72,10 @@ def test_npc_event_pauses_for_decide_before_resolve(tmp_path, monkeypatch):
 
 def test_human_voiced_character_event_skips_decide(tmp_path):
     """A player-controlled character's own event goes straight to
-    resolve_event -- there's nothing to autonomously decide for them."""
+    resolve_event -- there's nothing to autonomously decide for them --
+    but the resolve prompt itself must tell the host to actually ask the
+    player if it doesn't already know their action (see
+    resolve_event's own human_character_alias handling)."""
     ctx = _world(tmp_path)
     update_registry("hero:\n    - character:\n        interaction_type: player\n    - position: {x: 0, y: 0}\n", ctx=ctx)
     _schedule_character_event(ctx, "hero_event", "hero", 0, 0)
@@ -82,6 +85,22 @@ def test_human_voiced_character_event_skips_decide(tmp_path):
     assert result["step"] == "resolve_event"
     assert "hero_event's end_time" in result["prompt"]
     assert "already been decided" not in result["prompt"]
+    assert "hero is the player's own character" in result["prompt"]
+    assert "ask them directly before deciding" in result["prompt"]
+
+
+def test_base_event_prompt_has_no_player_guidance(tmp_path):
+    """An ordinary base-module event (no character involved at all) must
+    not pick up the player-solicitation language meant only for a
+    human-voiced character's own event."""
+    ctx = _world(tmp_path)
+    from tests.test_event_loop import _schedule_event  # reuse the base-event helper
+
+    _schedule_event(ctx, "gizmo_event", 0, 0)
+    result = asyncio.run(advance_simulation(ctx))
+    assert result["status"] == "input_required"
+    assert "is the player's own character" not in result["prompt"]
+    assert "ask them directly before deciding" not in result["prompt"]
 
 
 def test_base_event_with_no_character_skips_decide(tmp_path):

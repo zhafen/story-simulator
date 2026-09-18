@@ -64,6 +64,8 @@ functions, `server.run(transport="stdio")`.
 
 from __future__ import annotations
 
+import logging
+
 from mcp.server.fastmcp import Context, FastMCP
 
 from story_simulator import core
@@ -126,7 +128,23 @@ server = FastMCP(
         "Use view_registry/view_entity to look up what's already known before deciding — "
         "don't invent entities or details nothing has established."
     ),
+    # FastMCP's default ("INFO") logs a line for every incoming request
+    # (e.g. "Processing request of type CallToolRequest") -- harmless but
+    # drowns out an interactive client's own output (e.g. a driving
+    # notebook's cell output) with per-tool-call noise. WARNING+ still
+    # surfaces anything that actually needs attention.
+    log_level="WARNING",
 )
+
+# The line above alone doesn't take effect: `from story_simulator import core`
+# transitively imports `emc2p.mcp_server` (for its RegistrarSessions class),
+# whose own module-level `FastMCP("emc2p", ...)` -- unused here, just a side
+# effect of the import -- already calls `logging.basicConfig(level="INFO")`
+# first. `logging.basicConfig` is a no-op once the root logger already has a
+# handler, so this module's own `log_level="WARNING"` above silently loses
+# that race. Setting the root logger's level directly, after both FastMCP
+# constructions have already run, is what actually wins.
+logging.getLogger().setLevel(logging.WARNING)
 
 
 @server.tool()

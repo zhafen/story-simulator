@@ -1,18 +1,22 @@
-npc_a:
+player:
     - character:
-        interaction_type: npc
+        interaction_type: player
     - position:
         x: -1
         y: 0
 
-npc_b:
+tdtfb:
+    - description: >
+        A training dummy that fights back.
+        Probably about as good as whoever is fighting it.
     - character:
         interaction_type: npc
     - position:
         x: 1
         y: 0
 
-npc_meeting:
+start_event:
+    - description: Single event, things will go from there.
     - event:
         start_time: 0
         duration: 0

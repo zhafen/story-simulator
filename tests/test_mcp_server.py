@@ -53,6 +53,14 @@ class TestMcpToolRegistration:
         assert tools["view_entity"].description == _registrar_sessions.view_entity.__doc__
         assert tools["update_registry"].description == _registrar_sessions.update_registry.__doc__
 
+    def test_start_world_and_advance_simulation_descriptions_come_from_core(self):
+        """Passed explicitly as `description=core.<name>.__doc__` at
+        `@server.tool()` registration time -- the wrapper functions below
+        carry no docstring of their own to drift out of sync with core.py's."""
+        tools = {t.name: t for t in server._tool_manager.list_tools()}
+        assert tools["start_world"].description == core.start_world.__doc__
+        assert tools["advance_simulation"].description == core.advance_simulation.__doc__
+
 
 # start_world
 

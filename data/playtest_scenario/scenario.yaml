@@ -22,3 +22,5 @@ start_event:
         duration: 0
     - event_state:
         value: planned
+    - involved_entity: player
+    - involved_entity: tdtfb

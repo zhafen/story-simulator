@@ -41,9 +41,12 @@ This file is deliberately thin: every `@server.tool()` function below just
 unpacks `ctx.request_context.session` into a plain session id and calls
 straight into `story_simulator.core`, which owns the actual implementation
 (including session state, Postgres bootstrap, world save I/O, and the event
-loop itself). The docstrings here are what a connected host actually reads
-(the MCP tool contract); `core.py`'s docstrings on the equivalently-named
-functions describe the behavior itself.
+loop itself). Each tool's own `description` is passed explicitly as
+`core.<name>.__doc__` -- the wrapper function below has no docstring of
+its own to keep in sync -- so what a connected host reads is `core.py`'s
+docstring verbatim, not a second, separately-maintained restatement of
+it. Same pattern `core.registrar_sessions.mount()` (below) already uses
+for its own four tools.
 
 The event loop's character-aware branch (an NPC's own decide step,
 `character.decide_event`) is live -- see `advance_simulation`'s own docstring.
@@ -153,77 +156,16 @@ server = FastMCP(
 logging.getLogger().setLevel(logging.WARNING)
 
 
-@server.tool()
+@server.tool(description=core.start_world.__doc__)
 def start_world(
     save_dir: str, ctx: Context, scenario_dir: str | None = None, client_trace_path: str | None = None
 ) -> str:
-    """Open a world save for this session, seeding it from `scenario_dir` if it's empty.
-
-    The loose seed *.yaml under scenario_dir is only ever merged into the
-    registry the first time this save_dir is opened (a brand-new schema has
-    no component types yet) — a resumed save's accumulated state already
-    lives in the persisted registry, so reloading the seed YAML again on
-    every start_world call would re-merge the same starting entities
-    repeatedly.
-
-    Args:
-        save_dir: Directory holding (or to hold) this world's save data.
-        scenario_dir: Starting scenario to seed a brand-new save_dir from
-            (an EC directory, e.g. containing scenario.yaml). Defaults to
-            story-simulator's plain default world (a player, a door, an
-            empty expanse). Ignored if save_dir already has any save data.
-        client_trace_path: This connected session's own trace_path (e.g.
-            a live test's HeadlessSession.trace_path), if keyed_subagent's
-            own judgment calls should append to that same file instead of
-            going untraced. Optional -- omit for the prior, untraced
-            behavior.
-    """
     __iacs__ = {"solution of": "story_simulator_mission.tool_catalog.start_world"}
     return core.start_world(ctx.request_context.session, save_dir, scenario_dir, client_trace_path)
 
 
-@server.tool()
+@server.tool(description=core.advance_simulation.__doc__)
 async def advance_simulation(ctx: Context, resume_token: str | None = None, answer: str | None = None) -> dict:
-    """Fast-forward through any events whose end_time has been reached,
-    and pause when a turn needs input story-simulator's own process can't supply.
-
-    The event-driven simulation (see `core.py`) -- world state is `event`
-    entities, each ready to resolve once world time reaches its own
-    end_time (start_time + duration), not the acting entities they
-    concern. Every such event asks resolve (what happened), then plan
-    (what, if anything, follows) -- each via responder="host" or
-    "subagent" (see `config.event_responder`); expect two pauses per
-    event. An NPC-controlled character's own event asks one more thing
-    first -- decide, via `config.decide_responder()` -- so expect three
-    pauses for one of those. A human-voiced character's own event stays
-    at two, same as an ordinary base-module event.
-
-    Call with neither argument to start (or continue after a prior call
-    finished with nothing left scheduled). That, and every later call,
-    returns either ``{"status": "done", "narration": ...}`` or
-    ``{"status": "input_required", "prompt": ..., "step": "decide_event" or
-    "resolve_event" or "plan_events", "responder": "host" or "subagent",
-    "resume_token": ...}``. `step` names which of decide/resolve/plan this
-    particular pause is, without having to infer it from `prompt` itself.
-    On the latter, decide what happens
-    yourself if `responder` is "host", or follow `prompt`'s own instruction
-    to delegate to an isolated subagent if it's "subagent" -- either way,
-    record it yourself via update_registry (there's no structured return
-    value this tool applies on your behalf), then call again with that
-    exact `resume_token` and your `answer` -- no separate tool. There's no
-    *process* state to lose either: `resume_token` is just the paused
-    event's own alias, and its actual resumption state lives in the
-    registry, so this survives an MCP disconnect/reconnect between calls,
-    or even a fresh subprocess after a restart.
-
-    Args:
-        resume_token: The `resume_token` from this session's last
-            `input_required` result, or omitted to start/continue fresh.
-        answer: Your answer to that result's `prompt` -- what an event's
-            resolution was, or what (if anything) it schedules next,
-            recorded via update_registry before you answer. Omit `answer`
-            itself along with `resume_token` on a fresh call.
-    """
     __iacs__ = {"solution of": "story_simulator_mission.tool_catalog.advance_simulation"}
     return await core.advance_simulation(ctx.request_context.session, resume_token, answer)
 

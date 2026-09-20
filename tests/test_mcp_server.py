@@ -84,7 +84,7 @@ class TestStartWorld:
         start_world(str(tmp_path / "save"), ctx, scenario_dir=str(LIVING_WORLD_DIR))
         registrar = _registrar_sessions.get_registrar(ctx.request_context.session)
         positions = registrar.view("position").to_pandas()
-        assert "journaling_desk.journal" in positions["entity_id.alias"].values
+        assert "journaling_desk.journal" in positions["entity_id.display_alias"].values
 
     def test_stores_registrar_and_save_dir_for_session(self, tmp_path):
         ctx = _make_ctx()

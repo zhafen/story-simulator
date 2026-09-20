@@ -91,7 +91,7 @@ def pop_event(registrar: Registrar) -> str | None:
     if events.empty:
         return None
     end_time = events["event.start_time"] + events["event.duration"]
-    return events.assign(_end_time=end_time).sort_values("_end_time").iloc[0]["entity_id.alias"]
+    return events.assign(_end_time=end_time).sort_values("_end_time").iloc[0]["entity_id.display_alias"]
 
 
 def _no_event_ever_recorded(registrar: Registrar) -> bool:

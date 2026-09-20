@@ -62,7 +62,7 @@ def character_in_event(registrar: Registrar, event_alias: str) -> str | None:
     linked_aliases = set(involved[involved["entity_id"] == entity_id]["involved_entity.value"])
     if not linked_aliases:
         return None
-    characters = set(registrar.view_current(["character.interaction_type"]).to_pandas()["entity_id.alias"])
+    characters = set(registrar.view_current(["character.interaction_type"]).to_pandas()["entity_id.display_alias"])
     matches = linked_aliases & characters
     return min(matches) if matches else None
 

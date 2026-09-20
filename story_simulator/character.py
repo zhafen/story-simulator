@@ -62,7 +62,7 @@ def character_in_event(registrar: Registrar, event_alias: str) -> str | None:
     linked_aliases = set(involved[involved["entity_id"] == entity_id]["involved_entity.value"])
     if not linked_aliases:
         return None
-    characters = set(registrar.view_current(["character.interaction_type"]).to_pandas()["entity_id.alias"])
+    characters = set(registrar.view_current(["character.interaction_type"]).to_pandas()["entity_id.display_alias"])
     matches = linked_aliases & characters
     return min(matches) if matches else None
 
@@ -135,9 +135,10 @@ async def decide_event(registrar: Registrar, alias: str, replay: TurnReplay, ses
 
     Only reached for an NPC-controlled character (see
     `core.process_event`'s own branch) -- a human-voiced character's own
-    stated action is already known to the host from the ongoing
+    stated action is normally already known to the host from the ongoing
     conversation, so there's nothing to autonomously decide for one of
-    those.
+    those. `core.resolve_event`'s own `human_character_alias` handling is
+    what covers the case where that assumption doesn't actually hold.
 
     The perceived-entities text embedded in the prompt (via
     `narrate_to_character`) is what makes this a real, computed content

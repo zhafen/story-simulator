@@ -207,5 +207,5 @@ def test_latest_positions_resolves_to_highest_time():
     registrar = _registrar_from_yaml("player:\n    - position: {x: 0.0, y: 0.0}\n")
     registrar.update(yaml_strings={SOURCE_KEY: "player:\n    - position: {x: 5.0, y: 5.0}\n"}, time=2)
     latest = latest_positions(registrar)
-    row = latest[latest["entity_id.alias"] == "player"].iloc[0]
+    row = latest[latest["entity_id.display_alias"] == "player"].iloc[0]
     assert (float(row["position.x"]), float(row["position.y"])) == (5.0, 5.0)

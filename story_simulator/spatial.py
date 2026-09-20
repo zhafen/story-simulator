@@ -43,7 +43,7 @@ from story_simulator import game_config
 
 def latest_positions(registrar: Registrar) -> pd.DataFrame:
     """Return one row per entity: its highest-time `position` (resolves accumulated history)."""
-    columns = ["entity_id", "entity_id.alias", "position.x", "position.y", "position.z", "position.time"]
+    columns = ["entity_id", "entity_id.display_alias", "position.x", "position.y", "position.z", "position.time"]
     if "position" not in registrar.registry.component_types:
         return pd.DataFrame(columns=columns)
     return registrar.view_current(["position.x", "position.y", "position.z", "position.time"]).to_pandas()[columns]
@@ -136,7 +136,7 @@ def perceptible_entities(registrar: Registrar, center: "str | tuple[float, float
     if center_id is not None:
         perceptible = perceptible.filter(perceptible["entity_id"] != center_id)
 
-    return set(perceptible["entity_id.alias"].execute())
+    return set(perceptible["entity_id.display_alias"].execute())
 
 
 def sync_active_tags(registrar: Registrar, active_aliases: set[str]) -> None:
@@ -175,11 +175,11 @@ def entity_descriptions(registrar: Registrar, aliases: set[str]) -> str:
     desc_df = registrar.safe_view_current("description.value").to_pandas()
     if not desc_df.empty:
         for _, row in desc_df[desc_df["entity_id"].isin(entity_ids)].iterrows():
-            parts_by_alias.setdefault(row["entity_id.alias"], []).append(str(row["description.value"]))
+            parts_by_alias.setdefault(row["entity_id.display_alias"], []).append(str(row["description.value"]))
     state_df = registrar.safe_view_current("state.value").to_pandas()
     if not state_df.empty:
         for _, row in state_df[state_df["entity_id"].isin(entity_ids)].iterrows():
-            parts_by_alias.setdefault(row["entity_id.alias"], []).append(f"(state: {row['state.value']})")
+            parts_by_alias.setdefault(row["entity_id.display_alias"], []).append(f"(state: {row['state.value']})")
 
     return "\n".join(f"{alias}: {' '.join(parts)}" for alias, parts in sorted(parts_by_alias.items()))
 
@@ -189,4 +189,4 @@ def active_aliases(registrar: Registrar) -> set[str]:
     df = registrar.safe_view("active").to_pandas()
     if df.empty:
         return set()
-    return set(df["entity_id.alias"])
+    return set(df["entity_id.display_alias"])

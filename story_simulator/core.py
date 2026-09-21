@@ -42,6 +42,7 @@ from story_simulator.config import (
     registry_url,
     resolve_database_dsn,
 )
+from story_simulator import character
 from story_simulator.resolve import JudgmentRequest, NeedsExternalInput, TurnReplay
 
 # save_dir's two export subdirectories, each holding one EC yaml file per
@@ -90,7 +91,24 @@ def pop_event(registrar: Registrar) -> str | None:
     if events.empty:
         return None
     end_time = events["event.start_time"] + events["event.duration"]
-    return events.assign(_end_time=end_time).sort_values("_end_time").iloc[0]["entity_id.alias"]
+    return events.assign(_end_time=end_time).sort_values("_end_time").iloc[0]["entity_id.display_alias"]
+
+
+def _no_event_ever_recorded(registrar: Registrar) -> bool:
+    """True if no `event` entity has ever been written to this world at
+    all -- not merely that none are currently eligible (see `pop_event`).
+
+    Distinguishes a world that's actually run its schedule to completion
+    (every event reached a terminal state) from one that likely never had
+    a schedule in the first place -- e.g. a scenario/manifest that forgot
+    to write any `event` entity -- which `pop_event` alone can't tell
+    apart: both return None. Unlike `pop_event`, this doesn't filter on
+    start_time/duration/event_state at all -- even a half-written event
+    entity (missing one of those) still counts as "something was recorded".
+    """
+    if "event" not in registrar.registry.component_types:
+        return True
+    return registrar.view_current(["event.start_time"]).to_pandas().empty
 
 
 def is_event_valid(registrar: Registrar, alias: str) -> bool:
@@ -298,7 +316,14 @@ def _ensure_postgres_schema(save_dir: Path) -> None:
 # Turn resolution
 
 
-async def resolve_event(alias: str, replay: TurnReplay, end_time: float, session) -> str:
+async def resolve_event(
+    alias: str,
+    replay: TurnReplay,
+    end_time: float,
+    session,
+    decision: str | None = None,
+    human_character_alias: str | None = None,
+) -> str:
     """Resolve box: ask a responder to interpret `alias` now that its
     end_time has been reached, and hand back whatever it says, for narration.
 
@@ -354,13 +379,36 @@ async def resolve_event(alias: str, replay: TurnReplay, end_time: float, session
     rather than adding a second, redundant field elsewhere for the same
     fact.
 
-    Never responder="human": no player is ever behind an event here
-    (there's no `character.interaction_type` to branch on, since the
-    character module isn't what's driving this popped entity). Between
-    "host" and "subagent" -- see `story_simulator.resolve`'s module
-    docstring for what "subagent" buys -- `config.event_responder()`
-    decides, defaulting to "host" so nothing changes unless a deployment
-    opts in via STORY_SIM_RESPONDER.
+    Never responder="human": no player is ever directly asked *through
+    the MCP protocol* here -- `process_event` still resolves every event
+    (including a character's own turn) through this same call,
+    `event_responder()` deciding "host" vs "subagent" the same way
+    regardless of whether a character is involved (see resolve.py's own
+    docstring for why "host" doesn't actually mean something different
+    from "human" mechanically -- both round-trip to the same connected
+    agent; "host" already usually *is* an agent relaying to/from a real
+    player over ordinary conversation, just not through this protocol's
+    own MRTR pause). A character-flagged event's own `decision` (see
+    `decide_event`) or `human_character_alias` is threaded in as
+    additional context when there is one, rather than resolve_event
+    branching on `character.interaction_type` itself -- keeping this
+    function's own responder choice independent of whether an NPC's
+    decide step ran first.
+
+    `decision`, when given, is an NPC's own already-decided action (see
+    `decide_event`/`process_event`) -- resolve_event's job then narrows
+    from "what happens" to "record the consequences of what's already
+    decided," not re-decide it.
+
+    `human_character_alias`, when given, is a human-voiced character
+    involved in this event (see `process_event`'s own branch) -- unlike
+    an NPC, there's no separate decide step for one (their action is
+    normally already known to the host from the ongoing conversation),
+    but nothing here guarantees that's actually true (e.g. a
+    non-interactive harness driving advance_simulation with nobody
+    having said anything yet). The prompt below tells the host outright
+    to check that assumption and ask before deciding, rather than
+    silently inventing what the player did.
     """
     request = JudgmentRequest(
         prompt=(
@@ -383,27 +431,54 @@ async def resolve_event(alias: str, replay: TurnReplay, end_time: float, session
             f"if you're unsure which one or how to phrase it), not only "
             f"described in {alias}'s own outcome text -- all via "
             f"update_registry."
+            + (
+                f"\n\nWhat happens has already been decided: {decision!r} "
+                f"-- record its consequences now; don't re-decide it."
+                if decision else ""
+            )
+            + (
+                f"\n\n{human_character_alias} is the player's own character, involved in "
+                f"this event. If you don't already know what {human_character_alias} "
+                f"actually did or said here from the conversation so far, ask them "
+                f"directly before deciding what happened -- don't invent or assume "
+                f"their action. If you already know it (they told you earlier in this "
+                f"conversation), just use that; there's no need to ask again."
+                if human_character_alias else ""
+            )
         ),
         origin="resolve_event",
     )
     return await replay.resolve(request, responder=event_responder(), session=session)
 
 
-async def plan_events(alias: str, replay: TurnReplay, session) -> str:
+async def plan_events(alias: str, replay: TurnReplay, session, character_alias: str | None = None) -> str:
     """Plan box: ask a responder whether anything new needs to be
     scheduled as a result of `alias` resolving, creating new `event` entities if so.
 
     Always asked, even when nothing ends up being scheduled -- "nothing
     follows from this" is this step's own answer to reach, not a case the
     loop skips based on `alias`'s outcome alone (see `process_event`).
+
+    `character_alias`, when given (see `process_event`'s own branch),
+    adds a reminder to schedule that character's own next turn if they
+    have more to do -- omitted entirely for an ordinary base-module
+    event, so a scenario with no characters at all (e.g. the parking
+    puzzle) never sees character-turn language in its own plan prompt.
     """
+    character_reminder = (
+        f" -- including {character_alias}'s own next turn, if they have "
+        f"more to do in this scene: schedule it the same way as anything "
+        f"else, linked back via involved_entity"
+        if character_alias
+        else ""
+    )
     request = JudgmentRequest(
         prompt=(
             f"Given how {alias} just resolved, does anything new need to "
             f"happen as a result? If so, create it now: one or more new "
             f"event entities (their own start_time/duration/event_state/"
-            f"involved_entity) via update_registry. If nothing follows "
-            f"from this, just say so -- no new events needed."
+            f"involved_entity) via update_registry{character_reminder}. If "
+            f"nothing follows from this, just say so -- no new events needed."
         ),
         origin="plan_events",
     )
@@ -411,7 +486,7 @@ async def plan_events(alias: str, replay: TurnReplay, session) -> str:
 
 
 async def process_event(registrar: Registrar, alias: str, replay: TurnReplay, session) -> tuple[str, str]:
-    """Process event box: Advance clock -> Resolve event -> Plan events.
+    """Process event box: Advance clock -> [Decide event] -> Resolve event -> Plan events.
 
     Advance clock is the one exception to "resolve_event/plan_events
     persist everything themselves": `end_time` itself is written here,
@@ -425,13 +500,34 @@ async def process_event(registrar: Registrar, alias: str, replay: TurnReplay, se
     afterward -- unlike the next_due_in mechanism this replaces, which
     needed a code-driven predict/push reschedule step because a plain
     float answer had nothing else able to act on it.
+
+    Decide event (`character.decide_event`) only runs when `alias`'s
+    event involves an NPC-controlled character
+    (`character.character_in_event`/`character_interaction_type`) -- an
+    ordinary base-module event skips straight to resolve_event unchanged.
+    A human-voiced character's own event also skips decide_event (there's
+    nothing to autonomously decide for one), but is still flagged to
+    resolve_event via `human_character_alias`, below, so that call's own
+    prompt can tell the host to actually check it knows the player's
+    action rather than assuming so.
     """
     end_time = advance_clock(registrar, alias)
     registrar.update(
         yaml_strings={SOURCE_KEY: f"{WORLD_CLOCK_ALIAS}:\n    - world_clock:\n        value: {end_time}\n"},
     )
-    resolve_narration = await resolve_event(alias, replay, end_time, session)
-    plan_narration = await plan_events(alias, replay, session)
+    decision = None
+    human_character_alias = None
+    character_alias = character.character_in_event(registrar, alias)
+    if character_alias is not None:
+        interaction_type = character.character_interaction_type(registrar, character_alias)
+        if interaction_type == "npc":
+            decision = await character.decide_event(registrar, character_alias, replay, session)
+        elif interaction_type == "player":
+            human_character_alias = character_alias
+    resolve_narration = await resolve_event(
+        alias, replay, end_time, session, decision=decision, human_character_alias=human_character_alias
+    )
+    plan_narration = await plan_events(alias, replay, session, character_alias=character_alias)
     return resolve_narration, plan_narration
 
 
@@ -441,7 +537,7 @@ async def _run_event_loop(
     *,
     resume_alias: str | None = None,
     replay: TurnReplay | None = None,
-) -> tuple[str | None, TurnReplay | None, str, str | None, bool]:
+) -> tuple[str | None, TurnReplay | None, str, str | None, bool, str | None]:
     """The Event-driven simulation subgraph itself: Pop event -> Valid? ->
     Process event, looping until it pauses or the queue empties.
 
@@ -475,14 +571,18 @@ async def _run_event_loop(
     *before* `process_event` in this function's own source order too, not
     just at runtime for the common case.
 
-    Returns (alias, replay, prompt, responder, is_checkpoint): `alias`/
-    `replay`/`responder` are None only when the queue is empty (nothing
-    left to stash); otherwise `alias`/`replay` are exactly what
-    `advance_simulation` needs to encode into a `resume_token` for
+    Returns (alias, replay, prompt, responder, is_checkpoint, origin):
+    `alias`/`replay`/`responder`/`origin` are None only when the queue is
+    empty (nothing left to stash); otherwise `alias`/`replay` are exactly
+    what `advance_simulation` needs to encode into a `resume_token` for
     resuming this same pause point, and `responder` ("host" or "subagent",
     never "human" -- see `resolve_event`) says who it's asking.
     `is_checkpoint` passes through `NeedsExternalInput.is_checkpoint`
     (False when the queue emptied) -- see that attribute's docstring.
+    `origin` passes through `NeedsExternalInput.origin` -- which of
+    decide_event/resolve_event/plan_events actually raised this, so the
+    caller can tell a connected host which step is asking (see
+    `_wrap_loop_result`'s own `step` field).
     """
     if resume_alias is not None:
         assert replay is not None
@@ -498,7 +598,20 @@ async def _run_event_loop(
         if alias is None:
             alias = pop_event(registrar)
             if alias is None:
-                return None, None, "Nothing scheduled.", None, False
+                if _no_event_ever_recorded(registrar):
+                    return (
+                        None,
+                        None,
+                        "No events have ever been scheduled in this world -- there's nothing to "
+                        "advance, and nothing has actually happened yet. If that's unexpected, "
+                        "check that the scenario/manifest actually wrote an `event` entity "
+                        "(view_registry('event') will be empty) -- this is not the same as a "
+                        "world that's run its schedule to completion.",
+                        None,
+                        False,
+                        None,
+                    )
+                return None, None, "Nothing scheduled.", None, False, None
             if not is_event_valid(registrar, alias):
                 alias = None
                 continue
@@ -506,7 +619,7 @@ async def _run_event_loop(
         try:
             await process_event(registrar, alias, replay, session)
         except NeedsExternalInput as e:
-            return alias, replay, e.prompt, e.responder, e.is_checkpoint
+            return alias, replay, e.prompt, e.responder, e.is_checkpoint, e.origin
         # No exception: both resolve and plan answered fully -- reset alias
         # to force a fresh pop next iteration.
         alias = None
@@ -590,13 +703,21 @@ def _wrap_loop_result(
     prompt: str,
     responder: str | None,
     is_checkpoint: bool = False,
+    origin: str | None = None,
 ) -> dict:
-    """Shared result shape for `advance_simulation`."""
+    """Shared result shape for `advance_simulation`.
+
+    `origin` (one of "decide_event"/"resolve_event"/"plan_events" -- see
+    `NeedsExternalInput.origin`) becomes `step`: which of those three
+    calls is actually asking, so a connected host doesn't have to infer
+    that purely from the prompt's own wording.
+    """
     if alias is None:
         return {"status": "done", "narration": prompt}
     return {
         "status": "input_required",
         "prompt": prompt,
+        "step": origin,
         "responder": responder,
         "resume_token": _save_pending(registrar, alias, replay.answers, is_checkpoint),
     }
@@ -678,19 +799,24 @@ async def advance_simulation(session, resume_token: str | None = None, answer: s
     reaches its own end_time -- start_time + duration
     (manifest/builtins.yaml's event_components) -- not the acting
     entities (a car, a door, ...) themselves, which carry no schedule of
-    their own. Every such event goes through two separate
-    responder calls in turn -- resolve (what happened) and plan (what, if
-    anything, follows from that) -- each via responder="host" or
-    "subagent" (see `config.event_responder`); a fresh event typically
-    means two pauses in a row, one per call, before the loop reaches the
-    next one. No character/NPC concept at all -- that behavior is
-    currently shelved (see `docs/architecture.md`), pending a rewrite.
+    their own. Every such event goes through resolve (what happened) and
+    plan (what, if anything, follows from that), each via responder="host"
+    or "subagent" (see `config.event_responder`); an NPC-controlled
+    character's own event gets one more call first -- decide (see
+    `decide_event`), via `config.decide_responder()` -- so a fresh NPC
+    event typically means three pauses in a row rather than two before
+    the loop reaches the next one. A human-voiced character's own event,
+    and an ordinary base-module event, both stay at two.
 
     Call with neither argument to start (or continue after a prior call
     finished with nothing left scheduled). That, and every later call,
     returns either ``{"status": "done", "narration": ...}`` or
-    ``{"status": "input_required", "prompt": ..., "responder": "host" or
-    "subagent", "resume_token": ...}``. On the latter, decide what happens
+    ``{"status": "input_required", "prompt": ..., "step": "decide_event" or
+    "resolve_event" or "plan_events", "responder": "host" or "subagent",
+    "resume_token": ...}``. `step` says which of the two-or-three calls a
+    fresh/resumed event goes through (see this docstring's own paragraph
+    above) is actually asking -- so it doesn't have to be inferred purely
+    from `prompt`'s own wording. On the latter, decide what happens
     yourself if `responder` is "host", or follow `prompt`'s own instruction
     to delegate to an isolated subagent if it's "subagent" -- either way,
     record whatever you decide yourself via update_registry (there's no
@@ -713,7 +839,7 @@ async def advance_simulation(session, resume_token: str | None = None, answer: s
     """
     registrar = registrar_sessions.get_registrar(session)
     resume_alias, replay = _resolve_args(registrar, resume_token, answer)
-    alias, replay, prompt, responder, is_checkpoint = await _run_event_loop(
+    alias, replay, prompt, responder, is_checkpoint, origin = await _run_event_loop(
         registrar, session, resume_alias=resume_alias, replay=replay
     )
-    return _wrap_loop_result(registrar, alias, replay, prompt, responder, is_checkpoint)
+    return _wrap_loop_result(registrar, alias, replay, prompt, responder, is_checkpoint, origin)

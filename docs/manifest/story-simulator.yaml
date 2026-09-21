@@ -392,6 +392,611 @@ unsorted_requirements_and_solutions:
               - type: regression_risk
                 value: 0.1
         - work_state: in progress
+    character_aware_event_loop_reentry:
+        data:
+            - description: >
+                  Epic C (story-simulator#48) item 1: design how a
+                  character-aware branch re-enters _run_event_loop/
+                  process_event now that TurnReplay/NeedsExternalInput and
+                  the host/subagent responder split (#42) exist. The old
+                  _process_due_entity seam and the next_due-based
+                  spatial.pop_event scheduler it used to dispatch to
+                  (removed in 5a00660/b728efa) are both gone -- nothing
+                  below is a restoration, it's a fresh design against the
+                  current event-entity loop. Signed off; selected
+                  solutions are character_turn_is_its_own_event_type,
+                  perceive, decide_then_record_split, subagent_responder,
+                  and prompt_instructs_host_to_narrate_via_perceive. Epic
+                  C's file-restoration/re-wiring steps (checklist items
+                  2+) may now proceed against this design.
+            - requirement
+            - requirement_priority: 1
+            - impact:
+                  type: architecture_clarity
+                  value: 0.5
+            - work_state: done
+        entities_can_take_turns_via_the_event_model:
+            data:
+                - description: >
+                      A character/NPC needs a turn to become schedulable at
+                      all under today's event-entity model (event.start_time
+                      + event.duration, popped by end_time) -- the next_due
+                      component this used to run on no longer exists.
+                - requirement
+                - requirement_priority
+            character_turn_is_its_own_event_type:
+                - description: >
+                      A character's turn is an ordinary `event` entity like
+                      any other, linked to a `character` via
+                      involved_entity -- plan_events schedules the next one
+                      exactly like it schedules anything else. No second
+                      pop/scheduler: core.pop_event's existing
+                      soonest-end_time rule already covers it. Also
+                      introduces is_character_event(registrar, alias) --
+                      the predicate that answers "is this event a
+                      character's turn" -- since something has to exist
+                      before characters_cannot_modify_world_data_directly's
+                      own solutions (decide_then_record_split's
+                      process_event branch, fold_decide_into_resolve_event's
+                      resolve_event branch) can call it. Defined here
+                      rather than there because it's about what a
+                      character-flagged event *is*, this requirement's own
+                      question -- not about what happens once one is found,
+                      the sibling requirement's question.
+                - solution:
+                      selected: true
+                - pro: Zero changes to pop_event/is_event_valid/advance_clock.
+                - pro: >
+                      A character's turn advances the same world_clock
+                      every other event already does (see
+                      world_time_concept) instead of a separate cadence.
+                - con: >
+                      resolve_event's prompt is generic today; a
+                      character-flagged event needs its own prompt branch
+                      (see decide_then_record_split below).
+                - estimated_diff: >
+                      ~20 lines, core.py only -- plan_events prompt wording
+                      plus a small is_character_event(registrar, alias)
+                      helper (checks involved_entity for a character
+                      component). Additive, no removals; no new files.
+                - change:
+                      file: story_simulator/core.py
+                      change: >
+                          Add an is_character_event helper and extend
+                          plan_events' prompt to mention scheduling a
+                          character's own next turn.
+                      language: diff
+                      preview: |
+                          --- a/story_simulator/core.py
+                          +++ b/story_simulator/core.py
+                          @@ def is_event_valid(registrar: Registrar, alias: str) -> bool:
+                               return registrar.get_entity_id(alias) is not None
+
+                          +def is_character_event(registrar: Registrar, alias: str) -> bool:
+                          +    """True if `alias`'s event has an involved_entity carrying a
+                          +    `character` component -- this event IS that character's own
+                          +    turn, not an ordinary base-module event.
+                          +    """
+                          +    entity_id = registrar.get_entity_id(alias)
+                          +    if entity_id is None or "involved_entity" not in registrar.registry.component_types:
+                          +        return False
+                          +    involved = registrar.view_current("involved_entity.value").to_pandas()
+                          +    linked = set(involved[involved["entity_id"] == entity_id]["involved_entity.value"])
+                          +    if not linked or "character" not in registrar.registry.component_types:
+                          +        return False
+                          +    characters = set(registrar.get("character.interaction_type").to_pandas()["entity_id"])
+                          +    return bool(linked & characters)
+                          +
+                          +
+                           def advance_clock(registrar: Registrar, alias: str) -> float:
+
+                          @@ async def plan_events(alias: str, replay: TurnReplay, session) -> str:
+                               request = JudgmentRequest(
+                                   prompt=(
+                                       f"Given how {alias} just resolved, does anything new need to "
+                                       f"happen as a result? If so, create it now: one or more new "
+                                       f"event entities (their own start_time/duration/event_state/"
+                          -            f"involved_entity) via update_registry. If nothing follows "
+                          -            f"from this, just say so -- no new events needed."
+                          +            f"involved_entity) via update_registry -- including this "
+                          +            f"character's own next turn, if they have more to do this "
+                          +            f"scene: schedule it the same way, linked back via "
+                          +            f"involved_entity. If nothing follows from this, just say "
+                          +            f"so -- no new events needed."
+                                   ),
+                                   origin="plan_events",
+                               )
+                - work_state: done
+                - todo:
+                      value: >
+                          Landed slightly differently than this preview:
+                          is_character_event/character_in_event live in
+                          story_simulator/character.py -- a new module for
+                          anything dependent on being a character,
+                          separate from spatial.py's own position/
+                          distance/perception primitives (generic over
+                          any entity) -- not core.py, a better fit for
+                          core.py's own module-agnostic docstring.
+                          plan_events' reminder is also conditional on an
+                          actual character being
+                          found, not unconditional as shown here (a
+                          no-characters scenario's exact prompt text must
+                          stay unchanged). See PR for story-simulator#48.
+                      priority: 0.1
+            separate_character_pop_layered_on_core:
+                - description: >
+                      Bring back a spatial.pop_event-shaped function that
+                      prioritizes character entities, merged with
+                      core.pop_event the way the old up-front
+                      character_enabled branch did.
+                - solution
+                - con: >
+                      Reintroduces the two-scheduler complexity b728efa
+                      deleted on purpose -- no dispatch seam or
+                      enabled_modules() toggle exists to hang this on anymore.
+                - estimated_diff: >
+                      ~150+ lines across 4 files: restore next_due_entity/
+                      pop_event from shelved/spatial.py (~40 lines),
+                      a new merge-pop function plus branch in core.py/
+                      _run_event_loop (~40-60 lines), a re-added next_due
+                      component in manifest/builtins.yaml (~10 lines), and
+                      a replacement for the deleted enabled_modules() toggle
+                      in config.py (~10-20 lines). Largest diff of the
+                      entities_can_take_turns_via_the_event_model candidates.
+                - change:
+                      file: story_simulator/core.py
+                      change: >
+                          Add pop_next_alias (merges a restored,
+                          character-priority spatial.pop_event with
+                          core.pop_event) and branch _run_event_loop to use
+                          it. Also requires restoring next_due_entity/
+                          pop_event verbatim from shelved/spatial.py
+                          (~40 lines, not shown here) and re-adding a
+                          next_due component in manifest/builtins.yaml.
+                      language: diff
+                      preview: |
+                          --- a/story_simulator/core.py
+                          +++ b/story_simulator/core.py
+                          @@
+                          +def pop_next_alias(registrar: Registrar) -> str | None:
+                          +    """Merged pop: prefer a character due via the restored
+                          +    next_due-based spatial.pop_event, else fall back to
+                          +    core.pop_event's own soonest-end_time event rule.
+                          +    """
+                          +    from story_simulator import spatial  # restored from shelved/
+                          +
+                          +    character_alias = spatial.pop_event(registrar)
+                          +    if character_alias is not None:
+                          +        return character_alias
+                          +    return pop_event(registrar)
+                          +
+                          +
+                           async def _run_event_loop(
+                               registrar: Registrar,
+                               session,
+                          @@
+                               alias = resume_alias
+                               while True:
+                                   if alias is None:
+                          -            alias = pop_event(registrar)
+                          +            alias = pop_next_alias(registrar)
+                                       if alias is None:
+                                           return None, None, "Nothing scheduled.", None, False
+                - work_state: new
+        characters_cannot_modify_world_data_directly:
+            data:
+                - description: >
+                      Traces to Epic B's folded-in npc_authority_separation
+                      (story-simulator#48's own body), generalized to cover
+                      every character, not just NPCs: whatever surfaces a
+                      character's stated intent -- an NPC's own autonomous
+                      judgment call, or a human-voiced character's typed
+                      action -- must not itself be able to modify world
+                      data. That decide-shaped phase (its exact mechanism
+                      is a solution-level choice below, not fixed by this
+                      requirement -- we don't yet know if it'll actually
+                      take the shape of a dedicated "decide step") stays
+                      perceive-scoped and tool-free; a separate
+                      resolve+record step is the only one with
+                      update_registry access, applied the same way
+                      whether the character behind it is an NPC or a
+                      human player -- neither gets to write world state
+                      merely by describing what they want to do.
+                - requirement
+                - requirement_priority: 1
+            decide_then_record_split:
+                - description: >
+                      process_event gains a decide_event box, run first for
+                      any character-flagged event -- NPC or human-voiced
+                      alike: a perception-only, tool-free JudgmentRequest
+                      (an NPC's own judgment call, or simply relaying a
+                      human player's typed action -- same shape either
+                      way, using perception helpers ported from
+                      shelved/spatial.py where the answer comes from an
+                      autonomous judgment call) whose answer feeds into
+                      resolve_event's own prompt -- resolve_event is the
+                      one call that actually has write authority to record
+                      it. One mechanism serving every kind of character,
+                      not an NPC-only special case. A third JudgmentRequest
+                      per turn, same TurnReplay/NeedsExternalInput
+                      mechanism resolve_event/plan_events already use.
+                - solution:
+                      selected: true
+                - pro: Only additive to existing resume/replay plumbing -- no new mechanism.
+                - pro: Matches Epic B's "restricted then broader" ordering directly.
+                - con: >
+                      Same as the open TODO on "subagent" in
+                      _frame_for_responder -- "don't call update_registry"
+                      is a prompt instruction, not an enforced restriction.
+                - estimated_diff: >
+                      ~150-180 lines across 2-3 files: a new decide_event
+                      function in core.py (~30-40 lines, builds the
+                      perception-only JudgmentRequest and calls it ahead of
+                      resolve_event), a conditional branch in process_event
+                      wiring decide_event's answer into resolve_event's own
+                      prompt (~10-15 lines), and perception helpers
+                      (entities_within/perceptible_entities/
+                      entity_descriptions) ported and trimmed from
+                      shelved/spatial.py into a restored, perception-only
+                      module (~80-100 lines). No changes to resolve.py --
+                      reuses TurnReplay/NeedsExternalInput as-is.
+                - change:
+                      file: story_simulator/core.py
+                      change: >
+                          Add decide_event (a perception-only, tool-free
+                          JudgmentRequest), thread its answer into
+                          resolve_event via a new decision kwarg, and call
+                          it from process_event for character-flagged events.
+                      language: diff
+                      preview: |
+                          --- a/story_simulator/core.py
+                          +++ b/story_simulator/core.py
+                          @@
+                          +async def decide_event(alias: str, replay: TurnReplay, session) -> str | None:
+                          +    """Decide box: for a character-flagged event only, ask a
+                          +    perception-only, tool-free judgment call what `alias` does --
+                          +    no update_registry access, unlike every other call in this
+                          +    loop. Returns None for a non-character event.
+                          +    """
+                          +    request = JudgmentRequest(
+                          +        prompt=(
+                          +            f"You are {alias}, deciding what to do next. Base this "
+                          +            f"only on what {alias} would perceive (view_entity on "
+                          +            f"{alias}'s own position and nearby entities) -- do not "
+                          +            f"read anything {alias} couldn't know. Describe the "
+                          +            f"action in plain text. Do NOT call update_registry here "
+                          +            f"-- this step only decides; resolve_event, next, is the "
+                          +            f"one with real write authority."
+                          +        ),
+                          +        origin="decide_event",
+                          +    )
+                          +    return await replay.resolve(request, responder=event_responder(), session=session)
+                          +
+                          +
+                           async def resolve_event(
+                          -    alias: str, replay: TurnReplay, end_time: float, session
+                          +    alias: str, replay: TurnReplay, end_time: float, session, decision: str | None = None
+                           ) -> str:
+                               request = JudgmentRequest(
+                                   prompt=(
+                                       f"{alias}'s end_time (world time {end_time:g}) has been "
+                                       f"reached. Nothing else with an earlier end_time is still "
+                                       f"unresolved -- ..."
+                          +            + (
+                          +                f"\n\n{alias} already decided what to do: {decision!r} "
+                          +                f"-- record that decision's consequences now, don't "
+                          +                f"re-decide it." if decision else ""
+                          +            )
+                                   ),
+                                   origin="resolve_event",
+                               )
+                               return await replay.resolve(request, responder=event_responder(), session=session)
+
+                           async def process_event(registrar: Registrar, alias: str, replay: TurnReplay, session) -> tuple[str, str]:
+                               end_time = advance_clock(registrar, alias)
+                               registrar.update(
+                                   yaml_strings={SOURCE_KEY: f"{WORLD_CLOCK_ALIAS}:\n    - world_clock:\n        value: {end_time}\n"},
+                               )
+                          -    resolve_narration = await resolve_event(alias, replay, end_time, session)
+                          +    decision = await decide_event(alias, replay, session) if is_character_event(registrar, alias) else None
+                          +    resolve_narration = await resolve_event(alias, replay, end_time, session, decision=decision)
+                               plan_narration = await plan_events(alias, replay, session)
+                               return resolve_narration, plan_narration
+                - work_state: done
+                - todo:
+                      value: >
+                          decide_event only fires for an NPC-controlled
+                          character specifically (character_interaction_type
+                          == "npc"), not any character-flagged event as
+                          this preview's boolean is_character_event
+                          implied -- a human-voiced character's own event
+                          skips straight to resolve_event, since their
+                          action is already known from the conversation.
+                          decide_event also takes registrar directly
+                          (needed to build its perceive-scoped prompt),
+                          which this preview omitted. Lives in
+                          story_simulator/character.py, not core.py --
+                          alongside every other character-dependent
+                          function (character_in_event,
+                          character_interaction_type, narrate_to_character,
+                          memory), so core.py's own docstring can keep
+                          promising it works with no character concept at
+                          all active.
+                      priority: 0.1
+            fold_decide_into_resolve_event:
+                - description: >
+                      Treat the character-scoped, perception-only framing
+                      (NPC or human-voiced alike) as part of a single
+                      resolve_event call instead of a separate step.
+                - solution
+                - con: >
+                      Doesn't separate authority at all -- one call, one
+                      responder turn, full update_registry access
+                      throughout. Fails the requirement outright.
+                - estimated_diff: >
+                      ~15 lines, core.py only -- a conditional branch in
+                      resolve_event's prompt-building for character-flagged
+                      events. Smallest diff of the three candidates here,
+                      proportional to how little it actually solves.
+                - change:
+                      file: story_simulator/core.py
+                      change: >
+                          Branch resolve_event's own prompt-building inline
+                          for character-flagged events, instead of adding a
+                          separate decide_event step.
+                      language: diff
+                      preview: |
+                          --- a/story_simulator/core.py
+                          +++ b/story_simulator/core.py
+                          @@ async def resolve_event(alias: str, replay: TurnReplay, end_time: float, session) -> str:
+                          +    # NOTE: needs `registrar` threaded in to call is_character_event --
+                          +    # resolve_event doesn't take it today. Already a sign this option
+                          +    # doesn't stay as clean as it first looks.
+                               request = JudgmentRequest(
+                                   prompt=(
+                                       f"{alias}'s end_time (world time {end_time:g}) has been "
+                                       f"reached. "
+                          +            + (
+                          +                f"Decide what {alias} does, based only on what they'd "
+                          +                f"perceive, then record it -- this one call covers "
+                          +                f"both the decision and the write. "
+                          +                if is_character_event(registrar, alias) else ""
+                          +            )
+                                       f"..."
+                                   ),
+                                   origin="resolve_event",
+                               )
+                               return await replay.resolve(request, responder=event_responder(), session=session)
+                - work_state: new
+            enforce_via_tool_allowlist:
+                - description: >
+                      Give any character's decide-shaped responder turn
+                      (NPC or human-voiced) a genuinely restricted MCP tool
+                      set (no update_registry exposed at all), the way
+                      perceive used to be a read-only tool. Needs
+                      session-scoped, per-call tool-visibility control in
+                      mcp_server.py -- doesn't exist yet, and isn't an
+                      actual entity to point a dependence relation at
+                      (dependence.value is entity_ref-typed; a
+                      not-yet-built mechanism has nothing real to
+                      resolve to).
+                - solution
+                - pro: >
+                      Real enforcement instead of trust-based -- closes the
+                      same gap resolve.py's own TODO already names for "subagent".
+                - con: >
+                      Bigger surface change with no precedent in this
+                      codebase for scoping tool visibility per judgment
+                      call. Worth its own follow-up issue, not a blocker here.
+                - estimated_diff: >
+                      ~200+ lines across 3+ files: a per-call allowed-tools
+                      concept threaded through TurnReplay/NeedsExternalInput
+                      (resolve.py, ~40-60 lines), enforcement at the MCP
+                      boundary in mcp_server.py (dynamic tool
+                      registration/visibility per turn, ~80-120 lines), plus
+                      new tests covering the restriction actually holds.
+                      Largest and riskiest diff of any candidate in this
+                      tree -- consistent with being tracked as a follow-up
+                      rather than part of this design.
+                - change:
+                      file: story_simulator/resolve.py
+                      change: >
+                          SPECULATIVE -- add an allowed_tools field to
+                          TurnReplay. Inert on its own; no enforcement
+                          mechanism reads it yet.
+                      language: diff
+                      preview: |
+                          --- a/story_simulator/resolve.py
+                          +++ b/story_simulator/resolve.py
+                          @@ class TurnReplay:
+                               answers: list[str] = field(default_factory=list)
+                               call_index: int = field(default=0, init=False)
+                               deadline: float | None = None
+                          +    # SPECULATIVE -- no enforcement mechanism exists at the MCP
+                          +    # boundary today; this field alone changes nothing on its own.
+                          +    allowed_tools: frozenset[str] | None = None
+                - change:
+                      file: story_simulator/mcp_server.py
+                      change: >
+                          SPECULATIVE -- FastMCP has no per-call
+                          tool-visibility hook today; sketch only, not
+                          achievable without new plumbing at this boundary.
+                      language: diff
+                      preview: |
+                          --- a/story_simulator/mcp_server.py
+                          +++ b/story_simulator/mcp_server.py
+                          @@
+                          +# SPECULATIVE -- FastMCP has no per-call tool-visibility hook today.
+                          +# Sketch only, not achievable without new plumbing at this boundary:
+                          +#
+                          +#   if replay.allowed_tools is not None:
+                          +#       server.restrict_tools_for_session(session, replay.allowed_tools)
+                - work_state: new
+        available_context_depends_on_viewer:
+            data:
+                - description: >
+                      What context a decision-maker gets access to when
+                      deciding a character's action depends on who's
+                      behind that character -- an NPC's autonomous
+                      judgment call and a human player's own narration are
+                      two distinct context-restriction problems (who
+                      answers), and both draw on a third, shared one: what
+                      a character can actually perceive must itself be a
+                      real, computed restriction, not assumed or left to
+                      prompt trust.
+                - requirement
+                - requirement_priority: 1
+            npc_context_is_restricted:
+                data:
+                    - description: >
+                          An NPC's decide-phase judgment call must run
+                          with only the context an autonomous
+                          decision-maker should have -- not the full
+                          conversation/registry context a
+                          human-narrating host otherwise carries.
+                    - requirement
+                    - requirement_priority: 1
+                subagent_responder:
+                    - description: >
+                          decide_event asks via responder="subagent": the
+                          connected host is asked to delegate to its own
+                          isolated subagent mechanism (e.g. Claude Code's
+                          Agent/Task tool) rather than answering inline.
+                          Verified live in this design session -- a
+                          freshly-spawned subagent asked to guess a color
+                          it was never told had no way to know it and
+                          guessed wrong, confirming genuine isolation from
+                          the parent conversation's context.
+                    - solution:
+                          selected: true
+                    - pro: >
+                          No dedicated API key or model config needed --
+                          rides on whatever subagent mechanism the
+                          connected host already has, unlike
+                          keyed_subagent_responder.
+                    - pro: Genuine context isolation, not just claimed -- confirmed live.
+                    - con: >
+                          Trust-based, not enforced: nothing verifies the
+                          host actually delegated rather than answering
+                          inline (open TODO in resolve.py's
+                          _frame_for_responder).
+                    - work_state: done
+                keyed_subagent_responder:
+                    - description: >
+                          decide_event asks via responder="keyed_subagent":
+                          answered in-process via
+                          story_simulator.keyed_subagent.call_keyed_subagent,
+                          with its own model call (LiteLLM, DeepSeek by
+                          default) and real registry tool access.
+                    - solution
+                    - con: >
+                          Requires a dedicated API key/model configured
+                          for keyed_subagent -- not every deployment or
+                          user has one set up. A crippling con: this
+                          solution simply doesn't work at all without it,
+                          unlike subagent_responder's softer, still-open
+                          trust-verification gap.
+                    - work_state: new
+            human_context_is_restricted:
+                data:
+                    - description: >
+                          A human-voiced character's own narration is also
+                          bounded by what that character would actually
+                          know or perceive, not full registry omniscience
+                          just because a human is behind it. Sibling to
+                          npc_context_is_restricted under the same
+                          available_context_depends_on_viewer requirement.
+                    - requirement
+                    - requirement_priority: 0.6
+                prompt_instructs_host_to_narrate_via_perceive:
+                    - description: >
+                          The MCP server's own instructions (and
+                          resolve_event's per-turn prompt) explicitly tell
+                          the host to ground anything it tells a human
+                          player about their character's surroundings or
+                          an event's outcome in perceive's own bounded
+                          view (character_context_is_restricted's
+                          solution) -- never in full view_registry/
+                          view_entity omniscience -- when narrating on
+                          that player's behalf.
+                    - solution:
+                          selected: true
+                    - pro: >
+                          No new mechanism -- reuses the same perceive
+                          substrate character_context_is_restricted
+                          already established, just applied to human
+                          narration too instead of only NPC decide steps.
+                    - con: >
+                          Purely prompt-enforced, same as every other
+                          trust-based solution in this tree (decide_then_record_split,
+                          subagent_responder) -- a weak or careless host
+                          can still narrate metagame information nothing
+                          in the mechanism actually blocks.
+                    - work_state: done
+                no_special_case_for_humans:
+                    - description: >
+                          Leave human narration unrestricted -- rely
+                          entirely on the connected host/player's own
+                          good-faith roleplay to self-limit metagame
+                          knowledge, with no stated instruction at all.
+                    - solution
+                    - con: >
+                          Weaker than even a trust-based instruction: not
+                          even asked for, just assumed. Kept here as the
+                          baseline this tree is choosing not to accept.
+                    - work_state: new
+            character_context_is_restricted:
+                data:
+                    - description: >
+                          A character's perceptible view of the world must
+                          be an actual, computed restriction -- not
+                          assumed, and not left to prompt trust alone.
+                          Shared substrate underneath both
+                          npc_context_is_restricted and
+                          human_context_is_restricted: whichever responder
+                          answers for a character (subagent_responder,
+                          keyed_subagent_responder, or a human's own
+                          narration), it needs real perceptible-entities
+                          data to reason from, not just an instruction to
+                          pretend it doesn't know things.
+                    - requirement
+                    - requirement_priority: 1
+                perceive:
+                    - description: >
+                          The old perceive mechanism (spatial.py's
+                          perceptible_entities/entities_within): a
+                          relational query -- left join between positions
+                          and sizes, then filtered by a per-entity
+                          visibility distance computed from each
+                          candidate's own size component, not a single
+                          flat cutoff. Tags results active (replacing
+                          whatever was previously active) and permanently
+                          merges them into the viewing character's memory.
+                          Feeds the decide phase's actual bounded content,
+                          regardless of which responder answers it.
+                    - solution:
+                          selected: true
+                    - work_state: done
+        perceive_and_reaction_stay_event_scheduled:
+            - description: >
+                  Dropped from this design's own requirement tree: perceive
+                  and advance_npc_turn were briefly considered for
+                  standalone, out-of-loop MCP-tool exposure (so a host
+                  could force them ahead of the event queue's own
+                  soonest-end_time ordering), but that's the wrong shape --
+                  perception and an NPC's reaction are themselves events,
+                  driven by their own reaction-time duration, scheduled and
+                  popped the same way as anything else
+                  (entities_can_take_turns_via_the_event_model). No
+                  standalone tool surface, no out-of-band forcing.
+            - todo:
+                  value: >
+                      If reaction-time-as-an-ordinary-event turns out not
+                      to give the host enough narrative control in
+                      practice, reconsider exposing perceive/
+                      advance_npc_turn as standalone, out-of-loop MCP
+                      tools after all.
+                  priority: 0.2
     live_model_test_coverage:
         - description: >
               generate_terrain/resolve_physics/advance_npc_turn's actual LLM

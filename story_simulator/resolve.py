@@ -163,13 +163,17 @@ def _frame_for_responder(request: JudgmentRequest, responder: str) -> str:
             "own answer.\n\n" + body
         )
     if responder == "host":
-        # Framed as "decide it yourself" rather than naming a role (e.g.
-        # "orchestrator") this call expects but can't actually confirm.
+        # Framed as "nothing else this is routed to" rather than naming a
+        # role (e.g. "orchestrator", "narrator") this call expects but
+        # can't actually confirm -- and rather than enumerating examples
+        # of what might be involved (a player's own character, an NPC, an
+        # ordinary base-module entity), which read as a list of roles to
+        # pick from rather than the plain fact that no one else is coming.
         return (
-            "Decide the answer yourself, standing in for whichever role "
-            "this call needs (a player's own absent character, an NPC, a "
-            "base-module entity whose end_time has been reached, ...) -- "
-            "don't wait for input and don't hand this off.\n\n" + body
+            "Decide this yourself, right now, from your own context and "
+            "whatever you look up below -- there's no human player or "
+            "subagent this has been routed to, so don't wait for further "
+            "input and don't hand it off.\n\n" + body
         )
     raise ValueError(f"unknown responder {responder!r}")
 

@@ -53,6 +53,14 @@ class TestMcpToolRegistration:
         assert tools["view_entity"].description == _registrar_sessions.view_entity.__doc__
         assert tools["update_registry"].description == _registrar_sessions.update_registry.__doc__
 
+    def test_start_world_and_advance_simulation_descriptions_come_from_core(self):
+        """Passed explicitly as `description=core.<name>.__doc__` at
+        `@server.tool()` registration time -- the wrapper functions below
+        carry no docstring of their own to drift out of sync with core.py's."""
+        tools = {t.name: t for t in server._tool_manager.list_tools()}
+        assert tools["start_world"].description == core.start_world.__doc__
+        assert tools["advance_simulation"].description == core.advance_simulation.__doc__
+
 
 # start_world
 
@@ -76,7 +84,7 @@ class TestStartWorld:
         start_world(str(tmp_path / "save"), ctx, scenario_dir=str(LIVING_WORLD_DIR))
         registrar = _registrar_sessions.get_registrar(ctx.request_context.session)
         positions = registrar.view("position").to_pandas()
-        assert "journaling_desk.journal" in positions["entity_id.alias"].values
+        assert "journaling_desk.journal" in positions["entity_id.display_alias"].values
 
     def test_stores_registrar_and_save_dir_for_session(self, tmp_path):
         ctx = _make_ctx()

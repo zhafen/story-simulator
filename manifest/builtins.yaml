@@ -127,6 +127,7 @@ character_components:
             alongside `active`, but unlike `active`, never removed once
             written — a character's memory only grows. Scopes what
             `advance_npc_turn` tells that NPC's decision-making call about.
+        - component_type
         - parent: directed_relation
         - field:
             value:
@@ -137,6 +138,7 @@ character_components:
             A freeform statement of what the owning character wants to do or
             achieve. Read by `advance_npc_turn` to prompt that character's
             decision-making call each turn. Player characters don't need one.
+        - component_type
         - parent: str
         - field:
             value:
@@ -216,6 +218,7 @@ event_components:
             value -- who or what it concerns, acts on, or needs in order
             to be interpreted. An event can carry several
             involved_entity rows, one per entity it involves.
+        - component_type
         - parent: directed_relation
         - field:
             value:

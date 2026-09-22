@@ -9,10 +9,11 @@ file_info:
           table can drive a cost-vs-impact read on what to work on next.
 
           Deliberately kept under docs/, not manifest/ (=
-          story_simulator.config.MANIFEST_DIR): that directory is passed as
-          input_dirs to every registrar.update() call, so anything under it
-          is merged as data into every live game world's registry, not just
-          used for schema. History that isn't itself a requirement lives in
+          story_simulator.config.MANIFEST_DIR): that directory is registered
+          via emc2p's register_builtins_dir (see story_simulator/__init__.py),
+          so anything under it is merged as data into every live game
+          world's registry, not just used for schema. History that isn't
+          itself a requirement lives in
           history.yaml, kept separate so it isn't scanned in as part of
           assessing requirements.
 

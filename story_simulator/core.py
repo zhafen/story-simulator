@@ -35,7 +35,6 @@ from emc2p.registrar import Registrar
 
 from story_simulator.config import (
     DEFAULT_WORLD_DIR,
-    MANIFEST_DIR,
     event_responder,
     keyed_subagent_time_budget_seconds,
     registry_schema_name,
@@ -775,14 +774,17 @@ def start_world(
         if found:
             # Merged as one SOURCE_KEY-keyed string, not passed as input_dirs
             # -- see SOURCE_KEY's comment for why every write shares one key.
+            # MANIFEST_DIR itself isn't passed here -- story_simulator's own
+            # __init__.py registers it via register_builtins_dir, so every
+            # update()/from_manifest() call already includes it.
             seed_text = "\n".join(f.read_text() for f in found)
-            registrar.update(
-                input_dirs=[str(MANIFEST_DIR)], yaml_strings={SOURCE_KEY: seed_text}
-            )
+            registrar.update(yaml_strings={SOURCE_KEY: seed_text})
 
-    # Declares the manifest's own component-type schemas (location, event,
-    # ...) regardless of whether this save was fresh, resumed, or already declared.
-    registrar.update(input_dirs=[str(MANIFEST_DIR)])
+    # (Re)declares the manifest's own component-type schemas (location,
+    # event, ...) regardless of whether this save was fresh, resumed, or
+    # already declared -- no input_dirs needed, register_builtins_dir
+    # already includes MANIFEST_DIR in every update() call.
+    registrar.update()
 
     registrar_sessions.set_registrar(
         session, registrar, export_dir=save_dir_path, client_trace_path=client_trace_path

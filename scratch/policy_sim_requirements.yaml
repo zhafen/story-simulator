@@ -1,0 +1,29 @@
+# Decision analysis: how a friend's LLM-driven simulator should relate to
+# story-simulator/emc2p.
+
+policy_sim_requirements:
+    - description: >
+          What the friend's LLM-engine simulator needs. To be filled in.
+    - requirement
+
+full_rewrite:
+    - description: >
+          Write a new simulator from scratch, borrowing only ideas and lessons.
+    - solution of: policy_sim_requirements
+
+use_story_sim_as_is:
+    - description: >
+          Adopt story-simulator (and its emc2p dependency) in its current form.
+    - solution of: policy_sim_requirements
+
+shared_lightweight_framework:
+    - description: >
+          Refactor a lightweight simulation framework out of story-simulator,
+          used by both projects, without an emc2p dependency.
+    - solution of: policy_sim_requirements
+
+shared_lightweight_framework_with_emc2p:
+    - description: >
+          Same as shared_lightweight_framework, but the framework depends on
+          emc2p for state storage.
+    - solution of: policy_sim_requirements

@@ -26,10 +26,14 @@ Figures should be re-checked before anyone relies on them.
     [arXiv:2504.16946](https://arxiv.org/pdf/2504.16946)
   - [Scheduler-theoretic framework for agent execution (arXiv:2604.11378)](https://arxiv.org/html/2604.11378v1)
   - [AsyncLLM (arXiv:2609.35427)](https://arxiv.org/html/2609.35427v1)
-- **Gap:** I found no published system that pairs a DES event queue with
-  an LLM resolving each event, which is what story-sim's `pop_event` →
-  resolve → plan loop does. That is either a niche worth having or a sign
-  of little demand.
+- **Correction to an earlier claim:** Concordia's main branch (code
+  newer than its 2.4.0 release) has an interrupt-driven Game Master (GM).
+  It keeps a sorted queue of timestamped events and timers, and each entity
+  filters which events reach it with an interrupt mask
+  (`components/game_master/interrupt_scheduling.py`,
+  `interrupt_time_model.py`). That is an event queue with LLM resolution,
+  close to story-sim's `pop_event` → resolve → plan loop. So the pattern
+  isn't unique to story-sim, but it is still very new.
 
 ## 2. Using LLMs to predict outcomes
 
@@ -106,8 +110,6 @@ Surveys and method papers:
 frameworks already exist. Concordia in particular overlaps with ideas in
 story-sim and emc2p: entities and components, and a Game Master that
 resolves actions. What story-sim adds that I didn't find elsewhere:
-- an explicit event queue with world time, so the simulation runs
-  event-based rather than in fixed steps
 - world state that persists in a database, with full history
 - an MCP tool surface, so any connected agent can act as the engine
 

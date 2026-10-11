@@ -1,6 +1,26 @@
 # Decision analysis: how a friend's LLM-driven simulator should relate to
 # story-simulator/emc2p.
 
+llm_engine_sim_requirements:
+    data:
+        - description: >
+              What a simulator built on an LLM engine needs, whichever
+              project it is.
+        - requirement
+    supports_key_simulation_types:
+        data:
+            - description: >
+                  Supports the kinds of simulation we care about.
+            - requirement
+        story_sim:
+            data:
+                - description: Interactive story simulation, as story-simulator does now.
+                - requirement
+        policy_sim:
+            data:
+                - description: Policy-outcome simulation, as the friend wants.
+                - requirement
+
 policy_sim_requirements:
     - description: >
           What the friend's LLM-engine simulator needs. To be filled in.

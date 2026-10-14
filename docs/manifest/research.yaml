@@ -1,9 +1,8 @@
 file_info:
     - description: >
-          Literature review (converted from scratch/literature_review.md) for llm_engine_sim_requirements (see
-          scratch/policy_sim_requirements.yaml). First pass (2026-10), built
-          from search summaries and abstracts, not full texts -- re-check
-          figures before relying on them. Kept in its own file, like
+          Literature review on building a simulator with an LLM engine.
+          First pass (2026-10), built from search summaries and abstracts,
+          not full texts -- re-check figures before relying on them. Kept in its own file, like
           history.yaml, so it isn't scanned in when assessing requirements.
     - file_info
 
@@ -22,7 +21,7 @@ literature_review:
     data:
         - description: >
               How existing work bears on building a simulator with an LLM
-              engine, for story_sim and policy_sim alike.
+              engine, for story and policy simulations alike.
     event_based_simulations:
         data:
             - description: Current status of event-based simulations.
@@ -159,9 +158,9 @@ literature_review:
             - reference:
                   title: Robustness audits for LLM social sims (arXiv:2605.18890)
                   url: https://arxiv.org/pdf/2605.18890
-        policy_sim_takeaway:
+        policy_simulation_takeaway:
             - description: >
-                  For policy_sim, treat LLM output as plausible scenarios,
+                  For policy simulations, treat LLM output as plausible scenarios,
                   not predictions: report across many runs and prompt
                   variants, and backtest against past policies where
                   possible.

@@ -1,0 +1,264 @@
+file_info:
+    - description: >
+          Literature review on building a simulator with an LLM engine.
+          First pass (2026-10), built from search summaries and abstracts,
+          not full texts -- re-check figures before relying on them. Kept in its own file, like
+          history.yaml, so it isn't scanned in when assessing requirements.
+    - file_info
+
+reference:
+    - description: An external source (paper, repo, post) backing an entity's claims.
+    - component_type
+    - field:
+        url:
+            description: Link to the source.
+            type: str
+        title:
+            description: Short human-readable name for the source.
+            type: str
+
+literature_review:
+    data:
+        - description: >
+              How existing work bears on building a simulator with an LLM
+              engine, for story and policy simulations alike.
+    event_based_simulations:
+        data:
+            - description: Current status of event-based simulations.
+        classic_des_is_mature:
+            - description: >
+                  Classic discrete-event simulation (DES) is mature and
+                  stable. SimPy is the default choice in Python;
+                  SerializableSimpy adds checkpoint/restart, close to
+                  story-sim's pause/persist/resume pattern.
+            - reference:
+                  title: List of DES software
+                  url: https://en.wikipedia.org/wiki/List_of_discrete_event_simulation_software
+            - reference:
+                  title: Intro to DES with SimPy (arXiv:2405.01562)
+                  url: https://arxiv.org/pdf/2405.01562
+            - reference:
+                  title: SerializableSimpy (JOSS)
+                  url: https://joss.theoj.org/papers/10.21105/joss.08502.pdf
+        llms_write_des_models:
+            - description: LLMs are used to write DES models, not to run them.
+            - reference:
+                  title: SimLLM (arXiv:2601.06543)
+                  url: https://arxiv.org/html/2601.06543
+            - reference:
+                  title: Image to verifiable queueing model (arXiv:2607.24259)
+                  url: https://arxiv.org/pdf/2607.24259
+            - reference:
+                  title: llm_simpy (code)
+                  url: https://github.com/pythonhealthdatascience/llm_simpy
+        agent_sims_mostly_time_stepped:
+            - description: >
+                  LLM agent simulations mostly use fixed time steps.
+                  Event-driven or out-of-order scheduling appears mainly to
+                  cut and parallelize LLM calls (AI Metropolis: 1.3-4.15x
+                  speedups; MobileCity: per-agent clocks, batched calls).
+            - reference:
+                  title: AI Metropolis (MLSys 2025)
+                  url: https://proceedings.mlsys.org/paper_files/paper/2025/file/4f31327e046913c7238d5b671f5d820e-Paper-Conference.pdf
+            - reference:
+                  title: MobileCity (arXiv:2504.16946)
+                  url: https://arxiv.org/pdf/2504.16946
+            - reference:
+                  title: Scheduler-theoretic framework for agent execution (arXiv:2604.11378)
+                  url: https://arxiv.org/html/2604.11378v1
+            - reference:
+                  title: AsyncLLM (arXiv:2609.35427)
+                  url: https://arxiv.org/html/2609.35427v1
+        concordia_has_event_queue:
+            - description: >
+                  Concordia's main branch (newer than its 2.4.0 release) has
+                  an interrupt-driven Game Master: a sorted queue of
+                  timestamped events and timers, with per-entity interrupt
+                  masks. Close to story-sim's pop_event -> resolve -> plan
+                  loop, so the pattern isn't unique to story-sim.
+            - reference:
+                  title: interrupt_scheduling.py
+                  url: https://github.com/google-deepmind/concordia/blob/main/concordia/components/game_master/interrupt_scheduling.py
+    predicting_outcomes:
+        data:
+            - description: Using LLMs to predict outcomes.
+        forecasting_near_superforecasters:
+            - description: >
+                  On real-world forecasting, LLMs are roughly at
+                  superforecaster level (ForecastBench parity per FRI's July
+                  2026 leaderboard, extrapolated from 2024 human forecasts),
+                  but still don't beat betting markets.
+            - reference:
+                  title: ForecastBench (arXiv:2409.19839)
+                  url: https://www.alphaxiv.org/abs/2409.19839
+            - reference:
+                  title: FRI parity post
+                  url: https://forecastingresearch.substack.com/p/ai-models-have-likely-reached-parity
+            - reference:
+                  title: AIA Forecaster (arXiv:2511.07678)
+                  url: https://arxiv.org/pdf/2511.07678
+            - reference:
+                  title: LLMs vs. expert forecasters (arXiv:2507.04562)
+                  url: https://arxiv.org/pdf/2507.04562
+            - reference:
+                  title: World Cup forecasting agents (arXiv:2607.17765)
+                  url: https://arxiv.org/pdf/2607.17765
+            - reference:
+                  title: Forecasting agents survey (arXiv:2608.23058)
+                  url: https://arxiv.org/pdf/2608.23058
+        silicon_samples_aggregate_not_individual:
+            - description: >
+                  "Silicon samples" predict aggregate experiment effects well
+                  (Hewitt et al.: r~0.91 across 70 experiments) but
+                  individuals and identity-sensitive subgroups poorly, and
+                  are prompt-sensitive.
+            - reference:
+                  title: Evaluating silicon sampling
+                  url: https://openaccess.cms-conferences.org/publications/book/978-1-964867-73-1/article/978-1-964867-73-1_45
+            - reference:
+                  title: Silicon sampling via cross-survey transfer (arXiv:2607.03091)
+                  url: https://arxiv.org/pdf/2607.03091
+            - reference:
+                  title: Identifying non-replicable studies (arXiv:2503.10671)
+                  url: https://arxiv.org/pdf/2503.10671
+            - reference:
+                  title: Evaluating LLMs as survey respondents (arXiv:2509.26080)
+                  url: https://arxiv.org/pdf/2509.26080
+        world_simulation_errors_compound:
+            - description: >
+                  As step-by-step world simulators LLMs are unreliable and
+                  errors compound: GPT-4 gets 59.9% of non-trivial text-game
+                  state transitions right, 49.7% for environment-driven ones.
+            - reference:
+                  title: Can LMs serve as text-based world simulators? (ACL 2024)
+                  url: https://aclanthology.org/2024.acl-short.1/
+            - reference:
+                  title: RLVR-World (arXiv:2505.13934)
+                  url: https://arxiv.org/pdf/2505.13934
+            - reference:
+                  title: LLMs struggle to simulate belief updates (arXiv:2607.28347)
+                  url: https://arxiv.org/pdf/2607.28347
+        policy_sims_unvalidated:
+            - description: >
+                  Policy, crisis and wargame simulations show rich behavior
+                  but aren't validated: LLMs escalate in neutral scenarios,
+                  differ from human experts, and attempt deception.
+            - reference:
+                  title: Escalation risks (arXiv:2401.03408)
+                  url: https://arxiv.org/pdf/2401.03408
+            - reference:
+                  title: Human vs. machine wargames (arXiv:2403.03407)
+                  url: https://arxiv.org/pdf/2403.03407
+            - reference:
+                  title: Nuclear crisis simulation (arXiv:2602.14740)
+                  url: https://arxiv.org/pdf/2602.14740
+            - reference:
+                  title: Safety cases for LLM wargames (arXiv:2609.16189)
+                  url: https://arxiv.org/pdf/2609.16189
+            - reference:
+                  title: Robustness audits for LLM social sims (arXiv:2605.18890)
+                  url: https://arxiv.org/pdf/2605.18890
+        policy_simulation_takeaway:
+            - description: >
+                  For policy simulations, treat LLM output as plausible scenarios,
+                  not predictions: report across many runs and prompt
+                  variants, and backtest against past policies where
+                  possible.
+    llm_engine_simulations:
+        data:
+            - description: >
+                  Simulations that use LLMs as an engine. Several mature,
+                  permissive frameworks exist; compare every option against
+                  building on Concordia. story-sim's remaining distinct
+                  pieces are database-persisted state with full history and
+                  an MCP tool surface.
+        concordia:
+            - description: >
+                  DeepMind's generative agent-based modeling library
+                  (Apache-2.0, ~1.8k stars). Entities built from components,
+                  a tabletop-style Game Master, sequential/simultaneous/
+                  async engines. State is a free-text dict plus memory;
+                  no built-in statistical behavior testing.
+            - reference:
+                  title: Code
+                  url: https://github.com/google-deepmind/concordia
+            - reference:
+                  title: Concordia paper (arXiv:2312.03664)
+                  url: https://arxiv.org/abs/2312.03664
+            - reference:
+                  title: Game-engine follow-up (arXiv:2507.08892)
+                  url: https://arxiv.org/abs/2507.08892
+        tinytroupe:
+            - description: Microsoft's persona simulation for business insight (~7.5k stars).
+            - reference:
+                  title: Code
+                  url: https://github.com/microsoft/TinyTroupe
+        agentsociety:
+            - description: Large-scale urban/social simulation for social science (~1.3k stars).
+            - reference:
+                  title: Code
+                  url: https://github.com/tsinghua-fib-lab/agentsociety/
+            - reference:
+                  title: Paper (arXiv:2502.08691)
+                  url: https://arxiv.org/abs/2502.08691
+        oasis:
+            - description: CAMEL-AI's social media simulation with up to 1M agents.
+            - reference:
+                  title: Code (official repo is camel-ai/oasis)
+                  url: https://github.com/camel-ai/oasis
+        yulan_onesim:
+            - description: Social simulator with natural-language scenario building; distributed.
+            - reference:
+                  title: Paper (arXiv:2505.07581)
+                  url: https://arxiv.org/abs/2505.07581
+        econagent:
+            - description: LLM agents simulating macroeconomies to test policies (ACL 2024).
+            - reference:
+                  title: Paper (arXiv:2310.10436)
+                  url: https://arxiv.org/pdf/2310.10436
+        socio_economic_testbeds:
+            - description: EconSimulacra, Eco3S and EconGym testbeds/digital twins.
+            - reference:
+                  title: EconSimulacra (arXiv:2606.26883)
+                  url: https://arxiv.org/pdf/2606.26883
+            - reference:
+                  title: Eco3S (arXiv:2607.26588)
+                  url: https://arxiv.org/pdf/2607.26588
+            - reference:
+                  title: EconGym (arXiv:2506.12110)
+                  url: https://arxiv.org/pdf/2506.12110
+        genworld:
+            - description: Empirically grounded urban simulation infrastructure.
+            - reference:
+                  title: Paper (arXiv:2606.27650)
+                  url: https://arxiv.org/pdf/2606.27650
+        llm_wargaming:
+            - description: Wargame harness.
+            - reference:
+                  title: Code
+                  url: https://github.com/ancorso/LLMWargaming
+        game_master_state:
+            - description: >
+                  Game-master work closest in argument to story-sim + emc2p:
+                  a canonical, validated world object owned by a GM agent;
+                  static vs. agentic GMs with an Archivist recording state.
+            - reference:
+                  title: Orchestrated Reality (arXiv:2606.16014)
+                  url: https://arxiv.org/pdf/2606.16014
+            - reference:
+                  title: Static vs. agentic GM (arXiv:2502.19519)
+                  url: https://arxiv.org/pdf/2502.19519
+            - reference:
+                  title: RPGGO text-to-game engine (arXiv:2407.08195)
+                  url: https://arxiv.org/pdf/2407.08195
+        surveys:
+            - description: Surveys and method papers.
+            - reference:
+                  title: LLMs in agent-based social simulation (arXiv:2507.19364)
+                  url: https://arxiv.org/pdf/2507.19364
+            - reference:
+                  title: LLMs and games survey (arXiv:2402.18659)
+                  url: https://arxiv.org/pdf/2402.18659
+            - reference:
+                  title: EASE reproducible LLM social sims (arXiv:2605.30258)
+                  url: https://arxiv.org/pdf/2605.30258

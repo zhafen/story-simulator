@@ -39,10 +39,9 @@ class TestDeterministicWalkthrough:
     pytestmark = pytest.mark.slow
 
     _HOST_FRAMING = (
-        "Decide the answer yourself, standing in for whichever role this call "
-        "needs (a player's own absent character, an NPC, a base-module entity "
-        "whose end_time has been reached, ...) -- don't wait for input and "
-        "don't hand this off."
+        "Decide this yourself, right now, from your own context and whatever "
+        "you look up below -- there's no human player or subagent this has "
+        "been routed to, so don't wait for further input and don't hand it off."
     )
 
     # (event_alias, car_alias, outcome, location written or None, end_time).

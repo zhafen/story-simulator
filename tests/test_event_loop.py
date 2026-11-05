@@ -67,10 +67,17 @@ def _mark_resolved(ctx, alias: str, progress: str = "complete") -> None:
     )
 
 
-def test_nothing_scheduled_returns_done_immediately(tmp_path):
+def test_no_event_ever_scheduled_is_reported_distinctly_from_completion(tmp_path):
+    """A world that never had any `event` entity at all (e.g. a scenario/
+    manifest that forgot to write one) must not read identically to a
+    world that legitimately ran its schedule to completion -- see the
+    other "Nothing scheduled." assertions below, which all pass through
+    at least one real event first."""
     ctx = _world(tmp_path)
     result = asyncio.run(advance_simulation(ctx))
-    assert result == {"status": "done", "narration": "Nothing scheduled."}
+    assert result["status"] == "done"
+    assert result["narration"] != "Nothing scheduled."
+    assert "No events have ever been scheduled" in result["narration"]
 
 
 def test_responder_defaults_to_host(tmp_path):
@@ -117,6 +124,7 @@ def test_one_event_pauses_for_both_resolve_and_plan_before_finishing(tmp_path):
 
     result = asyncio.run(advance_simulation(ctx))
     assert result["status"] == "input_required"
+    assert result["step"] == "resolve_event"
     assert "gizmo_event's end_time" in result["prompt"]
 
     _mark_resolved(ctx, "gizmo_event")
@@ -124,6 +132,7 @@ def test_one_event_pauses_for_both_resolve_and_plan_before_finishing(tmp_path):
         advance_simulation(ctx, resume_token=result["resume_token"], answer="Gizmo did its thing.")
     )
     assert result["status"] == "input_required"
+    assert result["step"] == "plan_events"
     assert "gizmo_event just resolved" in result["prompt"]
 
     result = asyncio.run(

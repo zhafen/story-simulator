@@ -102,6 +102,57 @@ physics_components:
                 nullable: true
                 time_dimension: true
                 units: seconds
+    velocity:
+        - description: Component containing the velocity of an entity, in the
+            same x/y/z axes as `position`. Zero for anything at rest.
+        - component_type
+        - field:
+            x:
+                description: X velocity in meters/second (east positive).
+                type: float
+                nullable: false
+                default: 0
+            y:
+                description: Y velocity in meters/second (north positive).
+                type: float
+                nullable: false
+                default: 0
+            z:
+                description: Z velocity in meters/second (up positive).
+                type: float
+                nullable: false
+                default: 0
+            time:
+                description: World time (seconds since world creation) this
+                    velocity was recorded at, backfilled on merge (see
+                    story_simulator.core._next_time_stamp). Flagged
+                    time_dimension so Registry.view_current resolves the
+                    row with the highest time as the current velocity.
+                type: float
+                nullable: true
+                time_dimension: true
+                units: seconds
+    mass:
+        - description: The entity's mass, in kilograms. Entities without a
+            mass (e.g. a parking spot) are regions, not solid bodies, and
+            never collide with each other.
+        - component_type
+        - field:
+            value:
+                description: The mass in kilograms.
+                type: float
+    radius:
+        - description: The entity's collision radius, in meters -- it's
+            treated as a sphere of this radius centered on its `position`.
+            Two solid entities (both with `mass`) collide when the distance
+            between their positions is less than the sum of their radii; a
+            solid entity is inside a region (no `mass`) when that distance
+            plus its own radius is at most the region's radius.
+        - component_type
+        - field:
+            value:
+                description: The radius in meters.
+                type: float
     origin:
         - description: A tag component indicating that the associated entity is at the
             origin of the coordinate system.

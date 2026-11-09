@@ -42,6 +42,7 @@ from story_simulator.config import (
     registry_url,
     resolve_database_dsn,
 )
+from story_simulator import physics
 from story_simulator.resolve import JudgmentRequest, NeedsExternalInput, TurnReplay
 
 # save_dir's two export subdirectories, each holding one EC yaml file per
@@ -717,3 +718,8 @@ async def advance_simulation(session, resume_token: str | None = None, answer: s
         registrar, session, resume_alias=resume_alias, replay=replay
     )
     return _wrap_loop_result(registrar, alias, replay, prompt, responder, is_checkpoint)
+
+
+def check_collisions(session, alias: str, x: float | None = None, y: float | None = None, z: float | None = None) -> dict:
+    """`physics.check_collisions` against this session's open world."""
+    return physics.check_collisions(registrar_sessions.get_registrar(session), alias, x, y, z)

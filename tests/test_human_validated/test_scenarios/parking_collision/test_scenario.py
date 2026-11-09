@@ -1,14 +1,12 @@
 """Regressions for this directory's scenario.yaml: ../parking's puzzle, decided by collision detection.
 
 Same events and intended outcome as ../parking, but the world is described
-only by position/velocity/mass/radius -- a car's parked spot is checked by
-geometry (is it inside the spot's radius, and clear of every other car),
-not by reading back a freeform `location` phrase.
+only by position/velocity/mass/radius -- a car's parked spot is checked via
+story_simulator.physics.check_collisions (inside the spot, clear of every
+other car), not by reading back a freeform `location` phrase.
 """
 
 import asyncio
-import itertools
-import math
 from pathlib import Path
 from textwrap import dedent
 from typing import ClassVar
@@ -21,6 +19,7 @@ from emc2p.testing.expected_fixtures import assert_subset
 from conftest import _make_ctx, update_registry
 from story_simulator.config import registry_url
 from story_simulator.mcp_server import advance_simulation, start_world
+from story_simulator.physics import check_collisions
 from test_human_validated.helpers import (
     create_session,
     start_world_instruction,
@@ -31,31 +30,10 @@ SCENARIO_DIR = Path(__file__).parent
 CARS = ("car_a", "car_b", "car_c")
 
 
-def _position(r: Registrar, alias: str) -> tuple[float, float, float]:
-    return tuple(r.safe_view_current(f"position.{axis}", alias).to_scalar() for axis in "xyz")
-
-
-def _radius(r: Registrar, alias: str) -> float:
-    return r.safe_view_current("radius.value", alias).to_scalar()
-
-
-def _distance(r: Registrar, a: str, b: str) -> float:
-    return math.dist(_position(r, a), _position(r, b))
-
-
-def _collides(r: Registrar, a: str, b: str) -> bool:
-    """Two solid bodies collide when their spheres overlap."""
-    return _distance(r, a, b) < _radius(r, a) + _radius(r, b)
-
-
-def _inside(r: Registrar, body: str, region: str) -> bool:
-    """A body is inside a region when its whole sphere fits within the region's."""
-    return _distance(r, body, region) + _radius(r, body) <= _radius(r, region)
-
-
 def _assert_no_car_collisions(r: Registrar) -> None:
-    for a, b in itertools.combinations(CARS, 2):
-        assert not _collides(r, a, b), f"{a} and {b} overlap: {_position(r, a)} vs {_position(r, b)}"
+    for car in CARS:
+        hits = check_collisions(r, car)["collides_with"]
+        assert not hits, f"{car} overlaps {hits}"
 
 
 class TestDeterministicWalkthrough:
@@ -132,8 +110,7 @@ class TestDeterministicWalkthrough:
         _assert_no_car_collisions(r)
         for car in CARS:
             assert r.safe_view_current("velocity.x", car).to_scalar() == 0
-            for region in self.CENTER:
-                assert not _inside(r, car, region)
+            assert check_collisions(r, car)["inside"] == []
 
     def test_full_walkthrough_collision_checked(self, tmp_path):
         """Drives all six events, checking geometry after every write."""
@@ -168,7 +145,7 @@ class TestDeterministicWalkthrough:
                     """),
                 ctx=ctx,
             )
-            assert _inside(r, car_alias, region)
+            assert region in check_collisions(r, car_alias)["inside"]
             _assert_no_car_collisions(r)
 
             result = asyncio.run(
@@ -181,12 +158,11 @@ class TestDeterministicWalkthrough:
 
         assert result == {"status": "done", "narration": "Nothing scheduled."}
 
-        # car_a was turned away by collision: a car at either spot's center
-        # would overlap the car already parked there.
+        # car_a was turned away by collision: placed at either spot's center,
+        # it would overlap the car already parked there.
         for spot, parked in (("parking_spot_1", "car_b"), ("parking_spot_2", "car_c")):
-            sx, sy = self.CENTER[spot]
-            px, py, _ = _position(r, parked)
-            assert math.dist((sx, sy), (px, py)) < _radius(r, "car_a") + _radius(r, parked)
+            x, y = self.CENTER[spot]
+            assert check_collisions(r, "car_a", x, y)["collides_with"] == [parked]
 
 
 class TestLiveWalkthrough:
@@ -227,7 +203,8 @@ class TestLiveWalkthrough:
 
             try:
                 for car, region in self.EXPECTED_REGION.items():
-                    assert _inside(r, car, region), f"{car} at {_position(r, car)} should be inside {region}"
+                    report = check_collisions(r, car)
+                    assert region in report["inside"], f"{car} should be inside {region}: {report}"
                 _assert_no_car_collisions(r)
 
                 event_states = {

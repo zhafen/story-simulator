@@ -1,0 +1,195 @@
+file_info:
+    - description: >
+        Copy of ../parking/scenario.yaml, restated with only physical
+        components (position, velocity, mass, radius) instead of freeform
+        `location` phrases: whether a spot is free is decided by collision
+        detection (see `radius`'s description in manifest/builtins.yaml),
+        not by tracking who "took" it. Same events, same timings, same
+        intended outcome: car_b ends up in parking_spot_1, car_c in
+        parking_spot_2, car_a on the street.
+
+        Cars drive at 10 m/s from due west, so each one's starting
+        distance from the restaurant matches its driving event's duration.
+        On arrival a car stops at the restaurant (0, 0); parking then moves
+        it to the center of the first region it fits in without colliding
+        with another car (parking_spot_1, then parking_spot_2, then the
+        street).
+
+restaurant:
+    - object:
+        type: restaurant
+    - position:
+        x: 0
+        y: 0
+        z: 0
+    - radius:
+        value: 5
+    - description:
+        value: >
+            A small restaurant with exactly two dedicated parking spots,
+            parking_spot_1 and parking_spot_2; anyone who misses both has
+            to park on the street instead. A spot is free only if a car
+            placed at its center would not collide with any other car.
+            Arriving cars try parking_spot_1 first, then parking_spot_2.
+
+parking_spot_1:
+    - object:
+        type: parking_spot
+    - position:
+        x: 10
+        y: 0
+        z: 0
+    - radius:
+        value: 3
+    - description:
+        value: The first of the restaurant's two dedicated parking spots.
+
+parking_spot_2:
+    - object:
+        type: parking_spot
+    - position:
+        x: 10
+        y: 6
+        z: 0
+    - radius:
+        value: 3
+    - description:
+        value: The second of the restaurant's two dedicated parking spots.
+
+street:
+    - object:
+        type: street
+    - position:
+        x: 0
+        y: -20
+        z: 0
+    - radius:
+        value: 15
+    - description:
+        value: Ordinary street parking near the restaurant.
+
+car_a:
+    - object:
+        type: car
+    - position:
+        x: -18000
+        y: 0
+        z: 0
+    - velocity:
+        x: 0
+        y: 0
+        z: 0
+    - mass:
+        value: 1500
+    - radius:
+        value: 2
+    - description:
+        value: The car for friend A.
+
+car_a_drive:
+    - event:
+        start_time: 0
+        duration: 1800
+    - event_state:
+        value: planned
+    - involved_entity:
+        - value: car_a
+        - value: restaurant
+    - description:
+        value: car_a's drive to the restaurant.
+
+car_a_park:
+    - event:
+        start_time: 1800
+        duration: 10
+    - event_state:
+        value: planned
+    - involved_entity:
+        - value: car_a
+        - value: restaurant
+    - description:
+        value: car_a's parking decision, once it has already arrived.
+
+car_b:
+    - object:
+        type: car
+    - position:
+        x: -7200
+        y: 0
+        z: 0
+    - velocity:
+        x: 0
+        y: 0
+        z: 0
+    - mass:
+        value: 1500
+    - radius:
+        value: 2
+    - description:
+        value: The car for friend B.
+
+car_b_drive:
+    - event:
+        start_time: 300
+        duration: 720
+    - event_state:
+        value: planned
+    - involved_entity:
+        - value: car_b
+        - value: restaurant
+    - description:
+        value: car_b's drive to the restaurant.
+
+car_b_park:
+    - event:
+        start_time: 1020
+        duration: 10
+    - event_state:
+        value: planned
+    - involved_entity:
+        - value: car_b
+        - value: restaurant
+    - description:
+        value: car_b's parking decision, once it has already arrived.
+
+car_c:
+    - object:
+        type: car
+    - position:
+        x: -6000
+        y: 0
+        z: 0
+    - velocity:
+        x: 0
+        y: 0
+        z: 0
+    - mass:
+        value: 1500
+    - radius:
+        value: 2
+    - description:
+        value: The car for friend C.
+
+car_c_drive:
+    - event:
+        start_time: 480
+        duration: 600
+    - event_state:
+        value: planned
+    - involved_entity:
+        - value: car_c
+        - value: restaurant
+    - description:
+        value: car_c's drive to the restaurant.
+
+car_c_park:
+    - event:
+        start_time: 1080
+        duration: 10
+    - event_state:
+        value: planned
+    - involved_entity:
+        - value: car_c
+        - value: restaurant
+    - description:
+        value: car_c's parking decision, once it has already arrived.

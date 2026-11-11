@@ -109,6 +109,8 @@ server = FastMCP(
         "current one, both for view_entity and for the save's exported YAML (older writes "
         "stay recorded as history — view_entity still shows all of them). Write the whole "
         "updated description each time, not a diff.\n\n"
+        "For anything physical, use check_collisions (position/radius/mass) rather than "
+        "eyeballing coordinates -- e.g. to test whether a spot is free before moving into it.\n\n"
         "Use view_registry/view_entity to look up what's already known before deciding — "
         "don't invent entities or details nothing has established."
     ),
@@ -184,6 +186,22 @@ async def advance_simulation(ctx: Context, resume_token: str | None = None, answ
     """
     __iacs__ = {"solution of": "story_simulator_mission.tool_catalog.advance_simulation"}
     return await core.advance_simulation(ctx.request_context.session, resume_token, answer)
+
+
+@server.tool()
+def check_collisions(
+    alias: str, ctx: Context, x: float | None = None, y: float | None = None, z: float | None = None
+) -> dict:
+    """Report what `alias` collides with and which regions it's inside.
+
+    Uses each entity's current position/radius (and mass: entities with
+    mass are solid bodies, those without are regions like a parking spot).
+    Pass x/y/z to test a hypothetical position instead -- e.g. a spot's
+    center, to check it's free before moving a car there via
+    update_registry. Returns {"alias", "position", "collides_with",
+    "inside"}.
+    """
+    return core.check_collisions(ctx.request_context.session, alias, x, y, z)
 
 
 # Mounts view_registry/view_entity/update_registry/consolidate_review --

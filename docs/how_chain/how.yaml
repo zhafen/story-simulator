@@ -1,0 +1,371 @@
+file_info:
+    - description: >
+          story-simulator's "how chain": start at the mission and keep
+          asking how it gets done, one entity per answer, until the answers
+          are real files. how_detail.yaml continues two levels further,
+          from each file to its own classes and functions, and from each
+          class to its own methods. Same format as iacs's poc/how_chain
+          (branch claude/emc2p-why-chain-experiment-9ex21s).
+
+          Each step down is a ((how)) link owned by the more abstract
+          entity, whose ``value`` is the more concrete one. Above the file
+          level the asking side is always a hand-written concept entity in
+          this file. Python files are referenced by their real module
+          entities, so their descriptions come from their own docstrings.
+          Non-Python files (the world schema, seed data, shell hooks,
+          main.py) aren't loadable entities, so each gets a small stand-in
+          entity here with a ((source_file)) component naming its path.
+
+          Load with:
+          Registrar.from_manifest(["docs/how_chain", "story_simulator", "tests", "scripts"])
+    - file_info
+
+how:
+    - description: >
+          A link from an entity to one of the concrete entities that is how
+          it gets achieved. The owner asks "how does this get done?" and
+          ``value`` is one answer, one step more concrete.
+    - parent: directed_relation
+    - field:
+          value:
+              description: The entity that is how the owner gets achieved.
+              type: entity_ref
+          question:
+              description: The "how" question this link answers, from the owner's point of view.
+              type: str
+          note:
+              description: Optional side note about this link.
+              type: str
+              nullable: true
+
+source_file:
+    - description: >
+          Repo-relative path (or ``path::name`` for one top-level YAML
+          definition) of a non-Python file a stand-in entity represents.
+    - field:
+          value:
+              description: The path.
+              type: str
+
+# ---------------------------------------------------------------------------
+# Root
+# ---------------------------------------------------------------------------
+
+how_chain_mission:
+    - description: >
+          story-simulator's mission: enable players to create and
+          experience self-consistent stories with simulation mechanics
+          handled by AI (see story_simulator_mission in
+          docs/manifest/story-simulator.yaml). Every how in this file
+          starts here.
+    - how:
+          - value: ai_game_master_interface
+            question: How do players experience and act in the story?
+          - value: self_consistent_world_state
+            question: How do stories stay self-consistent over time?
+          - value: event_driven_simulation
+            question: How are simulation mechanics carried out over time?
+          - value: ai_judgment
+            question: How does AI handle the simulation's judgment calls?
+          - value: verification
+            question: How do we know all of the above actually works?
+          - value: development_tooling
+            question: How is the project kept healthy while it's developed?
+
+# ---------------------------------------------------------------------------
+# Level 1
+# ---------------------------------------------------------------------------
+
+ai_game_master_interface:
+    - description: >
+          Players talk to an MCP-aware chat agent acting as game master.
+          story-simulator exposes the tools that agent uses to open a
+          world, look things up, record changes, and run the simulation.
+          It never narrates itself.
+    - how:
+          - value: story_simulator.mcp_server
+            question: How does a connected AI host actually call into story-simulator?
+          - value: story_simulator.__init__
+            question: How is story-simulator importable as a package?
+
+self_consistent_world_state:
+    - description: >
+          World state lives in a Postgres-backed emc2p registry with a typed
+          schema and full history, not in the model's context, so facts
+          stay consistent across turns and sessions.
+    - how:
+          - value: world_schema
+            question: How is it decided what kinds of facts a world can hold?
+          - value: starting_scenarios
+            question: How does a world start, and how is a long-running one kept?
+          - value: story_simulator.config
+            question: How does each save find its database and schema (and every module its paths and settings)?
+            note: >
+                config.py also holds the responder settings used by
+                ai_judgment; it's listed once, here.
+
+event_driven_simulation:
+    - description: >
+          World state is a schedule of event entities. The loop pops the
+          soonest-ending event, advances the clock, and asks for a
+          resolution and a plan, pausing whenever only the host can answer.
+          The same module opens saves (Postgres bootstrap, seeding) and
+          holds each session's registrar.
+    - how:
+          - value: story_simulator.core
+            question: Where do the event loop, pause/resume, and world opening live?
+
+ai_judgment:
+    - description: >
+          Each resolve/plan step is a judgment call answered by an AI: the
+          host inline, the host's own subagent, or an in-process keyed
+          subagent on story-simulator's own key.
+    - how:
+          - value: story_simulator.resolve
+            question: How does a judgment call reach a responder from any nesting depth, and resume afterwards?
+          - value: story_simulator.keyed_subagent
+            question: How can judgment calls be answered without a round trip to the host?
+
+verification:
+    - description: >
+          The test suite: fast pure-logic tests, slow tests against a real
+          database-backed world, live-model tests, and human-validated
+          scenarios.
+    - how:
+          - value: test_infrastructure
+            question: What do the tests share?
+          - value: tool_surface_tests
+            question: How is the MCP tool surface checked?
+          - value: simulation_tests
+            question: How is the event loop checked?
+          - value: judgment_tests
+            question: How are the responders checked?
+          - value: human_validated_tests
+            question: How are whole play scenarios checked against what a person judged correct?
+          - value: project_tooling_tests
+            question: How are the project's own manifest and git hooks checked?
+
+development_tooling:
+    - description: Scripts and hooks used while developing, not at runtime.
+    - how:
+          - value: check_docstrings_hook
+            question: How are docstring changes surfaced for review?
+          - value: check_pr_size_hook
+            question: How are PRs kept to a reviewable size?
+          - value: scripts.get_usage
+            question: How is usage cost measured before/after a test batch?
+          - value: scripts.generate_how_detail
+            question: How is this how chain's below-file-level detail kept in sync with the code?
+          - value: root_main_py
+            question: What is the root main.py?
+
+# ---------------------------------------------------------------------------
+# Level 2: world content
+# ---------------------------------------------------------------------------
+
+world_schema:
+    - description: >
+          story-simulator's world schema, merged into every world registry
+          (config.MANIFEST_DIR).
+    - source_file: manifest/builtins.yaml
+    - how:
+          - value: schema_character
+            question: How is a character represented?
+          - value: schema_object
+            question: How is an object represented?
+          - value: schema_appearance
+            question: How is an entity's look recorded?
+          - value: schema_state
+            question: How is an entity's current status recorded?
+          - value: schema_location
+            question: How is an entity's whereabouts recorded?
+          - value: schema_physics_components
+            question: How are physical properties recorded?
+          - value: schema_character_components
+            question: How are character-specific facts recorded?
+          - value: schema_turn_components
+            question: How are turns recorded?
+          - value: schema_event_components
+            question: How are scheduled happenings represented?
+          - value: schema_agent_components
+            question: How are agents recorded in the world?
+
+starting_scenarios:
+    - description: >
+          Saves are directories: a seed scenario plus world/ (current
+          state) and world_history/ (every row), re-exported after each
+          update_registry call.
+    - how:
+          - value: default_scenario
+            question: What does a world start from by default?
+          - value: living_world
+            question: How is the long-running shared playthrough kept?
+
+living_world:
+    - description: >
+          A real playthrough's save, committed so its progress survives.
+          Continue it as save_dir; it is not a pristine template.
+    - source_file: data/living_world
+    - how:
+          - value: living_world_scenario
+            question: What did the living world start from?
+          - value: living_world_current
+            question: What is the living world's current state?
+          - value: living_world_history
+            question: What is the living world's full change history?
+
+# ---------------------------------------------------------------------------
+# Level 2: test groups
+# ---------------------------------------------------------------------------
+
+test_infrastructure:
+    - description: Shared fixtures and package markers for the suite.
+    - how:
+          - value: tests.conftest
+            question: What fixtures and helpers do the top-level tests share?
+          - value: test_human_validated.__init__
+            question: How are the human-validated tests packaged?
+
+tool_surface_tests:
+    - description: Tests of the MCP server's tools against real opened worlds.
+    - how:
+          - value: tests.test_mcp_server
+            question: How are start_world and the mounted registry tools checked?
+
+simulation_tests:
+    - description: Tests of the event-driven simulation kernel.
+    - how:
+          - value: tests.test_core
+            question: How are pop_event and other kernel pieces checked?
+          - value: tests.test_event_loop
+            question: How is the whole resolve/plan loop checked, pause and resume included?
+
+judgment_tests:
+    - description: Tests of the judgment resolver and responders.
+    - how:
+          - value: tests.test_resolve
+            question: How are TurnReplay and responder dispatch checked?
+          - value: tests.test_keyed_subagent
+            question: How is the in-process keyed subagent checked?
+          - value: tests.test_native_subagent_sidechain
+            question: How is it checked that host-delegated subagent turns can be found afterwards?
+
+human_validated_tests:
+    - description: >
+          Whole-scenario tests whose expected outcomes a person validated,
+          run deterministically and against live models.
+    - how:
+          - value: test_human_validated.conftest
+            question: What fixtures do the scenarios share (responder choice, turn stepping)?
+          - value: test_human_validated.helpers
+            question: What helpers do the scenarios share?
+          - value: test_human_validated.test_conftest_fixtures
+            question: How are those shared fixtures themselves checked?
+          - value: test_scenarios.__init__
+            question: How are the scenarios packaged?
+          - value: parking_scenario
+            question: How is the parking scenario checked?
+          - value: race_scenario
+            question: How is the race scenario checked?
+          - value: location_write_isolated.test_responder_matrix
+            question: How is a location write checked under every responder?
+          - value: tests.location_write_harness
+            question: How are location-write approaches compared outside pytest?
+
+parking_scenario:
+    - description: Three cars drive to a restaurant with only two parking spots, first come first served.
+    - how:
+          - value: parking.__init__
+            question: How is the parking scenario packaged?
+          - value: parking.test_scenario
+            question: How is the parking scenario run and checked?
+          - value: parking_scenario_yaml
+            question: What world does the parking scenario start from?
+
+race_scenario:
+    - description: >
+          The parking scenario's timings reframed as a three-car race, so only
+          finishing order matters (regression for a weak model assuming an
+          unresolved car already finished).
+    - how:
+          - value: race.__init__
+            question: How is the race scenario packaged?
+          - value: race.test_scenario
+            question: How is the race scenario run and checked?
+          - value: race_scenario_yaml
+            question: What world does the race scenario start from?
+
+project_tooling_tests:
+    - description: Tests of the project's own manifest and git hooks.
+    - how:
+          - value: tests.test_architecture_manifest
+            question: How is the architecture manifest checked for broken links?
+          - value: tests.test_check_docstrings_hook
+            question: How is the docstring hook checked?
+          - value: tests.test_check_pr_size_hook
+            question: How is the PR-size hook checked?
+
+# ---------------------------------------------------------------------------
+# Stand-ins for non-Python files (leaves)
+# ---------------------------------------------------------------------------
+
+schema_character:
+    - description: Marks an entity as a character.
+    - source_file: manifest/builtins.yaml::character
+schema_object:
+    - description: Marks an entity as an object.
+    - source_file: manifest/builtins.yaml::object
+schema_appearance:
+    - description: How an entity currently looks.
+    - source_file: manifest/builtins.yaml::appearance
+schema_state:
+    - description: A short current-status phrase (e.g. "open"); the latest row is current.
+    - source_file: manifest/builtins.yaml::state
+schema_location:
+    - description: Where an entity is.
+    - source_file: manifest/builtins.yaml::location
+schema_physics_components:
+    - description: Physical properties (largely for the shelved physics tools).
+    - source_file: manifest/builtins.yaml::physics_components
+schema_character_components:
+    - description: Character-specific components (largely for shelved character tools).
+    - source_file: manifest/builtins.yaml::character_components
+schema_turn_components:
+    - description: Turn bookkeeping components.
+    - source_file: manifest/builtins.yaml::turn_components
+schema_event_components:
+    - description: >
+          The event schema (start_time, duration, event_state,
+          involved_entity, outcome). Events are the simulation's whole
+          schedule.
+    - source_file: manifest/builtins.yaml::event_components
+schema_agent_components:
+    - description: Components describing agents/responders.
+    - source_file: manifest/builtins.yaml::agent_components
+default_scenario:
+    - description: A plain starting world (a player, a door, an empty expanse).
+    - source_file: data/default/scenario.yaml
+living_world_scenario:
+    - description: The living world's original turn-zero seed.
+    - source_file: data/living_world/scenario.yaml
+living_world_current:
+    - description: Current state, collapsed to the current row per entity.
+    - source_file: data/living_world/world/world.yaml
+living_world_history:
+    - description: Every row ever recorded, uncollapsed.
+    - source_file: data/living_world/world_history/world.yaml
+parking_scenario_yaml:
+    - description: The parking scenario's starting world.
+    - source_file: tests/test_human_validated/test_scenarios/parking/scenario.yaml
+race_scenario_yaml:
+    - description: The race scenario's starting world.
+    - source_file: tests/test_human_validated/test_scenarios/race/scenario.yaml
+check_docstrings_hook:
+    - description: Pre-commit hook flagging docstring edits in staged Python files.
+    - source_file: scripts/check-docstrings.sh
+check_pr_size_hook:
+    - description: Pre-commit hook warning when a branch's diff gets large.
+    - source_file: scripts/check-pr-size.sh
+root_main_py:
+    - description: Placeholder entry point (prints a greeting); the real one is story-simulator-mcp.
+    - source_file: main.py

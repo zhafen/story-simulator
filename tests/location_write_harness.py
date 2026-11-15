@@ -174,6 +174,7 @@ def run_one(approach: str, tmp_dir: Path, model: str = LOW_QUALITY_MODEL) -> tup
 
 
 def main() -> None:
+    """CLI entry point: run the chosen approach for N reps and report usage."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--approach", choices=sorted(_APPROACHES), default="baseline")
     parser.add_argument("--reps", type=int, default=3)

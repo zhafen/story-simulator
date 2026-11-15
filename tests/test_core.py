@@ -21,12 +21,14 @@ pytestmark = pytest.mark.slow
 
 
 def _registrar_from_yaml(yaml_text: str) -> Registrar:
+    """A fresh in-memory registrar holding the world schema plus `yaml_text`."""
     registrar = Registrar()
     registrar.update(input_dirs=[str(MANIFEST_DIR)], yaml_strings={SOURCE_KEY: yaml_text})
     return registrar
 
 
 def test_pop_event_returns_none_with_no_event_component():
+    """Pop event returns none with no event component."""
     registrar = _registrar_from_yaml("thing:\n    - description: Just a thing.\n")
     assert pop_event(registrar) is None
 
@@ -78,6 +80,7 @@ def test_pop_event_excludes_events_missing_start_time_or_duration():
 
 
 def test_pop_event_treats_complete_as_permanently_done():
+    """Pop event treats complete as permanently done."""
     registrar = _registrar_from_yaml(
         "finished_event:\n"
         "    - event:\n"
@@ -90,6 +93,7 @@ def test_pop_event_treats_complete_as_permanently_done():
 
 
 def test_pop_event_treats_interrupted_as_permanently_done_too():
+    """Pop event treats interrupted as permanently done too."""
     registrar = _registrar_from_yaml(
         "cut_short_event:\n"
         "    - event:\n"
@@ -150,6 +154,7 @@ def test_update_registry_backfills_time_for_a_scenario_local_time_dimension_fiel
 
 
 def test_pop_event_skips_a_terminal_event_in_favor_of_a_pending_one():
+    """Pop event skips a terminal event in favor of a pending one."""
     registrar = _registrar_from_yaml(
         "finished_event:\n"
         "    - event:\n"

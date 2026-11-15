@@ -18,6 +18,7 @@ REPO_ROOT = Path(__file__).parent.parent
 
 @pytest.mark.live
 def test_subagent_turns_reachable_via_task_notification_output_file(tmp_path: Path):
+    """Subagent turns reachable via task notification output file."""
     with HeadlessSession(
         mcp_config=REPO_ROOT / ".mcp.json",
         allowed_tools=["Task"],

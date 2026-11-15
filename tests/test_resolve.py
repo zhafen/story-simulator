@@ -18,6 +18,7 @@ from story_simulator.resolve import JudgmentRequest, NeedsExternalInput, TurnRep
 
 
 def test_host_raises_needs_external_input():
+    """Host raises needs external input."""
     replay = TurnReplay(answers=[])
     with pytest.raises(NeedsExternalInput) as exc_info:
         asyncio.run(
@@ -42,6 +43,7 @@ def test_host_needs_external_input_carries_the_requests_own_origin():
 
 
 def test_keyed_subagent_answers_inline_without_raising(monkeypatch):
+    """Keyed subagent answers inline without raising."""
     async def fake_call_keyed_subagent(prompt: str, session, origin: str = "") -> str:
         assert "what happened?" in prompt
         assert session == "sess-1"
@@ -61,6 +63,7 @@ def test_keyed_subagent_answers_inline_without_raising(monkeypatch):
 
 
 def test_keyed_subagent_receives_the_requests_own_origin(monkeypatch):
+    """Keyed subagent receives the requests own origin."""
     captured = {}
 
     async def fake_call_keyed_subagent(prompt: str, session, origin: str = "") -> str:
@@ -278,6 +281,7 @@ def test_save_pending_resume_token_is_just_the_alias():
 
 @pytest.mark.slow
 def test_load_pending_round_trips_answers_and_checkpoint_flag():
+    """Load pending round trips answers and checkpoint flag."""
     from story_simulator.core import _load_pending, _save_pending
 
     registrar = _pending_registrar()
@@ -301,6 +305,7 @@ def test_load_pending_raises_clear_error_for_unknown_alias():
 
 
 def test_unknown_responder_raises_value_error():
+    """Unknown responder raises value error."""
     replay = TurnReplay(answers=[])
     with pytest.raises(ValueError):
         asyncio.run(

@@ -57,6 +57,7 @@ class TestDeterministicWalkthrough:
     ]
 
     def _resolve_prompt(self, alias: str, end_time: float) -> str:
+        """The resolve prompt the host is expected to see for `alias`."""
         return (
             f"{self._HOST_FRAMING}\n\n"
             f"{alias}'s end_time (world time {end_time:g}) has been reached. "
@@ -80,6 +81,7 @@ class TestDeterministicWalkthrough:
         )
 
     def _plan_prompt(self, alias: str) -> str:
+        """The plan prompt the host is expected to see for `alias`."""
         return (
             f"{self._HOST_FRAMING}\n\n"
             f"Given how {alias} just resolved, does anything new need to "
@@ -166,6 +168,7 @@ class TestDeterministicWalkthrough:
 class TestLiveWalkthrough:
     # alias -> substring in the car's recorded location.value (see
     # _parked_at) -- not exact, since a model's phrasing varies.
+    """Live run of the parking scenario, checked against expected car locations."""
     EXPECTED_LOCATION: ClassVar[dict[str, str]] = {
         "car_b": "parking_spot_1",
         "car_c": "parking_spot_2",

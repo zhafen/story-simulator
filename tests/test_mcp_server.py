@@ -1,3 +1,5 @@
+"""Tests for the MCP server's tools against real opened worlds."""
+
 import pytest
 
 from conftest import _make_ctx, update_registry
@@ -9,10 +11,12 @@ _registrar_sessions = core.registrar_sessions
 
 
 def view_registry(component_type: str, ctx) -> str:
+    """Test shim calling the mounted view_registry tool for this ctx's session."""
     return _registrar_sessions.view_registry(ctx.request_context.session, component_type)
 
 
 def view_entity(entity_id: str, ctx) -> str:
+    """Test shim calling the mounted view_entity tool for this ctx's session."""
     return _registrar_sessions.view_entity(ctx.request_context.session, entity_id)
 
 
@@ -20,10 +24,13 @@ def view_entity(entity_id: str, ctx) -> str:
 
 
 class TestMcpToolRegistration:
+    """Every expected tool is registered on the server."""
     def _tool_names(self):
+        """Names of the tools registered on the server."""
         return {t.name for t in server._tool_manager.list_tools()}
 
     def test_all_tools_are_registered(self):
+        """All tools are registered."""
         expected = {
             "start_world",
             "view_registry",
@@ -58,20 +65,24 @@ class TestMcpToolRegistration:
 
 
 class TestStartWorld:
+    """start_world's seeding and session bookkeeping."""
     pytestmark = pytest.mark.slow
 
     def test_returns_confirmation_string(self, tmp_path):
+        """Returns confirmation string."""
         ctx = _make_ctx()
         result = start_world(str(tmp_path / "save"), ctx)
         assert "World opened" in result
 
     def test_seeds_from_default_world_by_default(self, tmp_path):
+        """Seeds from default world by default."""
         ctx = _make_ctx()
         start_world(str(tmp_path / "save"), ctx)
         registrar = _registrar_sessions.get_registrar(ctx.request_context.session)
         assert "origin" in registrar.registry.component_types
 
     def test_seeds_from_given_scenario_dir(self, tmp_path):
+        """Seeds from given scenario dir."""
         ctx = _make_ctx()
         start_world(str(tmp_path / "save"), ctx, scenario_dir=str(LIVING_WORLD_DIR))
         registrar = _registrar_sessions.get_registrar(ctx.request_context.session)
@@ -79,6 +90,7 @@ class TestStartWorld:
         assert "journaling_desk.journal" in positions["entity_id.alias"].values
 
     def test_stores_registrar_and_save_dir_for_session(self, tmp_path):
+        """Stores registrar and save dir for session."""
         ctx = _make_ctx()
         save_dir = tmp_path / "save"
         start_world(str(save_dir), ctx)
@@ -97,11 +109,13 @@ class TestStartWorld:
         assert _registrar_sessions.get_trace_path(session) == trace_path
 
     def test_no_trace_path_recorded_when_omitted(self, tmp_path):
+        """No trace path recorded when omitted."""
         ctx = _make_ctx()
         start_world(str(tmp_path / "save"), ctx)
         assert _registrar_sessions.get_trace_path(ctx.request_context.session) is None
 
     def test_does_not_reseed_an_already_populated_save_dir(self, tmp_path):
+        """Does not reseed an already populated save dir."""
         save_dir = tmp_path / "save"
         ctx = _make_ctx()
         start_world(str(save_dir), ctx)
@@ -143,6 +157,7 @@ class TestStartWorld:
         assert registrar.get_entity_id("seed_only") is None
 
     def test_first_open_loads_only_world_dir_when_no_history_dir(self, tmp_path):
+        """First open loads only world dir when no history dir."""
         save_dir = tmp_path / "save"
         save_dir.mkdir()
         (save_dir / "scenario.yaml").write_text("seed_only:\n    - origin\n")
@@ -175,9 +190,11 @@ class TestStartWorld:
 
 
 class TestRegistryTools:
+    """The mounted registry tools against a real opened world."""
     pytestmark = pytest.mark.slow
 
     def test_get_registrar_errors_before_start_world(self):
+        """Get registrar errors before start world."""
         ctx = _make_ctx()
         with pytest.raises(ValueError, match="start_world"):
             _registrar_sessions.get_registrar(ctx.request_context.session)
@@ -194,6 +211,7 @@ class TestRegistryTools:
         assert "open_registry" not in str(exc_info.value)
 
     def test_view_registry_returns_markdown_table_of_positions(self, tmp_path):
+        """View registry returns markdown table of positions."""
         ctx = _make_ctx()
         start_world(str(tmp_path / "save"), ctx)
         result = view_registry("position", ctx)
@@ -210,6 +228,7 @@ class TestRegistryTools:
         )
 
     def test_update_registry_merges_new_entity(self, tmp_path):
+        """Update registry merges new entity."""
         ctx = _make_ctx()
         start_world(str(tmp_path / "save"), ctx)
         result = update_registry("new_thing:\n    - origin\n", ctx=ctx)
@@ -244,6 +263,7 @@ class TestRegistryTools:
         assert "parked_at" not in registrar.registry.component_types
 
     def test_update_registry_suggests_close_match_for_typo(self, tmp_path):
+        """Update registry suggests close match for typo."""
         ctx = _make_ctx()
         start_world(str(tmp_path / "save"), ctx)
         with pytest.raises(ValueError, match="locaton.*location"):
@@ -339,6 +359,7 @@ class TestRegistryTools:
         assert "Merged" in result
 
     def test_update_registry_writes_collapsed_and_full_history_yaml(self, tmp_path):
+        """Update registry writes collapsed and full history yaml."""
         ctx = _make_ctx()
         save_dir = tmp_path / "save"
         start_world(str(save_dir), ctx)
@@ -354,12 +375,14 @@ class TestRegistryTools:
         assert "first" in history_text
 
     def test_view_entity_returns_known_component_data(self, tmp_path):
+        """View entity returns known component data."""
         ctx = _make_ctx()
         start_world(str(tmp_path / "save"), ctx)
         result = view_entity("player", ctx)
         assert "character" in result
 
     def test_view_entity_reports_unknown_entity(self, tmp_path):
+        """View entity reports unknown entity."""
         ctx = _make_ctx()
         start_world(str(tmp_path / "save"), ctx)
         result = view_entity("nonexistent_xyz", ctx)

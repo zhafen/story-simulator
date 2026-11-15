@@ -68,6 +68,7 @@ def _mark_resolved(ctx, alias: str, progress: str = "complete") -> None:
 
 
 def test_nothing_scheduled_returns_done_immediately(tmp_path):
+    """Nothing scheduled returns done immediately."""
     ctx = _world(tmp_path)
     result = asyncio.run(advance_simulation(ctx))
     assert result == {"status": "done", "narration": "Nothing scheduled."}
@@ -102,6 +103,7 @@ def test_responder_can_be_configured_to_subagent(tmp_path, monkeypatch):
 
 
 def test_invalid_responder_env_var_raises(tmp_path, monkeypatch):
+    """Invalid responder env var raises."""
     monkeypatch.setenv("STORY_SIM_RESPONDER", "orchestrator")
     ctx = _world(tmp_path)
     _schedule_event(ctx, "gizmo_event", 0, 0)

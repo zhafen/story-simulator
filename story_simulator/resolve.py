@@ -127,6 +127,7 @@ class NeedsExternalInput(Exception):
     """
 
     def __init__(self, prompt: str, responder: str, is_checkpoint: bool = False, origin: str = ""):
+        """Carry the framed prompt and who should answer it up to the tool boundary."""
         super().__init__(prompt)
         self.prompt = prompt
         self.responder = responder
@@ -194,6 +195,7 @@ class TurnReplay:
     deadline: float | None = None
 
     async def resolve(self, request: JudgmentRequest, *, responder: str, session=None) -> str:
+        """Replay a banked answer, answer inline via keyed_subagent, or raise NeedsExternalInput."""
         if responder == "keyed_subagent":
             # Cache check first, not gated on budget: an already-answered
             # call must keep replaying fast regardless of the deadline.

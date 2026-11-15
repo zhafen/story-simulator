@@ -52,6 +52,7 @@ WRITE_TRACE_LOG_PATH = REPO_ROOT / ".write_call_trace.jsonl"
 
 
 def _log_write_call(record: dict[str, Any]) -> None:
+    """Append one record to the write-call trace; never raises."""
     try:
         with WRITE_TRACE_LOG_PATH.open("a") as f:
             f.write(json.dumps(record, default=str) + "\n")

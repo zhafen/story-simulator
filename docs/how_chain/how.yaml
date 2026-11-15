@@ -73,7 +73,7 @@ function:
     - description: What story-simulator does at runtime.
     - how:
           - value: ai_game_master_interface
-            question: How do players act in the story?
+            question: How do characters act in the story?
           - value: world_state
             question: How is the world remembered consistently?
           - value: event_driven_simulation
@@ -94,7 +94,7 @@ quality:
 # ---------------------------------------------------------------------------
 
 ai_game_master_interface:
-    - description: An MCP-aware chat agent is the game master; story-simulator gives it tools.
+    - description: Characters (the player's included) act through an MCP-aware agent acting as game master; story-simulator gives it tools.
     - how:
           - value: story_simulator.mcp_server
             question: How does the AI host call in?

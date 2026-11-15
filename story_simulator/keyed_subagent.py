@@ -81,6 +81,7 @@ async def call_keyed_subagent(prompt: str, session: Any, origin: str = "") -> st
     """
 
     def _dispatch(name: str, arguments: dict[str, Any]) -> str:
+        """Route a tool call to this world's registrar, tracing update_registry calls."""
         if name != "update_registry":
             return core.registrar_sessions.dispatch(session, name, arguments)
 

@@ -42,6 +42,7 @@ class TestTracePathPlumbing:
         async def fake_run_tool_calling_loop(
             prompt, *, model, dispatch, tools, usage_log_path, trace_path, trace_actor, trace_origin
         ):
+            """Stand-in for run_tool_calling_loop that records what it was passed."""
             captured["trace_path"] = trace_path
             captured["trace_actor"] = trace_actor
             captured["trace_origin"] = trace_origin
@@ -67,6 +68,7 @@ class TestTracePathPlumbing:
         async def fake_run_tool_calling_loop(
             prompt, *, model, dispatch, tools, usage_log_path, trace_path, trace_actor, trace_origin
         ):
+            """Stand-in for run_tool_calling_loop that records what it was passed."""
             captured["trace_path"] = trace_path
             return "answered"
 
@@ -89,6 +91,7 @@ class TestTracePathPlumbing:
         async def fake_run_tool_calling_loop(
             prompt, *, model, dispatch, tools, usage_log_path, trace_path, trace_actor, trace_origin
         ):
+            """Stand-in for run_tool_calling_loop that records what it was passed."""
             captured["trace_origin"] = trace_origin
             return "answered"
 

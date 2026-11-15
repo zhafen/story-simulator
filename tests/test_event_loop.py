@@ -256,6 +256,7 @@ def test_multi_event_handoff_to_a_new_event_slots_in_by_end_time(tmp_path):
     _schedule_event(ctx, "chain_b_ball_event", 5, 0)
 
     def on_plan(who):
+        """Scripted plan answers: chain_a's ball event schedules a domino event; nothing else plans anything."""
         if who == "chain_a_ball_event":
             _schedule_event(ctx, "chain_a_domino_event", 1, 0)
             return "Scheduled chain_a_domino_event, end_time sooner than chain_b_ball_event."

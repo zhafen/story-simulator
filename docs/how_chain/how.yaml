@@ -52,8 +52,16 @@ source_file:
           definition) of a non-Python file a stand-in entity represents.
     - field:
           value:
-              description: The path.
+              description: >
+                  The path. ``emc2p:`` prefixes a path inside the emc2p
+                  package (a pinned dependency, not this repo).
               type: str
+          kind:
+              description: >
+                  What the path points at (e.g. function), when the
+                  viewer can't tell from the path alone.
+              type: str
+              nullable: true
 
 # ---------------------------------------------------------------------------
 # Root, then the function/quality split
@@ -98,8 +106,26 @@ ai_game_master_interface:
     - how:
           - value: story_simulator.mcp_server
             question: How does the AI host call in?
+          - value: game_data_access
+            question: How does the game master view and write game data?
           - value: story_simulator.__init__
             question: How is the package importable?
+
+game_data_access:
+    - description: >
+          emc2p's RegistrarSessions tools, mounted onto story-simulator's
+          server; each call reads or writes this session's world registry.
+    - how:
+          - value: registry_tools_mount
+            question: How do the tools reach this server?
+          - value: tool_view_registry
+            question: How does it see every row of one component type?
+          - value: tool_view_entity
+            question: How does it see everything about one entity?
+          - value: tool_update_registry
+            question: How does it record what happened?
+          - value: tool_consolidate_review
+            question: How does it keep component types from sprawling?
 
 world_state:
     - description: A typed, Postgres-backed registry with full history, not the model's context.
@@ -351,6 +377,31 @@ race_scenario_yaml:
 location_write_scenario_yaml:
     - description: One car, one spot -- the location-write fixture.
     - source_file: tests/data/scenarios/location_write_isolated/scenario.yaml
+registry_tools_mount:
+    - description: Mounts the four tools onto this server, excluding open_registry.
+    - source_file:
+          value: story_simulator/mcp_server.py::core.registrar_sessions.mount
+          kind: call
+tool_view_registry:
+    - description: View all recorded data for one component type.
+    - source_file:
+          value: emc2p:emc2p/mcp_server.py::RegistrarSessions.view_registry
+          kind: function
+tool_view_entity:
+    - description: Every recorded component instance for one entity.
+    - source_file:
+          value: emc2p:emc2p/mcp_server.py::RegistrarSessions.view_entity
+          kind: function
+tool_update_registry:
+    - description: Merge entity-first YAML into the registry, through the same ETL as save files.
+    - source_file:
+          value: emc2p:emc2p/mcp_server.py::RegistrarSessions.update_registry
+          kind: function
+tool_consolidate_review:
+    - description: Every component type recorded so far, for review and consolidation.
+    - source_file:
+          value: emc2p:emc2p/mcp_server.py::RegistrarSessions.consolidate_review
+          kind: function
 check_docstrings_hook:
     - description: Pre-commit hook flagging docstring edits in staged Python files.
     - source_file: scripts/check-docstrings.sh

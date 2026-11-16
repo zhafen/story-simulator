@@ -185,6 +185,8 @@ development_tooling:
             question: How does this chain stay in sync with the code?
           - value: root_main_py
             question: What is main.py?
+          - value: architecture_manifest
+            question: How are requirements and solutions tracked?
 
 # ---------------------------------------------------------------------------
 # Level 2: world content
@@ -408,6 +410,9 @@ check_docstrings_hook:
 check_pr_size_hook:
     - description: Pre-commit hook warning when a branch's diff gets large.
     - source_file: scripts/check-pr-size.sh
+architecture_manifest:
+    - description: The project's requirement/solution manifest.
+    - source_file: docs/manifest/story-simulator.yaml
 root_main_py:
     - description: Placeholder; the real entry point is story-simulator-mcp.
     - source_file: main.py

@@ -54,6 +54,11 @@ class TestMcpToolRegistration:
 
         Descriptions carry over from that instance's own methods, so a
         match confirms the same mount -- see mcp_server.py's own docstring.
+
+        Components
+        ----------
+        - tests:
+              value: registry_tools_mount
         """
         tools = {t.name: t for t in server._tool_manager.list_tools()}
         assert tools["view_registry"].description == _registrar_sessions.view_registry.__doc__
@@ -75,14 +80,26 @@ class TestStartWorld:
         assert "World opened" in result
 
     def test_seeds_from_default_world_by_default(self, tmp_path):
-        """Seeds from default world by default."""
+        """Seeds from default world by default.
+
+        Components
+        ----------
+        - tests:
+              value: core.start_world
+        """
         ctx = _make_ctx()
         start_world(str(tmp_path / "save"), ctx)
         registrar = _registrar_sessions.get_registrar(ctx.request_context.session)
         assert "origin" in registrar.registry.component_types
 
     def test_seeds_from_given_scenario_dir(self, tmp_path):
-        """Seeds from given scenario dir."""
+        """Seeds from given scenario dir.
+
+        Components
+        ----------
+        - tests:
+              value: core.start_world
+        """
         ctx = _make_ctx()
         start_world(str(tmp_path / "save"), ctx, scenario_dir=str(LIVING_WORLD_DIR))
         registrar = _registrar_sessions.get_registrar(ctx.request_context.session)
@@ -90,7 +107,13 @@ class TestStartWorld:
         assert "journaling_desk.journal" in positions["entity_id.alias"].values
 
     def test_stores_registrar_and_save_dir_for_session(self, tmp_path):
-        """Stores registrar and save dir for session."""
+        """Stores registrar and save dir for session.
+
+        Components
+        ----------
+        - tests:
+              value: core.start_world
+        """
         ctx = _make_ctx()
         save_dir = tmp_path / "save"
         start_world(str(save_dir), ctx)
@@ -100,7 +123,13 @@ class TestStartWorld:
 
     def test_client_trace_path_is_recorded_when_given(self, tmp_path):
         """single_shared_trace_file: a connected client's own trace_path,
-        threaded through so keyed_subagent can append to that same file."""
+        threaded through so keyed_subagent can append to that same file.
+
+        Components
+        ----------
+        - tests:
+              value: core.start_world
+        """
         ctx = _make_ctx()
         save_dir = tmp_path / "save"
         trace_path = tmp_path / "session_trace.jsonl"
@@ -109,13 +138,25 @@ class TestStartWorld:
         assert _registrar_sessions.get_trace_path(session) == trace_path
 
     def test_no_trace_path_recorded_when_omitted(self, tmp_path):
-        """No trace path recorded when omitted."""
+        """No trace path recorded when omitted.
+
+        Components
+        ----------
+        - tests:
+              value: core.start_world
+        """
         ctx = _make_ctx()
         start_world(str(tmp_path / "save"), ctx)
         assert _registrar_sessions.get_trace_path(ctx.request_context.session) is None
 
     def test_does_not_reseed_an_already_populated_save_dir(self, tmp_path):
-        """Does not reseed an already populated save dir."""
+        """Does not reseed an already populated save dir.
+
+        Components
+        ----------
+        - tests:
+              value: core.start_world
+        """
         save_dir = tmp_path / "save"
         ctx = _make_ctx()
         start_world(str(save_dir), ctx)
@@ -135,6 +176,11 @@ class TestStartWorld:
         alone. Each directory can hold more than one yaml file (a
         save's author is free to split it up), so the loader must
         recurse into whichever it picks.
+
+        Components
+        ----------
+        - tests:
+              value: core.start_world
         """
         save_dir = tmp_path / "save"
         save_dir.mkdir()
@@ -157,7 +203,13 @@ class TestStartWorld:
         assert registrar.get_entity_id("seed_only") is None
 
     def test_first_open_loads_only_world_dir_when_no_history_dir(self, tmp_path):
-        """First open loads only world dir when no history dir."""
+        """First open loads only world dir when no history dir.
+
+        Components
+        ----------
+        - tests:
+              value: core.start_world
+        """
         save_dir = tmp_path / "save"
         save_dir.mkdir()
         (save_dir / "scenario.yaml").write_text("seed_only:\n    - origin\n")
@@ -172,7 +224,13 @@ class TestStartWorld:
 
     def test_first_open_falls_back_to_recursive_glob_when_neither_dir_exists(self, tmp_path):
         """A pristine, never-yet-exported scenario_dir may be organized
-        across several files at arbitrary depth -- everything under save_dir should still load."""
+        across several files at arbitrary depth -- everything under save_dir should still load.
+
+        Components
+        ----------
+        - tests:
+              value: core.start_world
+        """
         save_dir = tmp_path / "save"
         save_dir.mkdir()
         (save_dir / "scenario.yaml").write_text("seed_a:\n    - origin\n")

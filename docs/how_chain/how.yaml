@@ -46,6 +46,22 @@ how:
               type: str
               nullable: true
 
+tests:
+    - description: >
+          Hand-written validation link, declared in a test's own docstring
+          (a numpy-style "Components" section): the owner is the test,
+          ``value`` the node it tests. Overrides the generator's inferred
+          ``test`` rows for that test (see test_links.yaml).
+    - parent: directed_relation
+    - field:
+          value:
+              description: The node this test tests.
+              type: entity_ref
+          note:
+              description: Optional reason or caveat.
+              type: str
+              nullable: true
+
 source_file:
     - description: >
           Repo-relative path (or ``path::name`` for one top-level YAML

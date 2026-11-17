@@ -166,7 +166,9 @@ TEST_HEADER = {
             "Links every test to the how-chain node(s) it tests, so the viewer can list a "
             "node's tests. A test's targets are the story-simulator objects it calls directly "
             "(resolved through its module's imports), else those its local helpers call, else "
-            "a per-file override (TEST_OVERRIDES) for tests that run a hook or a whole scenario."
+            "a per-file override (TEST_OVERRIDES) for tests that run a hook or a whole scenario. "
+            "A test that declares its own `tests` components in its docstring (a numpy-style "
+            "Components section) is left out here: those hand-written links replace inference."
         )},
         "file_info",
     ],
@@ -252,8 +254,12 @@ def _snake(name: str) -> str:
     return re.sub(r"(?<!^)(?=[A-Z])", "_", name).lower().strip("_")
 
 
-def test_links(refs: dict[str, str]) -> list[dict]:
-    """Every test (test_* function or method under tests/) -> the node(s) it tests."""
+def test_links(refs: dict[str, str], hand_written: set[str]) -> list[dict]:
+    """Every test (test_* function or method under tests/) -> the node(s) it tests.
+
+    Tests in `hand_written` (keys of tests whose docstring declares their
+    own ``tests`` components) are skipped: their hand-written links win.
+    """
     targets = {k for k in refs if k.startswith(("story_simulator.", "scripts."))}
 
     def resolve(bound: str | None) -> str | None:
@@ -282,7 +288,7 @@ def test_links(refs: dict[str, str]) -> list[dict]:
             if not isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)) or not fn.name.startswith("test_"):
                 continue
             key = f"{module}.{cls.name}.{fn.name}" if cls else f"{module}.{fn.name}"
-            if key not in refs:
+            if key not in refs or key in hand_written:
                 continue
             methods = {m.name: m for m in cls.body if isinstance(m, (ast.FunctionDef, ast.AsyncFunctionDef))} if cls else {}
             found = next((v for suffix, v in TEST_OVERRIDES.items()
@@ -349,7 +355,12 @@ def main() -> None:
                         {"source_file": variables[k]["source_file"]}]
     OUT.write_text(yaml.safe_dump(doc, sort_keys=False, width=100, allow_unicode=True))
 
-    tlinks = test_links(refs)
+    hand_ids = registrar.registry.get("entity_id").to_pandas()
+    hand_key = dict(zip(hand_ids["value"], hand_ids["path"].astype(str).str.split(":", n=1).str[1]))
+    hand_written = (
+        {hand_key[e] for e in registrar.registry.get("tests").to_pandas()["entity_id"]}
+        if "tests" in registrar.registry.component_types else set())
+    tlinks = test_links(refs, hand_written)
     tdoc = dict(TEST_HEADER)
     tdoc["test_index"] = [{"description": "Every test link (see test)."}, {"test": tlinks}]
     TEST_OUT.write_text(yaml.safe_dump(tdoc, sort_keys=False, width=100, allow_unicode=True))
@@ -369,12 +380,17 @@ def main() -> None:
     for row in full.get("test").to_pandas().to_dict("records"):
         if row["source_eid"] not in key_of or row["value_eid"] not in key_of:
             bad.append(("test", row["source"], row["value"]))
-    tested = {r["source"] for r in tlinks}
+    hand_rows = full.get("tests").to_pandas().to_dict("records") if "tests" in full.component_types else []
+    for row in hand_rows:  # hand-written links must name a real node
+        if row["value_eid"] not in key_of:
+            bad.append(("tests", key_of.get(row["entity_id"]), row["value"]))
+    tested = {r["source"] for r in tlinks} | {refs[k] for k in hand_written}
     all_tests = {refs[k] for k in refs if k.startswith("tests.") and k.rsplit(".", 1)[-1].startswith("test_")
                  and not (REPO / (k.replace(".", "/") + ".py")).exists()}
     print(f"wrote {len(links)} how_link edges ({len(variables)} variable stand-ins) "
-          f"to {OUT.relative_to(REPO)}; {len(tlinks)} test links for {len(tested)}/{len(all_tests)} tests "
-          f"to {TEST_OUT.relative_to(REPO)}; unresolved/mismatched: {bad or 'none'}")
+          f"to {OUT.relative_to(REPO)}; test links for {len(tested)}/{len(all_tests)} tests: "
+          f"{len(tlinks)} inferred (in {TEST_OUT.relative_to(REPO)}), {len(hand_rows)} hand-written "
+          f"(on {len(hand_written)} tests); unresolved/mismatched: {bad or 'none'}")
     if all_tests - tested:
         print("untested-link tests:", sorted(all_tests - tested))
     if bad:

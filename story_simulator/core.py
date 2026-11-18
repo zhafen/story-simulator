@@ -42,6 +42,7 @@ from story_simulator.config import (
     registry_url,
     resolve_database_dsn,
 )
+from story_simulator import physics
 from story_simulator.resolve import JudgmentRequest, NeedsExternalInput, TurnReplay
 
 # save_dir's two export subdirectories, each holding one EC yaml file per
@@ -139,7 +140,7 @@ def _next_time_stamp(registrar: Registrar) -> float:
     reconnect the same way every other piece of world state already does.
 
     `world_clock` isn't itself flagged `time_dimension` (unlike
-    `position.time`/`state.time`/...): a row's own `value` IS the world
+    `position.time`/`velocity.time`/...): a row's own `value` IS the world
     time, so there's no independent "when was this recorded" axis to
     backfill it against -- `Registry.view_current`'s time-dimension
     resolution has nothing to resolve against here. Takes the highest
@@ -318,14 +319,12 @@ async def resolve_event(alias: str, replay: TurnReplay, end_time: float, session
     `plan_events`, and `process_event`'s own docstring for why there's no
     separate mechanical "update" step).
 
-    Doesn't name a specific component type (e.g. `location`) as an
-    example, even though that's what most scenarios so far have needed:
-    this prompt is generic across every scenario, and not every event's
-    consequence is a location change, so hardcoding one component here
-    would bias every scenario toward it. Points at `view_entity` on the
-    component type's own name instead (its field descriptions carry
-    scenario-specific examples, e.g. `location`'s own doubles as the
-    phrasing convention): a model resolving its first-ever write to an
+    Doesn't tell the responder which component type to write: this prompt
+    is generic across every scenario, and not every event's consequence is
+    a change of position, so hardcoding one component here would bias every
+    scenario toward it. Points at `view_entity` on the component type's own
+    name instead (its field descriptions carry the conventions, e.g.
+    `position`'s axes): a model resolving its first-ever write to an
     unfamiliar component type otherwise doesn't think to look up that
     component type's own schema, and improvises a reasonable-but-inconsistent
     phrasing instead.
@@ -355,8 +354,8 @@ async def resolve_event(alias: str, replay: TurnReplay, end_time: float, session
     fact.
 
     Never responder="human": no player is ever behind an event here
-    (there's no `character.interaction_type` to branch on, since the
-    character module isn't what's driving this popped entity). Between
+    (there's no character concept to branch on -- that module is
+    shelved). Between
     "host" and "subagent" -- see `story_simulator.resolve`'s module
     docstring for what "subagent" buys -- `config.event_responder()`
     decides, defaulting to "host" so nothing changes unless a deployment
@@ -379,7 +378,7 @@ async def resolve_event(alias: str, replay: TurnReplay, end_time: float, session
             f"entities it involves -- write those changes directly onto "
             f"each affected entity itself, using whichever component type "
             f"actually fits (view_entity on the component type's own name, "
-            f"e.g. view_entity('location'), shows its field descriptions "
+            f"e.g. view_entity('position'), shows its field descriptions "
             f"if you're unsure which one or how to phrase it), not only "
             f"described in {alias}'s own outcome text -- all via "
             f"update_registry."
@@ -659,7 +658,7 @@ def start_world(
                 input_dirs=[str(MANIFEST_DIR)], yaml_strings={SOURCE_KEY: seed_text}
             )
 
-    # Declares the manifest's own component-type schemas (location, event,
+    # Declares the manifest's own component-type schemas (position, event,
     # ...) regardless of whether this save was fresh, resumed, or already declared.
     registrar.update(input_dirs=[str(MANIFEST_DIR)])
 
@@ -717,3 +716,8 @@ async def advance_simulation(session, resume_token: str | None = None, answer: s
         registrar, session, resume_alias=resume_alias, replay=replay
     )
     return _wrap_loop_result(registrar, alias, replay, prompt, responder, is_checkpoint)
+
+
+def check_collisions(session, alias: str, x: float | None = None, y: float | None = None, z: float | None = None) -> dict:
+    """`physics.check_collisions` against this session's open world."""
+    return physics.check_collisions(registrar_sessions.get_registrar(session), alias, x, y, z)

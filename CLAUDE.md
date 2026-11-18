@@ -14,7 +14,7 @@ Every `update_registry` call re-exports the registry's state to two
 directories, not the source of truth
 but both current as of the last turn:
 - `save_dir/world/`: current state, collapsed — a time_dimension'd
-  component type (`description`, `state`, `position`) shows only its
+  component type (`description`, `position`, `velocity`) shows only its
   current row per entity, not every historical restatement.
 - `save_dir/world_history/`: the same content, uncollapsed — every row
   ever recorded, full change history. The registry itself always keeps
@@ -203,14 +203,15 @@ If a turn's narration needs a component type that isn't already in
 `emc2p/builtins/components.yaml` first — reachable via its installed
 package in `.venv/lib/*/site-packages/emc2p/` since emc2p is a pinned
 dependency, not vendored in this repo's own tree; attach the `emc2p`
-repo directly instead if you need to browse its source — most needs are covered,
-e.g. `state` for a short current-status phrase, `description`/
-`appearance` for current-look text, `size` for perceptibility), define it
+repo directly instead if you need to browse its source — the set is deliberately
+minimal: `position`/`velocity`/`dimensions`/`mass` for anything physical
+(see `story_simulator/physics.py`), `object` for an entity's type,
+`description` for everything else -- prefer those over a new type), define it
 in `manifest/builtins.yaml` before using it: a top-level entry with its
 own `description`, a `component_type` tag, and a `field:` block declaring
 each field's name/type/description — and, if it's a "current value" fact
 rather than an accumulating log, a nullable `time` field flagged
-`time_dimension: true`, matching `position.time`'s/`state.time`'s
+`time_dimension: true`, matching `position.time`'s/`velocity.time`'s
 pattern. Only applies with repo write access (a Claude Code session like
 this one); a narrator connected only through the MCP tool surface should
 just use what's already defined.

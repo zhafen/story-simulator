@@ -178,8 +178,8 @@ unsorted_requirements_and_solutions:
               Any prompt/instruction change meant to improve a responder's
               reasoning (e.g. the recurring arrival-order confusion tracked
               in the parking live test, or a component-choice confusion
-              like writing a car's location under `todo` instead of
-              `location`) must be a general rule for reasoning through the
+              like writing a car's position under `todo` instead of
+              `position`) must be a general rule for reasoning through the
               event-resolution process itself -- never something tailored
               to one specific scenario's particular entities or narrative
               (e.g. hard-coding a reminder about a specific car in the
@@ -1177,7 +1177,7 @@ unsorted_requirements_and_solutions:
                           directly, no Case/CASES list, no data format, no
                           separate fixtures module either: write each
                           scenario's deterministic test the same way
-                          test_scenarios/parking/test_scenario.py already
+                          test_scenarios/parking_collision/test_scenario.py already
                           does.
                           (As with hand_scripted_harness_for_everything
                           above -- same idea, scoped here specifically to
@@ -1376,17 +1376,11 @@ unsorted_requirements_and_solutions:
                           actually picks it up -- a file literally named
                           tests.py is silently skipped by normal `pytest`
                           collection, only found when named on the
-                          command line explicitly). parking and race each
-                          have their own directory (parking's own
-                          test_scenario.py holds both a deterministic and
-                          a live walkthrough class, sharing one
-                          scenario.yaml -- formerly a separate
-                          parking_split directory, merged in once the
-                          split-events version superseded the original
-                          combined-trip one entirely); location_write_isolated stays at
-                          tests/data/scenarios/ since it's used by
-                          tests/location_write_harness.py, a standalone
-                          debug script, not a pytest test case.
+                          command line explicitly). parking_collision and
+                          race each have their own directory
+                          (parking_collision's own test_scenario.py holds
+                          both a deterministic and a live walkthrough
+                          class, sharing one scenario.yaml).
                     - location: tests/test_human_validated/test_scenarios/
                     - work_state: done
                 responder:

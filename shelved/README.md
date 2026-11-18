@@ -18,3 +18,8 @@ instead, and why this was set aside.
   `game_config.py`, and the `npc`/`terrain`/`physics` agent configs.
 - `tests/`: the tests for the above, plus the character-branch/module-toggle
   tests that no longer apply now that `_run_event_loop` only has one path.
+
+The component types this code read and wrote (`character`, `memory`,
+`agenda`, `active`, `origin`, `size`, `appearance`, `agent`, plus the
+freeform `state`/`location`) have since been removed from
+`manifest/builtins.yaml` too -- see git history for their schemas.

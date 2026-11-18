@@ -1,10 +1,9 @@
 player:
-    - character:
-        interaction_type: player
+    - object:
+        type: player
     - position:
         x: 0
         y: 0
-    - origin
     - description:
         value: A traveler, pausing at the edge of a quiet space.
 

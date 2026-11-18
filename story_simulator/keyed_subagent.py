@@ -44,6 +44,28 @@ REPO_ROOT = Path(__file__).parent.parent
 
 # Append-only usage log, not per-session like HeadlessSession's own
 # usage.json -- multiple concurrent MCP subprocesses may write here. Gitignored.
+CHECK_COLLISIONS_SPEC: dict[str, Any] = {
+    "type": "function",
+    "function": {
+        "name": "check_collisions",
+        "description": (
+            "Report which solid bodies `alias` collides with and which regions it's inside, "
+            "at its current position or at a hypothetical x/y/z (e.g. a parking spot's center)."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "alias": {"type": "string"},
+                "x": {"type": "number"},
+                "y": {"type": "number"},
+                "z": {"type": "number"},
+            },
+            "required": ["alias"],
+            "additionalProperties": False,
+        },
+    },
+}
+
 USAGE_LOG_PATH = REPO_ROOT / ".keyed_subagent_usage.jsonl"
 
 # TEMPORARY diagnostic instrumentation (#70): logs each update_registry
@@ -80,6 +102,8 @@ async def call_keyed_subagent(prompt: str, session: Any, origin: str = "") -> st
     """
 
     def _dispatch(name: str, arguments: dict[str, Any]) -> str:
+        if name == "check_collisions":
+            return json.dumps(core.check_collisions(session, **arguments))
         if name != "update_registry":
             return core.registrar_sessions.dispatch(session, name, arguments)
 
@@ -105,7 +129,7 @@ async def call_keyed_subagent(prompt: str, session: Any, origin: str = "") -> st
         prompt,
         model=keyed_subagent_model(),
         dispatch=_dispatch,
-        tools=REGISTRAR_TOOL_SPECS,
+        tools=[*REGISTRAR_TOOL_SPECS, CHECK_COLLISIONS_SPEC],
         usage_log_path=USAGE_LOG_PATH,
         trace_path=core.registrar_sessions.get_trace_path(session),
         trace_actor="keyed_subagent",

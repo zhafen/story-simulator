@@ -1,56 +1,99 @@
 file_info:
     - description: >
-        Regression fixture for this directory's own test_scenario.py
-        (both TestDeterministicWalkthrough and TestLiveWalkthrough).
         Three cars drive to a restaurant with only two parking spots,
-        first-come-first-served; each car's drive and its own parking
-        decision are two separate, pre-planned events (a driving event
-        that ends on arrival, then a parking event that assigns a spot),
-        not bundled into one combined "trip" resolution -- an earlier
-        version of this scenario did bundle them, and this split version
-        superseded it once the split kept the same correctness a combined
-        event lost.
+        first-come-first-served, described with only physical components
+        (position, velocity, mass, dimensions): whether a spot is free is decided by collision
+        detection (see `dimensions`' description in manifest/builtins.yaml),
+        not by tracking who "took" it. Each car's drive and its parking
+        decision are separate events; the intended outcome is car_b ends up in parking_spot_1, car_c in
+        parking_spot_2, car_a on the street.
 
-        Each car's parking event is pre-planned to start the moment its
-        own driving event ends, with a short fixed 10-second duration, so
-        pop_event's own mechanical sort (soonest end_time first) still
-        resolves everything in the intended order: car_b drives (end_time
-        1020), car_b parks (1030), car_c drives (1080), car_c parks
-        (1090), car_a drives (1800), car_a parks (1810) -- never a driving
-        and a parking event tied at the same end_time.
+        Cars drive at 10 m/s from due west, so each one's starting
+        distance from the restaurant matches its driving event's duration.
+        Every car faces +x (east), so its 4.5 m length lies along x. On
+        arrival a car stops at the restaurant (0, 0); parking then moves it
+        to the position of the first region it fits in without colliding
+        with another car (parking_spot_1, then parking_spot_2, then the
+        street).
 
 restaurant:
     - object:
         type: restaurant
+    - position:
+        x: 0
+        y: 0
+        z: 0
+    - dimensions:
+        x: 10
+        y: 10
+        z: 5
     - description:
         value: >
             A small restaurant with exactly two dedicated parking spots,
             parking_spot_1 and parking_spot_2; anyone who misses both has
-            to park on the street instead. First-come, first-served:
-            whoever actually arrives first takes parking_spot_1, the next
-            takes parking_spot_2.
+            to park on the street instead. A spot is free only if a car
+            placed at its center would not collide with any other car.
+            Arriving cars try parking_spot_1 first, then parking_spot_2.
 
 parking_spot_1:
     - object:
         type: parking_spot
+    - position:
+        x: 10
+        y: 0
+        z: 0
+    - dimensions:
+        x: 5.5
+        y: 3
+        z: 3
     - description:
         value: The first of the restaurant's two dedicated parking spots.
 
 parking_spot_2:
     - object:
         type: parking_spot
+    - position:
+        x: 10
+        y: 6
+        z: 0
+    - dimensions:
+        x: 5.5
+        y: 3
+        z: 3
     - description:
         value: The second of the restaurant's two dedicated parking spots.
 
 street:
     - object:
         type: street
+    - position:
+        x: 0
+        y: -20
+        z: 0
+    - dimensions:
+        x: 40
+        y: 6
+        z: 3
     - description:
         value: Ordinary street parking near the restaurant.
 
 car_a:
     - object:
         type: car
+    - position:
+        x: -18000
+        y: 0
+        z: 0
+    - velocity:
+        x: 0
+        y: 0
+        z: 0
+    - mass:
+        value: 1500
+    - dimensions:
+        x: 4.5
+        y: 2
+        z: 1.5
     - description:
         value: The car for friend A.
 
@@ -81,6 +124,20 @@ car_a_park:
 car_b:
     - object:
         type: car
+    - position:
+        x: -7200
+        y: 0
+        z: 0
+    - velocity:
+        x: 0
+        y: 0
+        z: 0
+    - mass:
+        value: 1500
+    - dimensions:
+        x: 4.5
+        y: 2
+        z: 1.5
     - description:
         value: The car for friend B.
 
@@ -111,6 +168,20 @@ car_b_park:
 car_c:
     - object:
         type: car
+    - position:
+        x: -6000
+        y: 0
+        z: 0
+    - velocity:
+        x: 0
+        y: 0
+        z: 0
+    - mass:
+        value: 1500
+    - dimensions:
+        x: 4.5
+        y: 2
+        z: 1.5
     - description:
         value: The car for friend C.
 

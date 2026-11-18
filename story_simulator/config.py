@@ -9,7 +9,7 @@ import os
 import urllib.parse
 from pathlib import Path
 
-# The story-simulator's own component/field schema (position, character,
+# The story-simulator's own component/field schema (position, event,
 # ...). Every base_etl call needs this in `input_dirs`, or types go unvalidated.
 MANIFEST_DIR = Path(__file__).parent.parent / "manifest"
 

@@ -61,6 +61,16 @@ but is not attached to, or needed by, an actual played session.
 > see [`shelved/README.md`](../shelved/README.md) and git history to pull
 > any of it back in. What's below reflects what's actually live.
 
+> **The component set is deliberately minimal** (`manifest/builtins.yaml`):
+> `position`/`velocity`/`dimensions`/`mass` for anything physical, checked
+> by `story_simulator/physics.py`'s `check_collisions` tool; `object` and
+> `description` for what an entity is; and the event machinery
+> (`event`/`event_state`/`involved_entity`/`outcome`, plus internal
+> `world_clock`/`pending_resolution`). Freeform `location`/`state`, and the
+> shelved modules' `character`/`memory`/`agenda`/`active`/`origin`/`size`/
+> `appearance`/`agent`, were removed -- restore them alongside any shelved
+> code that needs them.
+
 ## The event-driven turn loop
 
 Turns aren't a fixed round-robin over every entity — they're scheduled,

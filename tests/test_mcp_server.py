@@ -361,7 +361,7 @@ class TestRegistryTools:
         ctx = _make_ctx()
         start_world(str(tmp_path / "save"), ctx)
         result = view_entity("player", ctx)
-        assert "character" in result
+        assert "object" in result
 
     def test_view_entity_reports_unknown_entity(self, tmp_path):
         ctx = _make_ctx()

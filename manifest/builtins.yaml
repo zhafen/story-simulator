@@ -128,6 +128,7 @@ character_components:
             written — a character's memory only grows. Scopes what
             `advance_npc_turn` tells that NPC's decision-making call about.
         - parent: directed_relation
+        - component_type
         - field:
             value:
                 description: The entity this character remembers.
@@ -138,6 +139,7 @@ character_components:
             achieve. Read by `advance_npc_turn` to prompt that character's
             decision-making call each turn. Player characters don't need one.
         - parent: str
+        - component_type
         - field:
             value:
                 description: The agenda text.
@@ -217,6 +219,7 @@ event_components:
             to be interpreted. An event can carry several
             involved_entity rows, one per entity it involves.
         - parent: directed_relation
+        - component_type
         - field:
             value:
                 description: The entity this event involves.

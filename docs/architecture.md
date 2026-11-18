@@ -54,12 +54,22 @@ iacs_mcp_pointed_at_live_registry_for_component_discovery`,
 architecture-review/manifest tooling, e.g. the diagram generation below)
 but is not attached to, or needed by, an actual played session.
 
-> **Character/NPC/terrain/physics/spatial-perception tools are currently
-> shelved** (`perceive`, `advance_npc_turn`, `generate_terrain`,
-> `resolve_physics`, and the character-aware branch the event loop below
-> used to take) — moved to [`shelved/`](../shelved) rather than deleted;
-> see [`shelved/README.md`](../shelved/README.md) and git history to pull
-> any of it back in. What's below reflects what's actually live.
+> **The event loop's character-aware branch is back** (Epic C item 1,
+> [story-simulator#48](https://github.com/zhafen/story-simulator/issues/48)):
+> an NPC-controlled character's own event gets a `decide_event` step
+> (`story_simulator/character.py` -- everything dependent on being a
+> character lives there, separate from `story_simulator/spatial.py`'s
+> own position/distance/perception primitives, generic over any entity)
+> before resolve. `perceive`,
+> `advance_npc_turn`, `generate_terrain`, and `resolve_physics` as
+> **standalone, directly callable tools** are still shelved — perception
+> and an NPC's turn are handled inside the loop itself now, not forced
+> out-of-band. `generate_terrain`/`resolve_physics`/`advance_npc_turn`'s
+> own specialist-agent machinery (`agents.py`/`specialists.py`/
+> `game_config.py`'s non-perception constants/the npc/terrain/physics
+> prompt YAMLs) remains in [`shelved/`](../shelved) — see
+> [`shelved/README.md`](../shelved/README.md) and git history to pull any
+> of it back in.
 
 ## The event-driven turn loop
 

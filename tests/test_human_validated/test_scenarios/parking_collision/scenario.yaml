@@ -1,17 +1,18 @@
 file_info:
     - description: >
-        Copy of ../parking/scenario.yaml, restated with only physical
-        components (position, velocity, mass, radius) instead of freeform
-        `location` phrases: whether a spot is free is decided by collision
-        detection (see `radius`'s description in manifest/builtins.yaml),
-        not by tracking who "took" it. Same events, same timings, same
-        intended outcome: car_b ends up in parking_spot_1, car_c in
+        Three cars drive to a restaurant with only two parking spots,
+        first-come-first-served, described with only physical components
+        (position, velocity, mass, dimensions): whether a spot is free is decided by collision
+        detection (see `dimensions`' description in manifest/builtins.yaml),
+        not by tracking who "took" it. Each car's drive and its parking
+        decision are separate events; the intended outcome is car_b ends up in parking_spot_1, car_c in
         parking_spot_2, car_a on the street.
 
         Cars drive at 10 m/s from due west, so each one's starting
         distance from the restaurant matches its driving event's duration.
-        On arrival a car stops at the restaurant (0, 0); parking then moves
-        it to the center of the first region it fits in without colliding
+        Every car faces +x (east), so its 4.5 m length lies along x. On
+        arrival a car stops at the restaurant (0, 0); parking then moves it
+        to the position of the first region it fits in without colliding
         with another car (parking_spot_1, then parking_spot_2, then the
         street).
 
@@ -22,8 +23,10 @@ restaurant:
         x: 0
         y: 0
         z: 0
-    - radius:
-        value: 5
+    - dimensions:
+        x: 10
+        y: 10
+        z: 5
     - description:
         value: >
             A small restaurant with exactly two dedicated parking spots,
@@ -39,8 +42,10 @@ parking_spot_1:
         x: 10
         y: 0
         z: 0
-    - radius:
-        value: 3
+    - dimensions:
+        x: 5.5
+        y: 3
+        z: 3
     - description:
         value: The first of the restaurant's two dedicated parking spots.
 
@@ -51,8 +56,10 @@ parking_spot_2:
         x: 10
         y: 6
         z: 0
-    - radius:
-        value: 3
+    - dimensions:
+        x: 5.5
+        y: 3
+        z: 3
     - description:
         value: The second of the restaurant's two dedicated parking spots.
 
@@ -63,8 +70,10 @@ street:
         x: 0
         y: -20
         z: 0
-    - radius:
-        value: 15
+    - dimensions:
+        x: 40
+        y: 6
+        z: 3
     - description:
         value: Ordinary street parking near the restaurant.
 
@@ -81,8 +90,10 @@ car_a:
         z: 0
     - mass:
         value: 1500
-    - radius:
-        value: 2
+    - dimensions:
+        x: 4.5
+        y: 2
+        z: 1.5
     - description:
         value: The car for friend A.
 
@@ -123,8 +134,10 @@ car_b:
         z: 0
     - mass:
         value: 1500
-    - radius:
-        value: 2
+    - dimensions:
+        x: 4.5
+        y: 2
+        z: 1.5
     - description:
         value: The car for friend B.
 
@@ -165,8 +178,10 @@ car_c:
         z: 0
     - mass:
         value: 1500
-    - radius:
-        value: 2
+    - dimensions:
+        x: 4.5
+        y: 2
+        z: 1.5
     - description:
         value: The car for friend C.
 

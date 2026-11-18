@@ -1,9 +1,8 @@
-"""Regressions for this directory's scenario.yaml: ../parking's puzzle, decided by collision detection.
+"""Regressions for this directory's scenario.yaml: three cars, two parking spots, decided by collision detection.
 
-Same events and intended outcome as ../parking, but the world is described
-only by position/velocity/mass/radius -- a car's parked spot is checked via
-story_simulator.physics.check_collisions (inside the spot, clear of every
-other car), not by reading back a freeform `location` phrase.
+The world is described only by position/velocity/mass/dimensions -- a
+car's parked spot is checked via story_simulator.physics.check_collisions
+(inside the spot, clear of every other car).
 """
 
 import asyncio
@@ -84,7 +83,7 @@ class TestDeterministicWalkthrough:
             f"anything it changes about the entities it involves -- write "
             f"those changes directly onto each affected entity itself, using "
             f"whichever component type actually fits (view_entity on the "
-            f"component type's own name, e.g. view_entity('location'), shows "
+            f"component type's own name, e.g. view_entity('position'), shows "
             f"its field descriptions if you're unsure which one or how to "
             f"phrase it), not only described in {alias}'s own outcome text -- "
             f"all via update_registry."

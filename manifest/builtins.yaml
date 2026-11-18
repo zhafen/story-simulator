@@ -1,14 +1,3 @@
-character:
-    - description: Base component for character data.
-    - component_type
-    - field:
-        interaction_type:
-            description: Who controls the character.
-            type: str
-            range:
-                - player
-                - npc
-
 object:
     - description: Base component for inanimate objects.
     - component_type
@@ -16,59 +5,6 @@ object:
         type:
             description: The type of object, e.g. "door".
             type: str
-
-appearance:
-    - description: A component used to describe the appearance of an entity.
-    - component_type
-    - field:
-        description:
-            description: A description of the appearance.
-            type: str
-
-state:
-    - description: The entity's current state, as a single freeform word or short
-        phrase (e.g. a door being "open" or "closed"). Exactly one value counts
-        as current per entity -- see `time`.
-    - component_type
-    - field:
-        value:
-            description: The current state, e.g. "open" or "closed".
-            type: str
-        time:
-            description: World time (seconds since world creation) this state
-                was recorded at, backfilled on merge (see
-                story_simulator.core._next_time_stamp), not authored
-                directly, so it stays nullable for hand-authored rows.
-                Entities can accumulate multiple state rows over time;
-                flagged time_dimension so Registry.view_current resolves
-                the row with the highest time as the current state.
-            type: float
-            nullable: true
-            time_dimension: true
-            units: seconds
-
-location:
-    - description: The entity's current location, as a short freeform phrase
-        (e.g. "parked in parking_spot_1" or "parked on street") rather than
-        spatial coordinates -- see `position` for that. Exactly one value
-        counts as current per entity -- see `time`.
-    - component_type
-    - field:
-        value:
-            description: The current location, e.g. "parked on street".
-            type: str
-        time:
-            description: World time (seconds since world creation) this
-                location was recorded at, backfilled on merge (see
-                story_simulator.core._next_time_stamp), not authored
-                directly, so it stays nullable for hand-authored rows.
-                Entities can accumulate multiple location rows over time;
-                flagged time_dimension so Registry.view_current resolves
-                the row with the highest time as the current location.
-            type: float
-            nullable: true
-            time_dimension: true
-            units: seconds
 
 physics_components:
     position:
@@ -132,6 +68,28 @@ physics_components:
                 nullable: true
                 time_dimension: true
                 units: seconds
+    dimensions:
+        - description: The entity's size, in meters, along its own axes -- x
+            is the entity's forward direction (a car's length), y its side
+            to side (a car's width), z its height. Until there's an
+            orientation component, every entity counts as facing +x (east),
+            so these axes line up with `position`'s. The entity is a box
+            centered on `position` in x and y, resting on it in z (it spans
+            position.z to position.z + dimensions.z). Two solid entities
+            (both with `mass`) collide when their boxes overlap; a solid
+            entity is inside a region (no `mass`) when its box lies entirely
+            within the region's. See story_simulator/physics.py.
+        - component_type
+        - field:
+            x:
+                description: Length along the forward axis, in meters.
+                type: float
+            y:
+                description: Width (side to side), in meters.
+                type: float
+            z:
+                description: Height, in meters.
+                type: float
     mass:
         - description: The entity's mass, in kilograms. Entities without a
             mass (e.g. a parking spot) are regions, not solid bodies, and
@@ -141,65 +99,6 @@ physics_components:
             value:
                 description: The mass in kilograms.
                 type: float
-    radius:
-        - description: The entity's collision radius, in meters -- it's
-            treated as a sphere of this radius centered on its `position`.
-            Two solid entities (both with `mass`) collide when the distance
-            between their positions is less than the sum of their radii; a
-            solid entity is inside a region (no `mass`) when that distance
-            plus its own radius is at most the region's radius.
-        - component_type
-        - field:
-            value:
-                description: The radius in meters.
-                type: float
-    origin:
-        - description: A tag component indicating that the associated entity is at the
-            origin of the coordinate system.
-        - component_type
-    size:
-        - description: The entity's characteristic visible dimension, in meters (e.g.
-            height for a person or door). Drives how far away `perceive`
-            (story_simulator/spatial.py) considers the entity perceptible --
-            see `story_simulator.game_config` for the visibility-distance
-            calculation. An entity with no `size` component of its own falls
-            back to `game_config.DEFAULT_ENTITY_SIZE`.
-        - component_type
-        - field:
-            value:
-                description: The size in meters.
-                type: float
-
-character_components:
-    memory:
-        - description: >
-            Marks that the owning character has perceived, and now
-            remembers, the entity referenced by value. Written by `perceive`
-            alongside `active`, but unlike `active`, never removed once
-            written — a character's memory only grows. Scopes what
-            `advance_npc_turn` tells that NPC's decision-making call about.
-        - parent: directed_relation
-        - field:
-            value:
-                description: The entity this character remembers.
-                type: entity_ref
-    agenda:
-        - description: >
-            A freeform statement of what the owning character wants to do or
-            achieve. Read by `advance_npc_turn` to prompt that character's
-            decision-making call each turn. Player characters don't need one.
-        - parent: str
-        - field:
-            value:
-                description: The agenda text.
-                type: str
-
-turn_components:
-    active:
-        - description: Tag component marking an entity as currently perceived by
-            whichever character `perceive` was last called for. Replaced
-            wholesale on each `perceive` call to match its current result set.
-        - component_type
 
 event_components:
     event:
@@ -354,24 +253,3 @@ event_components:
                 nullable: true
                 time_dimension: true
                 units: seconds
-
-agent_components:
-    agent:
-        - description: >
-            Reserved for a future EC-defined agent: an entity with this
-            component would describe an agent (Terrain, Physics, an NPC's
-            own decision-maker, or a world-author's own) the same way
-            `story_simulator.agents.AgentSpec` does today from a `*.yaml`
-            file. Not read by any code yet — see
-            docs/manifest/story-simulator.yaml: story_simulator_mission.ec_defined_agents.
-        - component_type
-        - field:
-            role:
-                description: What this agent is for (e.g. "terrain", "physics").
-                type: str
-            model:
-                description: A LiteLLM model string, e.g. "claude-opus-4-8" or "gpt-4.1".
-                type: str
-            system_prompt:
-                description: The agent's system prompt.
-                type: str

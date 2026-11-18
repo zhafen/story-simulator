@@ -5,9 +5,6 @@ door:
       is cool and dry to the touch, faintly gritty in places. It has a plain round
       wooden knob, set at about waist height, that turns freely. It has swung shut
       again behind the player.
-- state:
-    time: 198370
-    value: closed
 - object:
     type: door
 - position:
@@ -21,11 +18,7 @@ door_2:
       the first door's plain, pale, rough-grained wood on both sides. Nothing holds
       it up but its own frame -- no wall, no structure. Its hinges are visible from
       the back, and it has a matching plain round wooden knob on this side too, set
-      at about waist height, that turns freely.
-- active
-- state:
-    time: 198370
-    value: closed
+      at about waist height, that turns freely. It is closed.
 - object:
     type: door
 - position:
@@ -88,8 +81,8 @@ journaling_desk:
       y: 500.0
       z: 0.0
 player:
-- character:
-    interaction_type: player
+- object:
+    type: player
 - position:
     time: 288827.0
     x: 0.0
@@ -99,13 +92,6 @@ player:
     time: 288827
     value: A traveler walking north across the cracked, sunbaked field, the second
       door now distant behind them.
-- memory: door_2
-- memory: southern_field
-- memory: door_2
-- memory: door
-- memory: expanse
-- memory: southern_field
-- origin
 southern_field:
 - description:
     time: 211947
@@ -114,7 +100,6 @@ southern_field:
       organic long since dried out. The land is flat and featureless in every direction,
       with a high, harsh sun and sharp-edged shadows -- the light of late spring or
       early summer.
-- active
 - note: 'Sync verification turn: confirming update_registry now exports save_dir/world.yaml
     after the mcp_server.py reload.
 

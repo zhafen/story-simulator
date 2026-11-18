@@ -15,7 +15,7 @@ race_placement:
     - description: A car's finishing position in this race (1 = first to
         finish, 2 = second, etc.), recorded once its own trip event
         resolves. Exactly one value counts as current per entity -- see
-        `time`, matching state's/location's pattern. Scoped to this
+        `time`, matching position's/velocity's pattern. Scoped to this
         scenario rather than a manifest/builtins.yaml global, since
         nothing outside this test needs it.
     - component_type

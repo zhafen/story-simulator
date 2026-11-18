@@ -12,9 +12,6 @@ door:
     surface is cool and dry to the touch, faintly gritty in places. It has a plain
     round wooden knob, set at about waist height, that turns freely. It has swung
     shut again behind the player.
-- state:
-    time: 198370.0
-    value: closed
 - description: A plain door of unfinished wood, pale and slightly rough-grained. Its
     surface is cool and dry to the touch, faintly gritty in places. It has a plain
     round wooden knob, set at about waist height, that turns freely. It now stands
@@ -29,8 +26,6 @@ door:
     x: 0.0
     y: 2.0
     z: 0.0
-- state: open
-- state: closed
 - description: A plain door; what's on its far side isn't visible yet.
 door_2:
 - description:
@@ -39,8 +34,7 @@ door_2:
       the first door's plain, pale, rough-grained wood on both sides. Nothing holds
       it up but its own frame -- no wall, no structure. Its hinges are visible from
       the back, and it has a matching plain round wooden knob on this side too, set
-      at about waist height, that turns freely.
-- active
+      at about waist height, that turns freely. It is closed.
 - description:
     time: 198370.0
     value: A second plain door, standing alone in a cracked, sunbaked field. It matches
@@ -58,9 +52,6 @@ door_2:
     holds it up but its own frame -- no wall, no structure. Its hinges are visible
     from the back, and it has a matching plain round wooden knob on this side too,
     set at about waist height.
-- state:
-    time: 198370.0
-    value: closed
 - description: A second plain door, standing alone in a cracked, sunbaked field. It
     matches the first door's plain, pale, rough-grained wood on both sides. Nothing
     holds it up but its own frame -- no wall, no structure -- and its hinges are visible
@@ -73,7 +64,6 @@ door_2:
     but what's on the other side remains unclear.
 - object:
     type: door
-- state: closed
 - description: A second plain door, standing alone in a cracked, sunbaked field. It
     matches the first door's plain, pale, rough-grained wood on both sides. Nothing
     holds it up but its own frame -- no wall, no structure. Its hinges are visible
@@ -84,7 +74,6 @@ door_2:
     x: 0.0
     y: -998.0
     z: 0.0
-- state: open
 - description: A second plain door, standing alone in a cracked, sunbaked field. It
     matches the first door's plain, pale, rough-grained wood.
 expanse:
@@ -148,8 +137,8 @@ journaling_desk:
   - description: A capped fountain pen, jade green and faceted with a wide nib. The
       ink is black. It rests next to a journal and on a desk.
 player:
-- character:
-    interaction_type: player
+- object:
+    type: player
 - position:
     time: 288827.0
     x: 0.0
@@ -173,10 +162,8 @@ player:
     time: 288708.0
     value: A traveler walking north across the cracked, sunbaked field, away from
       the second door.
-- memory: door_2
 - description: A traveler standing at the edge of a quiet, empty expanse, having just
     looked around and taken in the door and the surrounding space.
-- memory: southern_field
 - position:
     time: 0.0
     x: 0.0
@@ -200,15 +187,10 @@ player:
 - description: A traveler who has just walked through the door and emerged a year
     later, one kilometer south, standing on cracked, sunbaked ground beside a second
     plain door.
-- memory: door_2
-- memory: door
 - position:
     x: 0.0
     y: 0.0
     z: 0.0
-- memory: expanse
-- memory: southern_field
-- origin
 - description: A traveler, pausing at the edge of a quiet space.
 southern_field:
 - description:
@@ -218,7 +200,6 @@ southern_field:
       organic long since dried out. The land is flat and featureless in every direction,
       with a high, harsh sun and sharp-edged shadows -- the light of late spring or
       early summer.
-- active
 - note: 'Sync verification turn: confirming update_registry now exports save_dir/world.yaml
     after the mcp_server.py reload.
 

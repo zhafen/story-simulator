@@ -90,7 +90,7 @@ class TestStartWorld:
         ctx = _make_ctx()
         start_world(str(tmp_path / "save"), ctx)
         registrar = _registrar_sessions.get_registrar(ctx.request_context.session)
-        assert "origin" in registrar.registry.component_types
+        assert "position" in registrar.registry.component_types
 
     def test_seeds_from_given_scenario_dir(self, tmp_path):
         """Seeds from given scenario dir.
@@ -160,12 +160,14 @@ class TestStartWorld:
         save_dir = tmp_path / "save"
         ctx = _make_ctx()
         start_world(str(save_dir), ctx)
-        update_registry("custom_entity:\n    - origin\n", ctx=ctx)
+        update_registry("custom_entity:\n    - object:\n        type: thing\n", ctx=ctx)
+        registrar = _registrar_sessions.get_registrar(ctx.request_context.session)
+        n_objects = registrar.get("object").count().execute()
 
         ctx2 = _make_ctx()
         start_world(str(save_dir), ctx2)
         registrar = _registrar_sessions.get_registrar(ctx2.request_context.session)
-        assert registrar.get("origin").count().execute() == 2  # world's + custom_entity's
+        assert registrar.get("object").count().execute() == n_objects  # seed not merged again
 
     def test_first_open_loads_only_world_history_dir_when_present(self, tmp_path):
         """world_history/, world/, and the seed are all redundant with each
@@ -184,14 +186,14 @@ class TestStartWorld:
         """
         save_dir = tmp_path / "save"
         save_dir.mkdir()
-        (save_dir / "scenario.yaml").write_text("seed_only:\n    - origin\n")
+        (save_dir / "scenario.yaml").write_text("seed_only:\n    - object:\n        type: thing\n")
         (save_dir / "world").mkdir()
-        (save_dir / "world" / "world.yaml").write_text("world_only:\n    - origin\n")
+        (save_dir / "world" / "world.yaml").write_text("world_only:\n    - object:\n        type: thing\n")
         (save_dir / "world_history").mkdir()
-        (save_dir / "world_history" / "a.yaml").write_text("history_a:\n    - origin\n")
+        (save_dir / "world_history" / "a.yaml").write_text("history_a:\n    - object:\n        type: thing\n")
         (save_dir / "world_history" / "nested").mkdir()
         (save_dir / "world_history" / "nested" / "b.yaml").write_text(
-            "history_b:\n    - origin\n"
+            "history_b:\n    - object:\n        type: thing\n"
         )
 
         ctx = _make_ctx()
@@ -212,9 +214,9 @@ class TestStartWorld:
         """
         save_dir = tmp_path / "save"
         save_dir.mkdir()
-        (save_dir / "scenario.yaml").write_text("seed_only:\n    - origin\n")
+        (save_dir / "scenario.yaml").write_text("seed_only:\n    - object:\n        type: thing\n")
         (save_dir / "world").mkdir()
-        (save_dir / "world" / "world.yaml").write_text("world_only:\n    - origin\n")
+        (save_dir / "world" / "world.yaml").write_text("world_only:\n    - object:\n        type: thing\n")
 
         ctx = _make_ctx()
         start_world(str(save_dir), ctx)
@@ -233,9 +235,9 @@ class TestStartWorld:
         """
         save_dir = tmp_path / "save"
         save_dir.mkdir()
-        (save_dir / "scenario.yaml").write_text("seed_a:\n    - origin\n")
+        (save_dir / "scenario.yaml").write_text("seed_a:\n    - object:\n        type: thing\n")
         (save_dir / "locations").mkdir()
-        (save_dir / "locations" / "field.yaml").write_text("seed_b:\n    - origin\n")
+        (save_dir / "locations" / "field.yaml").write_text("seed_b:\n    - object:\n        type: thing\n")
 
         ctx = _make_ctx()
         start_world(str(save_dir), ctx)
@@ -289,10 +291,11 @@ class TestRegistryTools:
         """Update registry merges new entity."""
         ctx = _make_ctx()
         start_world(str(tmp_path / "save"), ctx)
-        result = update_registry("new_thing:\n    - origin\n", ctx=ctx)
-        assert "Merged" in result
         registrar = _registrar_sessions.get_registrar(ctx.request_context.session)
-        assert registrar.get("origin").count().execute() == 2
+        n_before = registrar.get("object").count().execute()
+        result = update_registry("new_thing:\n    - object:\n        type: thing\n", ctx=ctx)
+        assert "Merged" in result
+        assert registrar.get("object").count().execute() == n_before + 1
 
     def test_update_registry_rejects_bare_mapping_components(self, tmp_path):
         """A component written without the required leading `- ` (a bare
@@ -306,13 +309,13 @@ class TestRegistryTools:
         ctx = _make_ctx()
         start_world(str(tmp_path / "save"), ctx)
         with pytest.raises(ValueError, match="car_a"):
-            update_registry("car_a:\n    state: parked on street\n", ctx=ctx)
+            update_registry("car_a:\n    mass: 1500\n", ctx=ctx)
         registrar = _registrar_sessions.get_registrar(ctx.request_context.session)
-        assert "state" not in registrar.registry.component_types
+        assert "mass" not in registrar.registry.component_types
 
     def test_update_registry_rejects_invented_component_type(self, tmp_path):
         """The recurring live-test bug this mechanically backstops: a weak
-        model invents a plausible name (parked_at) instead of the real, declared one (location)."""
+        model invents a plausible name (parked_at) instead of the real, declared one (position)."""
         ctx = _make_ctx()
         start_world(str(tmp_path / "save"), ctx)
         with pytest.raises(ValueError, match="parked_at"):
@@ -324,12 +327,12 @@ class TestRegistryTools:
         """Update registry suggests close match for typo."""
         ctx = _make_ctx()
         start_world(str(tmp_path / "save"), ctx)
-        with pytest.raises(ValueError, match="locaton.*location"):
-            update_registry("car_a:\n    - locaton: parked on street\n", ctx=ctx)
+        with pytest.raises(ValueError, match="positon.*position"):
+            update_registry("car_a:\n    - positon:\n        x: 10\n        y: 0\n", ctx=ctx)
 
     def test_update_registry_allows_declared_but_previously_unused_component_type(self, tmp_path):
         """A real component type nothing has written to yet (declared in
-        manifest/builtins.yaml, e.g. `location`) must not be rejected as unknown.
+        manifest/builtins.yaml, e.g. `mass`) must not be rejected as unknown.
 
         component_types alone only reflects data-bearing types -- checking
         only that would wrongly reject a declared-but-unused type (see
@@ -337,7 +340,7 @@ class TestRegistryTools:
         """
         ctx = _make_ctx()
         start_world(str(tmp_path / "save"), ctx)
-        result = update_registry("car_a:\n    - location:\n        value: parked on street\n", ctx=ctx)
+        result = update_registry("car_a:\n    - mass:\n        value: 1500\n", ctx=ctx)
         assert "Merged" in result
 
     def test_update_registry_allows_unknown_type_defined_in_the_same_write(self, tmp_path):
@@ -387,31 +390,32 @@ class TestRegistryTools:
         """The live-test bug this backstops: a component name used as a
         nested dict key (missing the leading `- ` that would make it a list item).
 
-        Parses as "car_b has a nested child entity named location",
-        not "attach a location component to car_b" -- structurally
+        Parses as "car_b has a nested child entity named position",
+        not "attach a position component to car_b" -- structurally
         identical to
         test_update_registry_accepts_legitimate_nested_entities'
-        genuine nesting, distinguished only by `location` being a
+        genuine nesting, distinguished only by `position` being a
         real, already-declared component type.
         """
         ctx = _make_ctx()
         start_world(str(tmp_path / "save"), ctx)
-        with pytest.raises(ValueError, match="location"):
-            update_registry("car_b:\n    location:\n        - value: parked in parking_spot_1\n", ctx=ctx)
+        with pytest.raises(ValueError, match="position"):
+            update_registry("car_b:\n    position:\n        - x: 10\n          y: 0\n", ctx=ctx)
         registrar = _registrar_sessions.get_registrar(ctx.request_context.session)
-        assert registrar.get_entity_id("car_b.location") is None
+        assert registrar.get_entity_id("car_b.position") is None
 
     def test_update_registry_accepts_correct_list_form_for_known_component(self, tmp_path):
         """Sanity check alongside the rejection above: the correct list
-        form for the same component (`location` as a list item) must not be caught by the new check."""
+        form for the same component (`position` as a list item) must not be caught by the new check."""
         ctx = _make_ctx()
         start_world(str(tmp_path / "save"), ctx)
         result = update_registry(
             "car_b:\n"
             "    - object:\n"
             "        type: car\n"
-            "    - location:\n"
-            "        value: parked in parking_spot_1\n",
+            "    - position:\n"
+            "        x: 10\n"
+            "        y: 0\n",
             ctx=ctx,
         )
         assert "Merged" in result
@@ -437,7 +441,7 @@ class TestRegistryTools:
         ctx = _make_ctx()
         start_world(str(tmp_path / "save"), ctx)
         result = view_entity("player", ctx)
-        assert "character" in result
+        assert "object" in result
 
     def test_view_entity_reports_unknown_entity(self, tmp_path):
         """View entity reports unknown entity."""

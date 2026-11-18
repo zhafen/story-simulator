@@ -76,11 +76,9 @@ test_index:
     value: test_human_validated.conftest
   - source: TestTurnStepperFixture.test_no_check_is_optional
     value: test_human_validated.conftest
-  - source: test_responder_matrix.test_scenario_resolves_under_every_responder
+  - source: TestDeterministicWalkthrough.test_scenario_seeds_no_collisions
     value: function
-  - source: TestDeterministicWalkthrough.test_end_time_order_matches_true_arrival_order
-    value: function
-  - source: TestDeterministicWalkthrough.test_full_walkthrough_exact_prompts_and_registry_state
+  - source: TestDeterministicWalkthrough.test_full_walkthrough_collision_checked
     value: function
   - source: TestLiveWalkthrough.test_scenario_resolves_correctly
     value: function
@@ -130,6 +128,26 @@ test_index:
     value: tool_view_entity
   - source: test_native_subagent_sidechain.test_subagent_turns_reachable_via_task_notification_output_file
     value: ai_judgment
+  - source: test_physics.test_overlapping_solids_collide
+    value: physics.collides
+  - source: test_physics.test_overlapping_solids_collide
+    value: physics.Body
+  - source: test_physics.test_forward_axis_is_x
+    value: physics.collides
+  - source: test_physics.test_forward_axis_is_x
+    value: physics.Body
+  - source: test_physics.test_touching_or_apart_solids_dont_collide
+    value: physics.collides
+  - source: test_physics.test_touching_or_apart_solids_dont_collide
+    value: physics.Body
+  - source: test_physics.test_regions_never_collide
+    value: physics.collides
+  - source: test_physics.test_regions_never_collide
+    value: physics.Body
+  - source: test_physics.test_inside_requires_whole_box_within_region
+    value: physics.inside
+  - source: test_physics.test_nothing_is_inside_a_solid
+    value: physics.inside
   - source: test_resolve.test_host_needs_external_input_carries_the_requests_own_origin
     value: resolve.NeedsExternalInput
   - source: test_resolve.test_resolve_args_discards_checkpoint_answer_instead_of_banking_it

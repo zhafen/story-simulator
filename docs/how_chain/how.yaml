@@ -104,6 +104,8 @@ function:
             question: How do events unfold over time?
           - value: ai_judgment
             question: How does AI decide what happens?
+          - value: physical_mechanics
+            question: How are physical outcomes decided?
 
 quality:
     - description: How the project checks and maintains itself.
@@ -168,6 +170,12 @@ ai_judgment:
           - value: story_simulator.keyed_subagent
             question: How can AI answer without a host round trip?
 
+physical_mechanics:
+    - description: Entities with position and dimensions are boxes; collisions and containment are geometry, not judgment.
+    - how:
+          - value: story_simulator.physics
+            question: How are collisions and fit checked?
+
 # ---------------------------------------------------------------------------
 # Quality
 # ---------------------------------------------------------------------------
@@ -183,6 +191,8 @@ verification:
             question: How is the event loop checked?
           - value: judgment_tests
             question: How are the responders checked?
+          - value: physics_tests
+            question: How is collision geometry checked?
           - value: human_validated_tests
             question: How are whole play scenarios checked?
           - value: project_tooling_tests
@@ -212,26 +222,12 @@ world_schema:
     - description: The world schema, merged into every world registry.
     - source_file: manifest/builtins.yaml
     - how:
-          - value: schema_character
-            question: How is a character represented?
           - value: schema_object
-            question: How is an object represented?
-          - value: schema_appearance
-            question: How is an entity's look recorded?
-          - value: schema_state
-            question: How is an entity's current status recorded?
-          - value: schema_location
-            question: How is an entity's whereabouts recorded?
+            question: How is an entity's type recorded?
           - value: schema_physics_components
             question: How are physical properties recorded?
-          - value: schema_character_components
-            question: How are character-specific facts recorded?
-          - value: schema_turn_components
-            question: How are turns recorded?
           - value: schema_event_components
             question: How are scheduled happenings represented?
-          - value: schema_agent_components
-            question: How are agents recorded in the world?
 
 starting_scenarios:
     - description: A save is a seed scenario plus exported world/ and world_history/ directories.
@@ -288,6 +284,12 @@ judgment_tests:
           - value: tests.test_native_subagent_sidechain
             question: How are delegated subagent turns found afterwards?
 
+physics_tests:
+    - description: Pure-geometry tests of collisions and containment (no registry).
+    - how:
+          - value: tests.test_physics
+            question: How are collides and inside checked?
+
 human_validated_tests:
     - description: Whole scenarios with person-validated outcomes, run scripted and live.
     - how:
@@ -299,29 +301,23 @@ human_validated_tests:
             question: How are those fixtures checked?
           - value: test_scenarios.__init__
             question: How are the scenarios packaged?
-          - value: parking_scenario
+          - value: parking_collision_scenario
             question: How is the parking scenario checked?
           - value: race_scenario
             question: How is the race scenario checked?
-          - value: location_write_isolated.test_responder_matrix
-            question: How is a location write checked per responder?
-          - value: tests.location_write_harness
-            question: How are write approaches compared outside pytest?
-          - value: location_write_scenario_yaml
-            question: What world do location-write checks use?
 
-parking_scenario:
-    - description: Three cars, two parking spots, first come first served.
+parking_collision_scenario:
+    - description: Three cars, two parking spots, first come first served; a free spot is decided by collision detection.
     - how:
-          - value: parking.__init__
+          - value: parking_collision.__init__
             question: How is it packaged?
-          - value: parking.test_scenario
+          - value: parking_collision.test_scenario
             question: How is it run and checked?
-          - value: parking_scenario_yaml
+          - value: parking_collision_scenario_yaml
             question: What world does it start from?
 
 race_scenario:
-    - description: The parking timings as a three-car race; only finishing order matters.
+    - description: The parking scenario's timings as a three-car race; only finishing order matters.
     - how:
           - value: race.__init__
             question: How is it packaged?
@@ -344,36 +340,15 @@ project_tooling_tests:
 # Stand-ins for non-Python files (leaves)
 # ---------------------------------------------------------------------------
 
-schema_character:
-    - description: Marks an entity as a character.
-    - source_file: manifest/builtins.yaml::character
 schema_object:
     - description: Marks an entity as an object.
     - source_file: manifest/builtins.yaml::object
-schema_appearance:
-    - description: How an entity currently looks.
-    - source_file: manifest/builtins.yaml::appearance
-schema_state:
-    - description: A short current-status phrase, e.g. "open".
-    - source_file: manifest/builtins.yaml::state
-schema_location:
-    - description: Where an entity is.
-    - source_file: manifest/builtins.yaml::location
 schema_physics_components:
-    - description: Physical properties (largely for the shelved physics tools).
+    - description: Position, velocity, dimensions and mass -- everything physical.
     - source_file: manifest/builtins.yaml::physics_components
-schema_character_components:
-    - description: Character-specific components (largely for shelved character tools).
-    - source_file: manifest/builtins.yaml::character_components
-schema_turn_components:
-    - description: Turn bookkeeping components.
-    - source_file: manifest/builtins.yaml::turn_components
 schema_event_components:
     - description: Event timing, state, involvement and outcome -- the whole schedule.
     - source_file: manifest/builtins.yaml::event_components
-schema_agent_components:
-    - description: Components describing agents/responders.
-    - source_file: manifest/builtins.yaml::agent_components
 default_scenario:
     - description: A plain starting world (a player, a door, an empty expanse).
     - source_file: data/default/scenario.yaml
@@ -386,15 +361,12 @@ living_world_current:
 living_world_history:
     - description: Every row ever recorded, uncollapsed.
     - source_file: data/living_world/world_history/world.yaml
-parking_scenario_yaml:
-    - description: The parking scenario's starting world.
-    - source_file: tests/test_human_validated/test_scenarios/parking/scenario.yaml
+parking_collision_scenario_yaml:
+    - description: The parking scenario's starting world, in physical components only.
+    - source_file: tests/test_human_validated/test_scenarios/parking_collision/scenario.yaml
 race_scenario_yaml:
     - description: The race scenario's starting world.
     - source_file: tests/test_human_validated/test_scenarios/race/scenario.yaml
-location_write_scenario_yaml:
-    - description: One car, one spot -- the location-write fixture.
-    - source_file: tests/data/scenarios/location_write_isolated/scenario.yaml
 registry_tools_mount:
     - description: Mounts the four tools onto this server, excluding open_registry.
     - source_file:

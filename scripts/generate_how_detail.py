@@ -263,6 +263,7 @@ def test_links(refs: dict[str, str], hand_written: set[str]) -> list[dict]:
     targets = {k for k in refs if k.startswith(("story_simulator.", "scripts."))}
 
     def resolve(bound: str | None) -> str | None:
+        """A bound dotted name as a chain ref, if it names a story-simulator object."""
         if not bound:
             return None
         parts = bound.split(".")

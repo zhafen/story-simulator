@@ -38,6 +38,8 @@ how_chain_detail:
     value: test_passes_the_sessions_recorded_trace_path_through.fake_run_tool_calling_loop
   - source: conftest.turn_stepper
     value: turn_stepper._step
+  - source: generate_how_detail.test_links
+    value: test_links.resolve
   - source: get_usage._OnboardingPatch
     value: _OnboardingPatch.__enter__
   - source: get_usage._OnboardingPatch
@@ -48,20 +50,26 @@ how_chain_detail:
     value: _drive_session.send
   - source: keyed_subagent.call_keyed_subagent
     value: call_keyed_subagent._dispatch
-  - source: location_write_isolated.test_responder_matrix
-    value: test_responder_matrix._skip_reason
-  - source: location_write_isolated.test_responder_matrix
-    value: test_responder_matrix.test_scenario_resolves_under_every_responder
-  - source: location_write_isolated.test_responder_matrix
-    value: test_responder_matrix__SCENARIO_DIR
-  - source: location_write_isolated.test_responder_matrix
-    value: test_responder_matrix___COMBINATIONS
-  - source: parking.test_scenario
-    value: parking__test_scenario__SCENARIO_DIR
-  - source: parking.test_scenario
+  - source: parking_collision.test_scenario
+    value: parking_collision__test_scenario__SCENARIO_DIR
+  - source: parking_collision.test_scenario
     value: test_scenario.TestDeterministicWalkthrough
-  - source: parking.test_scenario
+  - source: parking_collision.test_scenario
     value: test_scenario.TestLiveWalkthrough
+  - source: parking_collision.test_scenario
+    value: test_scenario._assert_no_car_collisions
+  - source: parking_collision.test_scenario
+    value: test_scenario__CARS
+  - source: physics.Body
+    value: Body.bounds
+  - source: physics.Body
+    value: Body__alias
+  - source: physics.Body
+    value: Body__dimensions
+  - source: physics.Body
+    value: Body__position
+  - source: physics.Body
+    value: Body__solid
   - source: race.test_scenario
     value: race__test_scenario__SCENARIO_DIR
   - source: race.test_scenario
@@ -246,6 +254,8 @@ how_chain_detail:
     value: core.advance_simulation
     question: How is a pause/resume round trip driven?
   - source: story_simulator.core
+    value: core.check_collisions
+  - source: story_simulator.core
     value: core.is_event_valid
     question: How are stale events skipped?
   - source: story_simulator.core
@@ -281,6 +291,8 @@ how_chain_detail:
     value: keyed_subagent.call_keyed_subagent
     question: How does the keyed subagent answer and persist a decision?
   - source: story_simulator.keyed_subagent
+    value: keyed_subagent__CHECK_COLLISIONS_SPEC
+  - source: story_simulator.keyed_subagent
     value: keyed_subagent__REPO_ROOT
   - source: story_simulator.keyed_subagent
     value: keyed_subagent__USAGE_LOG_PATH
@@ -290,6 +302,8 @@ how_chain_detail:
     value: mcp_server.advance_simulation
     question: How does the host move the story forward in time?
   - source: story_simulator.mcp_server
+    value: mcp_server.check_collisions
+  - source: story_simulator.mcp_server
     value: mcp_server.main
     question: How does the server get started?
   - source: story_simulator.mcp_server
@@ -298,6 +312,18 @@ how_chain_detail:
   - source: story_simulator.mcp_server
     value: mcp_server__server
     question: How does the host learn its role and the rules for recording changes?
+  - source: story_simulator.physics
+    value: physics.Body
+  - source: story_simulator.physics
+    value: physics.check_collisions
+  - source: story_simulator.physics
+    value: physics.collides
+  - source: story_simulator.physics
+    value: physics.inside
+  - source: story_simulator.physics
+    value: physics.load_bodies
+  - source: story_simulator.physics
+    value: physics___FIELDS
   - source: story_simulator.resolve
     value: resolve.JudgmentRequest
     question: How is a question to a responder represented?
@@ -493,9 +519,11 @@ how_chain_detail:
   - source: test_scenario.TestDeterministicWalkthrough
     value: TestDeterministicWalkthrough._resolve_prompt
   - source: test_scenario.TestDeterministicWalkthrough
-    value: TestDeterministicWalkthrough.test_end_time_order_matches_true_arrival_order
+    value: TestDeterministicWalkthrough.test_full_walkthrough_collision_checked
   - source: test_scenario.TestDeterministicWalkthrough
-    value: TestDeterministicWalkthrough.test_full_walkthrough_exact_prompts_and_registry_state
+    value: TestDeterministicWalkthrough.test_scenario_seeds_no_collisions
+  - source: test_scenario.TestDeterministicWalkthrough
+    value: TestDeterministicWalkthrough__CENTER
   - source: test_scenario.TestDeterministicWalkthrough
     value: TestDeterministicWalkthrough__WALKTHROUGH
   - source: test_scenario.TestDeterministicWalkthrough
@@ -507,35 +535,13 @@ how_chain_detail:
   - source: test_scenario.TestLiveWalkthrough
     value: TestLiveWalkthrough__EXPECTED_EVENT_STATE
   - source: test_scenario.TestLiveWalkthrough
-    value: TestLiveWalkthrough__EXPECTED_LOCATION
+    value: TestLiveWalkthrough__EXPECTED_REGION
   - source: test_scenario.TestLiveWalkthrough
     value: TestLiveWalkthrough__EXPECTED_WRITE_ORDER
   - source: tests.conftest
     value: conftest._make_ctx
   - source: tests.conftest
     value: conftest.update_registry
-  - source: tests.location_write_harness
-    value: location_write_harness._parked_at
-  - source: tests.location_write_harness
-    value: location_write_harness._snapshot_usage
-  - source: tests.location_write_harness
-    value: location_write_harness.main
-  - source: tests.location_write_harness
-    value: location_write_harness.run_one
-  - source: tests.location_write_harness
-    value: location_write_harness__REPO_ROOT
-  - source: tests.location_write_harness
-    value: location_write_harness__SCENARIO_DIR
-  - source: tests.location_write_harness
-    value: location_write_harness___APPROACHES
-  - source: tests.location_write_harness
-    value: location_write_harness___BASELINE_INSTRUCTION
-  - source: tests.location_write_harness
-    value: location_write_harness___CONFIRM_INSTRUCTION
-  - source: tests.location_write_harness
-    value: location_write_harness___CONSOLIDATE_INSTRUCTION
-  - source: tests.location_write_harness
-    value: location_write_harness___EXPECTED_CAR_A_COMPONENTS
   - source: tests.test_architecture_manifest
     value: test_architecture_manifest.TestHumanValidatedTestFrameworkDependencies
   - source: tests.test_architecture_manifest
@@ -644,6 +650,22 @@ how_chain_detail:
     value: test_native_subagent_sidechain.test_subagent_turns_reachable_via_task_notification_output_file
   - source: tests.test_native_subagent_sidechain
     value: test_native_subagent_sidechain__REPO_ROOT
+  - source: tests.test_physics
+    value: test_physics._car
+  - source: tests.test_physics
+    value: test_physics.test_forward_axis_is_x
+  - source: tests.test_physics
+    value: test_physics.test_inside_requires_whole_box_within_region
+  - source: tests.test_physics
+    value: test_physics.test_nothing_is_inside_a_solid
+  - source: tests.test_physics
+    value: test_physics.test_overlapping_solids_collide
+  - source: tests.test_physics
+    value: test_physics.test_regions_never_collide
+  - source: tests.test_physics
+    value: test_physics.test_touching_or_apart_solids_dont_collide
+  - source: tests.test_physics
+    value: test_physics__CAR
   - source: tests.test_resolve
     value: test_resolve._pending_registrar
   - source: tests.test_resolve
@@ -674,6 +696,18 @@ how_chain_detail:
     value: test_resolve.test_save_pending_resume_token_is_just_the_alias
   - source: tests.test_resolve
     value: test_resolve.test_unknown_responder_raises_value_error
+Body__alias:
+- description: '`alias: str`'
+- source_file: story_simulator/physics.py::Body.alias
+Body__dimensions:
+- description: '`dimensions: tuple[float, float, float]`'
+- source_file: story_simulator/physics.py::Body.dimensions
+Body__position:
+- description: '`position: tuple[float, float, float]`'
+- source_file: story_simulator/physics.py::Body.position
+Body__solid:
+- description: '`solid: bool`'
+- source_file: story_simulator/physics.py::Body.solid
 JudgmentRequest__origin:
 - description: Which function constructed this request (e.g. "resolve_event" vs. "plan_events") -- never
     folded into `prompt`/`render()`'s own text (a responder has no need to know this to answer), but carried
@@ -686,30 +720,30 @@ JudgmentRequest__prompt:
 JudgmentRequest__system_prompt:
 - description: '`system_prompt: str = ""`'
 - source_file: story_simulator/resolve.py::JudgmentRequest.system_prompt
+TestDeterministicWalkthrough__CENTER:
+- description: Region centers, copied from scenario.yaml.
+- source_file: tests/test_human_validated/test_scenarios/parking_collision/test_scenario.py::TestDeterministicWalkthrough.CENTER
 TestDeterministicWalkthrough__WALKTHROUGH:
-- description: (event_alias, car_alias, outcome, location written or None, end_time). Order matches pop_event's
-    sort (soonest end_time first); see scenario.yaml.
-- source_file: tests/test_human_validated/test_scenarios/parking/test_scenario.py::TestDeterministicWalkthrough.WALKTHROUGH
+- description: (event_alias, car_alias, outcome, region the car ends up in, end_time). Order matches pop_event's
+    sort (soonest end_time first).
+- source_file: tests/test_human_validated/test_scenarios/parking_collision/test_scenario.py::TestDeterministicWalkthrough.WALKTHROUGH
 TestDeterministicWalkthrough___HOST_FRAMING:
 - description: '`_HOST_FRAMING = ( "Decide the answer yourself, standing in for whichever role this call
     " "needs (a player''s own absent character, an NPC, a base-modu`'
-- source_file: tests/test_human_validated/test_scenarios/parking/test_scenario.py::TestDeterministicWalkthrough._HOST_FRAMING
+- source_file: tests/test_human_validated/test_scenarios/parking_collision/test_scenario.py::TestDeterministicWalkthrough._HOST_FRAMING
 TestDeterministicWalkthrough__pytestmark:
-- description: A real db-backed walkthrough (six events, twelve round-trips) -- no LLM, but not fast enough
-    for the default tier.
-- source_file: tests/test_human_validated/test_scenarios/parking/test_scenario.py::TestDeterministicWalkthrough.pytestmark
+- description: '`pytestmark = pytest.mark.slow`'
+- source_file: tests/test_human_validated/test_scenarios/parking_collision/test_scenario.py::TestDeterministicWalkthrough.pytestmark
 TestLiveWalkthrough__EXPECTED_EVENT_STATE:
-- description: 'alias -> expected event_state.value, once every drive/park event has resolved. ClassVar:
-    read-only test data pytest test classes can''t set via __init__.'
-- source_file: tests/test_human_validated/test_scenarios/parking/test_scenario.py::TestLiveWalkthrough.EXPECTED_EVENT_STATE
-TestLiveWalkthrough__EXPECTED_LOCATION:
-- description: '`EXPECTED_LOCATION: ClassVar[dict[str, str]] = { "car_b": "parking_spot_1", "car_c": "parking_spot_2",
-    "car_a": "street", }`'
-- source_file: tests/test_human_validated/test_scenarios/parking/test_scenario.py::TestLiveWalkthrough.EXPECTED_LOCATION
+- description: '`EXPECTED_EVENT_STATE: ClassVar[dict[str, str]] = { "car_a_drive": "complete", "car_a_park":
+    "complete", "car_b_drive": "complete", "car_b_park": "comp`'
+- source_file: tests/test_human_validated/test_scenarios/parking_collision/test_scenario.py::TestLiveWalkthrough.EXPECTED_EVENT_STATE
+TestLiveWalkthrough__EXPECTED_REGION:
+- description: car alias -> region its final position should lie inside.
+- source_file: tests/test_human_validated/test_scenarios/parking_collision/test_scenario.py::TestLiveWalkthrough.EXPECTED_REGION
 TestLiveWalkthrough__EXPECTED_WRITE_ORDER:
-- description: 'Order evidence: each location write should be time-stamped with its own *parking* event''s
-    end_time, not its driving event''s.'
-- source_file: tests/test_human_validated/test_scenarios/parking/test_scenario.py::TestLiveWalkthrough.EXPECTED_WRITE_ORDER
+- description: Each car's final position should be stamped with its parking event's end_time.
+- source_file: tests/test_human_validated/test_scenarios/parking_collision/test_scenario.py::TestLiveWalkthrough.EXPECTED_WRITE_ORDER
 TestRegistryTools__pytestmark:
 - description: '`pytestmark = pytest.mark.slow`'
 - source_file: tests/test_mcp_server.py::TestRegistryTools.pytestmark
@@ -760,7 +794,7 @@ config__LIVING_WORLD_DIR:
     to `start_world` instead of the plain default.
 - source_file: story_simulator/config.py::LIVING_WORLD_DIR
 config__MANIFEST_DIR:
-- description: The story-simulator's own component/field schema (position, character, ...). Every base_etl
+- description: The story-simulator's own component/field schema (position, event, ...). Every base_etl
     call needs this in `input_dirs`, or types go unvalidated.
 - source_file: story_simulator/config.py::MANIFEST_DIR
 config___EVENT_RESPONDERS:
@@ -906,50 +940,31 @@ helpers___DEFAULT_MODEL_BY_DRIVER:
     LIVE_TEST_MODEL_ENV_VAR) happens directly in create_session. copilot has no obvious default model,
     so its entry is None -- create_session raises rather than silently picking one.'
 - source_file: tests/test_human_validated/helpers.py::_DEFAULT_MODEL_BY_DRIVER
+keyed_subagent__CHECK_COLLISIONS_SPEC:
+- description: Append-only usage log, not per-session like HeadlessSession's own usage.json -- multiple
+    concurrent MCP subprocesses may write here. Gitignored.
+- source_file: story_simulator/keyed_subagent.py::CHECK_COLLISIONS_SPEC
 keyed_subagent__REPO_ROOT:
 - description: '`REPO_ROOT = Path(__file__).parent.parent`'
 - source_file: story_simulator/keyed_subagent.py::REPO_ROOT
 keyed_subagent__USAGE_LOG_PATH:
-- description: Append-only usage log, not per-session like HeadlessSession's own usage.json -- multiple
-    concurrent MCP subprocesses may write here. Gitignored.
+- description: '`USAGE_LOG_PATH = REPO_ROOT / ".keyed_subagent_usage.jsonl"`'
 - source_file: story_simulator/keyed_subagent.py::USAGE_LOG_PATH
 keyed_subagent__WRITE_TRACE_LOG_PATH:
 - description: 'TEMPORARY diagnostic instrumentation (#70): logs each update_registry call (prompt, prior
     state, args, result) for post-hoc misfire debugging.'
 - source_file: story_simulator/keyed_subagent.py::WRITE_TRACE_LOG_PATH
-location_write_harness__REPO_ROOT:
-- description: '`REPO_ROOT = Path(__file__).parent.parent`'
-- source_file: tests/location_write_harness.py::REPO_ROOT
-location_write_harness__SCENARIO_DIR:
-- description: '`SCENARIO_DIR = REPO_ROOT / "tests" / "data" / "scenarios" / "location_write_isolated"`'
-- source_file: tests/location_write_harness.py::SCENARIO_DIR
-location_write_harness___APPROACHES:
-- description: '`_APPROACHES = { "baseline": _BASELINE_INSTRUCTION, "confirm": _CONFIRM_INSTRUCTION, "consolidate":
-    _CONSOLIDATE_INSTRUCTION, }`'
-- source_file: tests/location_write_harness.py::_APPROACHES
-location_write_harness___BASELINE_INSTRUCTION:
-- description: 'Today''s only approach: the model composes and writes correctly-formatted entity-first
-    YAML directly via update_registry.'
-- source_file: tests/location_write_harness.py::_BASELINE_INSTRUCTION
-location_write_harness___CONFIRM_INSTRUCTION:
-- description: 'The preview/confirm alternative: write with preview=True first, check the returned review
-    against what was intended before confirming.'
-- source_file: tests/location_write_harness.py::_CONFIRM_INSTRUCTION
-location_write_harness___CONSOLIDATE_INSTRUCTION:
-- description: 'The post-write alternative: write normally (no confirmation step), then call consolidate_review
-    to see everything and fix anything wrong.'
-- source_file: tests/location_write_harness.py::_CONSOLIDATE_INSTRUCTION
-location_write_harness___EXPECTED_CAR_A_COMPONENTS:
-- description: The scenario seed's own starting components (object, description) plus `location`, the
-    one thing a correct run is supposed to add to car_a.
-- source_file: tests/location_write_harness.py::_EXPECTED_CAR_A_COMPONENTS
 mcp_server__server:
 - description: '`server = FastMCP( "story-simulator", instructions=( "You are the game master for a story-simulator
     world: a text simulation whose " "state lives in a `'
 - source_file: story_simulator/mcp_server.py::server
-parking__test_scenario__SCENARIO_DIR:
+parking_collision__test_scenario__SCENARIO_DIR:
 - description: '`SCENARIO_DIR = Path(__file__).parent`'
-- source_file: tests/test_human_validated/test_scenarios/parking/test_scenario.py::SCENARIO_DIR
+- source_file: tests/test_human_validated/test_scenarios/parking_collision/test_scenario.py::SCENARIO_DIR
+physics___FIELDS:
+- description: '`_FIELDS = ["position.x", "position.y", "position.z", "dimensions.x", "dimensions.y",
+    "dimensions.z"]`'
+- source_file: story_simulator/physics.py::_FIELDS
 race__test_scenario__SCENARIO_DIR:
 - description: '`SCENARIO_DIR = Path(__file__).parent`'
 - source_file: tests/test_human_validated/test_scenarios/race/test_scenario.py::SCENARIO_DIR
@@ -988,13 +1003,12 @@ test_mcp_server___registrar_sessions:
 test_native_subagent_sidechain__REPO_ROOT:
 - description: '`REPO_ROOT = Path(__file__).parent.parent`'
 - source_file: tests/test_native_subagent_sidechain.py::REPO_ROOT
-test_responder_matrix__SCENARIO_DIR:
-- description: '`SCENARIO_DIR = Path(__file__).parent.parent.parent.parent / "data" / "scenarios" / "location_write_isolated"`'
-- source_file: tests/test_human_validated/test_scenarios/location_write_isolated/test_responder_matrix.py::SCENARIO_DIR
-test_responder_matrix___COMBINATIONS:
-- description: (responder, driver) -- see module docstring for why "subagent" is the one responder pinned
-    to a specific driver rather than the shared default.
-- source_file: tests/test_human_validated/test_scenarios/location_write_isolated/test_responder_matrix.py::_COMBINATIONS
+test_physics__CAR:
+- description: '`CAR = Body("car", (0.0, 0.0, 0.0), (4.5, 2.0, 1.5), solid=True)`'
+- source_file: tests/test_physics.py::CAR
+test_scenario__CARS:
+- description: '`CARS = ("car_a", "car_b", "car_c")`'
+- source_file: tests/test_human_validated/test_scenarios/parking_collision/test_scenario.py::CARS
 test_scenario__EXPECTED_EVENT_STATE:
 - description: alias -> expected event_state.value, once the whole race has resolved.
 - source_file: tests/test_human_validated/test_scenarios/race/test_scenario.py::EXPECTED_EVENT_STATE

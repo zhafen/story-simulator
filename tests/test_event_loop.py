@@ -68,6 +68,13 @@ def _mark_resolved(ctx, alias: str, progress: str = "complete") -> None:
 
 
 def test_nothing_scheduled_returns_done_immediately(tmp_path):
+    """Nothing scheduled returns done immediately.
+
+    Components
+    ----------
+    - tests:
+          value: mcp_server.advance_simulation
+    """
     ctx = _world(tmp_path)
     result = asyncio.run(advance_simulation(ctx))
     assert result == {"status": "done", "narration": "Nothing scheduled."}
@@ -75,7 +82,13 @@ def test_nothing_scheduled_returns_done_immediately(tmp_path):
 
 def test_responder_defaults_to_host(tmp_path):
     """No STORY_SIM_RESPONDER override -- "host" is config.event_responder()'s
-    default, asked once an event's end_time is reached."""
+    default, asked once an event's end_time is reached.
+
+    Components
+    ----------
+    - tests:
+          value: config.event_responder
+    """
     ctx = _world(tmp_path)
     _schedule_event(ctx, "gizmo_event", 0, 0)
     result = asyncio.run(advance_simulation(ctx))
@@ -90,6 +103,13 @@ def test_responder_can_be_configured_to_subagent(tmp_path, monkeypatch):
 
     With a prompt that tells the connected host to delegate rather than
     answer inline -- see story_simulator.resolve._frame_for_responder.
+
+    Components
+    ----------
+    - tests:
+          value: config.event_responder
+    - tests:
+          value: resolve._frame_for_responder
     """
     monkeypatch.setenv("STORY_SIM_RESPONDER", "subagent")
     ctx = _world(tmp_path)
@@ -102,6 +122,13 @@ def test_responder_can_be_configured_to_subagent(tmp_path, monkeypatch):
 
 
 def test_invalid_responder_env_var_raises(tmp_path, monkeypatch):
+    """Invalid responder env var raises.
+
+    Components
+    ----------
+    - tests:
+          value: config.event_responder
+    """
     monkeypatch.setenv("STORY_SIM_RESPONDER", "orchestrator")
     ctx = _world(tmp_path)
     _schedule_event(ctx, "gizmo_event", 0, 0)
@@ -111,7 +138,13 @@ def test_invalid_responder_env_var_raises(tmp_path, monkeypatch):
 
 def test_one_event_pauses_for_both_resolve_and_plan_before_finishing(tmp_path):
     """A single event goes through two separate pauses -- resolve, then
-    plan -- before the loop reports done, even with nothing new scheduled."""
+    plan -- before the loop reports done, even with nothing new scheduled.
+
+    Components
+    ----------
+    - tests:
+          value: core.process_event
+    """
     ctx = _world(tmp_path)
     _schedule_event(ctx, "gizmo_event", 0, 0)
 
@@ -138,6 +171,11 @@ def test_plan_step_creates_a_new_event_that_gets_picked_up_next(tmp_path):
 
     There's no next_due_in line to parse anymore -- a brand-new event
     created there is exactly as poppable as one pre-planned from the start.
+
+    Components
+    ----------
+    - tests:
+          value: core._run_event_loop
     """
     ctx = _world(tmp_path)
     _schedule_event(ctx, "ball_event", 0, 0)
@@ -175,6 +213,11 @@ def test_world_time_persists_across_a_reconnect(tmp_path):
     documents as routine, not just a crash) -- because the world itself
     (Postgres) has already moved forward regardless of any one process's
     own in-memory state.
+
+    Components
+    ----------
+    - tests:
+          value: core._next_time_stamp
     """
     from story_simulator import core
     from story_simulator.core import _next_time_stamp
@@ -227,7 +270,13 @@ def _drive_loop_recording_order(ctx, result, on_plan) -> list[tuple[str, str]]:
 
 def test_multi_event_interleaves_by_end_time(tmp_path):
     """Two independently-scheduled events must interleave by their actual
-    end_time, not exhaust one before ever touching the other."""
+    end_time, not exhaust one before ever touching the other.
+
+    Components
+    ----------
+    - tests:
+          value: core.pop_event
+    """
     ctx = _world(tmp_path)
     _schedule_event(ctx, "chain_a_event", 0, 0)
     _schedule_event(ctx, "chain_b_event", 5, 0)
@@ -248,12 +297,18 @@ def test_multi_event_handoff_to_a_new_event_slots_in_by_end_time(tmp_path):
     chain_a_domino_event, whose end_time comes sooner than chain_b_ball_event's).
 
     Must slot into the loop's ordering correctly, not just append to the end.
+
+    Components
+    ----------
+    - tests:
+          value: core.pop_event
     """
     ctx = _world(tmp_path)
     _schedule_event(ctx, "chain_a_ball_event", 0, 0)
     _schedule_event(ctx, "chain_b_ball_event", 5, 0)
 
     def on_plan(who):
+        """Scripted plan answers: chain_a's ball event schedules a domino event; nothing else plans anything."""
         if who == "chain_a_ball_event":
             _schedule_event(ctx, "chain_a_domino_event", 1, 0)
             return "Scheduled chain_a_domino_event, end_time sooner than chain_b_ball_event."

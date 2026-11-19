@@ -25,14 +25,21 @@ def _open_session(tmp_path, client_trace_path=None):
 
 
 class TestTracePathPlumbing:
-    pytestmark = pytest.mark.slow
-
     """single_shared_trace_file: call_keyed_subagent forwards whatever
     trace_path the connected client recorded via start_world's own
     client_trace_path, so its own judgment call lands in that same file.
     """
 
+    pytestmark = pytest.mark.slow
+
     def test_passes_the_sessions_recorded_trace_path_through(self, monkeypatch, tmp_path):
+        """Passes the sessions recorded trace path through.
+
+        Components
+        ----------
+        - tests:
+              value: keyed_subagent.call_keyed_subagent
+        """
         trace_path = tmp_path / "session_trace.jsonl"
         session = _open_session(tmp_path, client_trace_path=str(trace_path))
 
@@ -41,6 +48,7 @@ class TestTracePathPlumbing:
         async def fake_run_tool_calling_loop(
             prompt, *, model, dispatch, tools, usage_log_path, trace_path, trace_actor, trace_origin
         ):
+            """Stand-in for run_tool_calling_loop that records what it was passed."""
             captured["trace_path"] = trace_path
             captured["trace_actor"] = trace_actor
             captured["trace_origin"] = trace_origin
@@ -58,6 +66,13 @@ class TestTracePathPlumbing:
         assert captured["trace_origin"] == "resolve_event"
 
     def test_passes_none_when_no_client_trace_path_was_ever_recorded(self, monkeypatch, tmp_path):
+        """Passes none when no client trace path was ever recorded.
+
+        Components
+        ----------
+        - tests:
+              value: keyed_subagent.call_keyed_subagent
+        """
         session = _open_session(tmp_path)  # no client_trace_path given
 
         captured = {}
@@ -65,6 +80,7 @@ class TestTracePathPlumbing:
         async def fake_run_tool_calling_loop(
             prompt, *, model, dispatch, tools, usage_log_path, trace_path, trace_actor, trace_origin
         ):
+            """Stand-in for run_tool_calling_loop that records what it was passed."""
             captured["trace_path"] = trace_path
             return "answered"
 
@@ -80,13 +96,20 @@ class TestTracePathPlumbing:
         """`origin` defaults to "" (matching JudgmentRequest's own
         default), but the trace writer's own convention for "not given"
         is None, not an empty string -- see run_tool_calling_loop's
-        trace_origin (omits the key entirely only for None)."""
+        trace_origin (omits the key entirely only for None).
+
+        Components
+        ----------
+        - tests:
+              value: keyed_subagent.call_keyed_subagent
+        """
         session = _open_session(tmp_path)
         captured = {}
 
         async def fake_run_tool_calling_loop(
             prompt, *, model, dispatch, tools, usage_log_path, trace_path, trace_actor, trace_origin
         ):
+            """Stand-in for run_tool_calling_loop that records what it was passed."""
             captured["trace_origin"] = trace_origin
             return "answered"
 

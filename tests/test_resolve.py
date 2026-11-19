@@ -17,6 +17,13 @@ from story_simulator.resolve import JudgmentRequest, NeedsExternalInput, TurnRep
 
 
 def test_host_raises_needs_external_input():
+    """Host raises needs external input.
+
+    Components
+    ----------
+    - tests:
+          value: TurnReplay.resolve
+    """
     replay = TurnReplay(answers=[])
     with pytest.raises(NeedsExternalInput) as exc_info:
         asyncio.run(
@@ -41,7 +48,15 @@ def test_host_needs_external_input_carries_the_requests_own_origin():
 
 
 def test_keyed_subagent_answers_inline_without_raising(monkeypatch):
+    """Keyed subagent answers inline without raising.
+
+    Components
+    ----------
+    - tests:
+          value: TurnReplay.resolve
+    """
     async def fake_call_keyed_subagent(prompt: str, session, origin: str = "") -> str:
+        """Stand-in for call_keyed_subagent returning a canned answer."""
         assert "what happened?" in prompt
         assert session == "sess-1"
         return "the car parked."
@@ -60,9 +75,17 @@ def test_keyed_subagent_answers_inline_without_raising(monkeypatch):
 
 
 def test_keyed_subagent_receives_the_requests_own_origin(monkeypatch):
+    """Keyed subagent receives the requests own origin.
+
+    Components
+    ----------
+    - tests:
+          value: TurnReplay.resolve
+    """
     captured = {}
 
     async def fake_call_keyed_subagent(prompt: str, session, origin: str = "") -> str:
+        """Stand-in for call_keyed_subagent returning a canned answer."""
         captured["origin"] = origin
         return "the car parked."
 
@@ -87,8 +110,14 @@ def test_keyed_subagent_answer_is_cached_into_replay_answers(monkeypatch):
 
     See TurnReplay.resolve's own comment and core._wrap_loop_result's
     `_save_pending(registrar, alias, replay.answers)`.
+
+    Components
+    ----------
+    - tests:
+          value: TurnReplay.resolve
     """
     async def fake_call_keyed_subagent(prompt: str, session, origin: str = "") -> str:
+        """Stand-in for call_keyed_subagent returning a canned answer."""
         return "resolved via deepseek"
 
     monkeypatch.setattr(
@@ -120,10 +149,16 @@ def test_keyed_subagent_checks_in_once_deadline_passes(monkeypatch):
     round-trips with no visibility into what it's doing until it's done --
     see config.DEFAULT_KEYED_SUBAGENT_TIME_BUDGET_SECONDS's own comment
     for what actually bounds a single stdio MCP tool call.
+
+    Components
+    ----------
+    - tests:
+          value: TurnReplay.resolve
     """
     called = False
 
     async def fake_call_keyed_subagent(prompt: str, session, origin: str = "") -> str:
+        """Stand-in for call_keyed_subagent returning a canned answer."""
         nonlocal called
         called = True
         return "should not be reached"
@@ -157,10 +192,16 @@ def test_checkpoint_pause_leaves_call_index_untouched_for_resume(monkeypatch):
     `call_index` slot, so resuming fed the host's "continue" reply into
     it as if it were the real answer -- keyed_subagent was never asked
     again. Confirms a resume instead retries the same call fresh.
+
+    Components
+    ----------
+    - tests:
+          value: TurnReplay.resolve
     """
     calls = []
 
     async def fake_call_keyed_subagent(prompt: str, session, origin: str = "") -> str:
+        """Stand-in for call_keyed_subagent returning a canned answer."""
         calls.append(prompt)
         return "car_c parked in parking_spot_2."
 
@@ -194,8 +235,15 @@ def test_checkpoint_pause_leaves_call_index_untouched_for_resume(monkeypatch):
 
 def test_keyed_subagent_within_budget_still_answers_inline(monkeypatch):
     """The counterpart to the expired-deadline test: a deadline that
-    hasn't passed yet must not block the ordinary inline-answer path."""
+    hasn't passed yet must not block the ordinary inline-answer path.
+
+    Components
+    ----------
+    - tests:
+          value: TurnReplay.resolve
+    """
     async def fake_call_keyed_subagent(prompt: str, session, origin: str = "") -> str:
+        """Stand-in for call_keyed_subagent returning a canned answer."""
         return "the car parked."
 
     monkeypatch.setattr(
@@ -277,6 +325,7 @@ def test_save_pending_resume_token_is_just_the_alias():
 
 @pytest.mark.slow
 def test_load_pending_round_trips_answers_and_checkpoint_flag():
+    """Load pending round trips answers and checkpoint flag."""
     from story_simulator.core import _load_pending, _save_pending
 
     registrar = _pending_registrar()
@@ -300,6 +349,13 @@ def test_load_pending_raises_clear_error_for_unknown_alias():
 
 
 def test_unknown_responder_raises_value_error():
+    """Unknown responder raises value error.
+
+    Components
+    ----------
+    - tests:
+          value: TurnReplay.resolve
+    """
     replay = TurnReplay(answers=[])
     with pytest.raises(ValueError):
         asyncio.run(

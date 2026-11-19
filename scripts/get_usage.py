@@ -65,6 +65,7 @@ class UsageExtractionError(RuntimeError):
 
 
 def _read_available(fd: int, timeout: float = 1.0, idle_cutoff: float = 1.5) -> bytes:
+    """Read from `fd` until output goes idle for `idle_cutoff` seconds."""
     buf = b""
     last_data = time.monotonic()
     while True:
@@ -86,6 +87,7 @@ def _read_available(fd: int, timeout: float = 1.0, idle_cutoff: float = 1.5) -> 
 
 
 def _plain(data: bytes) -> str:
+    """Terminal bytes with ANSI escapes stripped, as text."""
     return ANSI_RE.sub(b"", data).decode(errors="replace")
 
 
@@ -133,10 +135,12 @@ class _OnboardingPatch:
     """
 
     def __init__(self, config_path: Path):
+        """Remember which config file to patch."""
         self.config_path = config_path
         self._original_bytes: bytes | None = None
 
     def __enter__(self) -> "_OnboardingPatch":
+        """Save the original config, then mark onboarding and theme as done."""
         self._original_bytes = self.config_path.read_bytes()
         data = json.loads(self._original_bytes)
         data["theme"] = "dark"
@@ -145,11 +149,13 @@ class _OnboardingPatch:
         return self
 
     def __exit__(self, *exc_info) -> None:
+        """Restore the config file byte-for-byte."""
         if self._original_bytes is not None:
             self.config_path.write_bytes(self._original_bytes)
 
 
 def _drive_session(cwd: Path, startup_timeout: float, usage_timeout: float) -> tuple[dict, list[tuple[str, bytes]]]:
+    """Launch `claude` on a PTY, get past its prompts, send /usage, and parse the screen."""
     master_fd, slave_fd = pty.openpty()
     env = {**os.environ, "TERM": "xterm-256color"}
     proc = subprocess.Popen(
@@ -166,6 +172,7 @@ def _drive_session(cwd: Path, startup_timeout: float, usage_timeout: float) -> t
     log: list[tuple[str, bytes]] = []
 
     def send(s: str) -> None:
+        """Write raw keystrokes to the session's pseudoterminal."""
         os.write(master_fd, s.encode())
 
     try:
@@ -247,6 +254,7 @@ def get_usage(
 
 
 def main() -> int:
+    """CLI entry point: print the session/week usage percentages."""
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--cwd", type=Path, default=REPO_ROOT, help="Directory to launch claude in (default: repo root)")
     parser.add_argument("--json", action="store_true", help="Print machine-readable JSON instead of a summary")

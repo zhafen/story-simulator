@@ -15,6 +15,7 @@ HOOK = Path(__file__).resolve().parents[1] / "scripts" / "check-pr-size.sh"
 
 
 def _run_hook(cwd):
+    """Run the hook in `cwd`, capturing output."""
     return subprocess.run(
         ["bash", str(HOOK)],
         cwd=cwd,
@@ -25,6 +26,7 @@ def _run_hook(cwd):
 
 
 def _git(*args, cwd):
+    """Run a git command in `cwd`, failing on error."""
     subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True, text=True)
 
 
@@ -46,7 +48,9 @@ def git_repo(tmp_path):
 
 
 class TestBelowThreshold:
+    """Small diffs produce no warning."""
     def test_small_committed_diff_produces_no_warning(self, git_repo):
+        """Small committed diff produces no warning."""
         (git_repo / "small.txt").write_text("a few lines\nmore\n")
         _git("add", "small.txt", cwd=git_repo)
         _git("commit", "-q", "-m", "small change", cwd=git_repo)
@@ -58,7 +62,9 @@ class TestBelowThreshold:
 
 
 class TestOverThreshold:
+    """Large diffs warn without blocking the commit."""
     def test_large_committed_diff_warns_non_blocking(self, git_repo):
+        """Large committed diff warns non blocking."""
         (git_repo / "big.txt").write_text("\n".join(f"line {i}" for i in range(500)))
         _git("add", "big.txt", cwd=git_repo)
         _git("commit", "-q", "-m", "big change", cwd=git_repo)
@@ -69,6 +75,7 @@ class TestOverThreshold:
         assert "still belong in one PR" in result.stderr
 
     def test_many_small_files_warns_on_file_count(self, git_repo):
+        """Many small files warns on file count."""
         for i in range(20):
             (git_repo / f"file{i}.txt").write_text("one line\n")
         _git("add", "-A", cwd=git_repo)
@@ -80,6 +87,7 @@ class TestOverThreshold:
         assert "20 files" in result.stderr
 
     def test_staged_but_uncommitted_diff_also_counts(self, git_repo):
+        """Staged but uncommitted diff also counts."""
         (git_repo / "big.txt").write_text("\n".join(f"line {i}" for i in range(500)))
         _git("add", "big.txt", cwd=git_repo)
         # deliberately not committed -- the hook must still see it
@@ -91,7 +99,9 @@ class TestOverThreshold:
 
 
 class TestNoBase:
+    """Without an origin base ref the hook does nothing."""
     def test_no_origin_ref_silently_does_nothing(self, tmp_path):
+        """No origin ref silently does nothing."""
         repo = tmp_path / "repo"
         repo.mkdir()
         _git("init", "-q", "-b", "main", cwd=repo)

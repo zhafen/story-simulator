@@ -210,6 +210,7 @@ core.registrar_sessions.mount(server, exclude={"open_registry"})
 
 
 def main() -> None:
+    """Run the server over stdio (the story-simulator-mcp entry point)."""
     server.run(transport="stdio")
 
 

@@ -20,6 +20,7 @@ _FIELDS = ["position.x", "position.y", "position.z", "dimensions.x", "dimensions
 
 @dataclass(frozen=True)
 class Body:
+    """An entity's axis-aligned box; z extends upward from position. Non-solid bodies are regions."""
     alias: str
     position: tuple[float, float, float]
     dimensions: tuple[float, float, float]

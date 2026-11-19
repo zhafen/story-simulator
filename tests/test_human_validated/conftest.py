@@ -40,6 +40,7 @@ def turn_stepper() -> Callable[..., None]:
     Usage: `turn_stepper(session, ["do X", "do Y"], check=lambda: ...)`.
     """
     def _step(session, turns: list[str], check: Callable[[], None] | None = None) -> None:
+        """Send each turn in order, running `check` after every one."""
         for turn in turns:
             session.send_turn(turn)
             if check is not None:

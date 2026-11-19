@@ -27,6 +27,7 @@ pytestmark = pytest.mark.slow
 
 
 def _resolved_components(registrar: Registrar) -> dict:
+    """Components with entity_ref paths resolved, as the iacs report sees them."""
     entity_id = registrar.get("entity_id")
     field = registrar.get("field")
     hierarchy = parent_from_hierarchy(entity_id)
@@ -41,6 +42,7 @@ def _resolved_components(registrar: Registrar) -> dict:
 
 
 def test_architecture_manifest_loads():
+    """Architecture manifest loads."""
     registrar = Registrar.from_manifest(MANIFEST_PATHS)
     assert "requirement" in registrar.registry.component_types
     assert "solution" in registrar.registry.component_types
@@ -52,6 +54,7 @@ class TestHumanValidatedTestFrameworkDependencies:
     `dependence of:` relations (see docs/manifest/story-simulator.yaml)."""
 
     def _dependency_paths(self, registrar):
+        """Entity paths under human_validated_test_framework.dependencies."""
         eids = registrar.get("entity_id").execute()
         path_of = dict(zip(eids["value"].astype(str), eids["path"].astype(str)))
         marker = f".{NEW_TREE_ENTITY_KEY}.{DEPENDENCIES_KEY}."

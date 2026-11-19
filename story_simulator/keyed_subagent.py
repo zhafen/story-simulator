@@ -74,6 +74,7 @@ WRITE_TRACE_LOG_PATH = REPO_ROOT / ".write_call_trace.jsonl"
 
 
 def _log_write_call(record: dict[str, Any]) -> None:
+    """Append one record to the write-call trace; never raises."""
     try:
         with WRITE_TRACE_LOG_PATH.open("a") as f:
             f.write(json.dumps(record, default=str) + "\n")
@@ -102,6 +103,7 @@ async def call_keyed_subagent(prompt: str, session: Any, origin: str = "") -> st
     """
 
     def _dispatch(name: str, arguments: dict[str, Any]) -> str:
+        """Route a tool call to this world's registrar, tracing update_registry calls."""
         if name == "check_collisions":
             return json.dumps(core.check_collisions(session, **arguments))
         if name != "update_registry":

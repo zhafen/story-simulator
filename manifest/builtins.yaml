@@ -167,6 +167,7 @@ event_components:
             to be interpreted. An event can carry several
             involved_entity rows, one per entity it involves.
         - parent: directed_relation
+        - component_type
         - field:
             value:
                 description: The entity this event involves.

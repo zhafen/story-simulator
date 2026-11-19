@@ -49,11 +49,11 @@ def load_bodies(registrar: Registrar) -> dict[str, Body]:
     """Every entity with a current position and dimensions, keyed by alias."""
     df = registrar.safe_view_current(_FIELDS).to_pandas()
     df = df.dropna(subset=[f for f in _FIELDS if f != "position.z"])
-    massive = set(registrar.safe_view_current("mass.value").to_pandas().get("entity_id.alias", []))
+    massive = set(registrar.safe_view_current("mass.value").to_pandas().get("entity_id.display_alias", []))
     bodies = {}
     for _, row in df.iterrows():
         z = 0.0 if math.isnan(row["position.z"]) else row["position.z"]
-        alias = row["entity_id.alias"]
+        alias = row["entity_id.display_alias"]
         bodies[alias] = Body(
             alias=alias,
             position=(row["position.x"], row["position.y"], z),

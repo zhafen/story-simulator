@@ -38,7 +38,9 @@ Stated plan (not binding — no queued actions):
 | Player | (0.28, 0.00) | (2.83, 0) | 300 J | 60 J | 0 J |
 | TDTFB | (2.00, 0.00) | (0, 0) | 0 J | 0 J | 0 J |
 
-### t = 0.2 s — player's turn (pending)
+### t = 0.2 s — player's turn
+Perceived: TDTFB standing still, 1.43 m ahead.
+Action: no physical action; keeps storing (does not want to just crash in).
 
 | Entity | Position (x, y) m | Velocity (vx, vy) | KE | Stored | Absorbed |
 |---|---|---|---|---|---|
@@ -46,3 +48,12 @@ Stated plan (not binding — no queued actions):
 | TDTFB | (2.00, 0.00) | (0, 0) | 0 J | 60 J | 0 J |
 
 Gap: 1.43 m. Contact at current speed: t ≈ 0.71 s.
+
+### t = 0.3 s — TDTFB's turn (pending)
+
+| Entity | Position (x, y) m | Velocity (vx, vy) | KE | Stored | Absorbed |
+|---|---|---|---|---|---|
+| Player | (0.85, 0.00) | (2.83, 0) | 300 J | 180 J | 0 J |
+| TDTFB | (2.00, 0.00) | (0, 0) | 0 J | 120 J | 0 J |
+
+Gap: 1.15 m. Contact at current speed: t ≈ 0.71 s (0.41 s away).

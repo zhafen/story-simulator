@@ -49,5 +49,9 @@ ax.add_patch(Circle((px + pvx * DT, py + pvy * DT), dv * DT,
                     color="#2b6cb0", alpha=.12, ls="--", lw=1))
 ax.add_patch(Circle((px + pvx * DT, py + pvy * DT), dv * DT,
                     fill=False, color="#2b6cb0", ls="--", lw=1))
+PACE = 1.0  # jogging step length, m (~2.8 m/s at ~165 steps/min)
+ax.plot([0, PACE], [.3, .3], color="#2b6cb0", lw=2)
+ax.plot([0, 0], [.27, .33], [PACE, PACE], [.27, .33], color="#2b6cb0", lw=1)
+ax.text(PACE / 2, .34, "1 pace", ha="center", va="bottom", fontsize=7, color="#2b6cb0")
 ax.text(-.25, 1.15, "— punch reach 0.8 m   ··· kick reach 1.0 m", fontsize=7, color="#555")
 fig.savefig(sys.argv[1] if len(sys.argv) > 1 else f"docs/combat/frames/t{t}.png")

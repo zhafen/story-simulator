@@ -10,6 +10,7 @@ STATE = [  # name, x, y, vx, vy, color
     ("TDTFB", 2.00, 0.15, 0.00, 1.55, "#c05621"),
 ]
 HISTORY = [  # (x, y, color) at earlier turns, drawn as empty circles
+    (0.00, 0.00, "#2b6cb0"),  # player start (t=0)
     (0.57, 0.00, "#2b6cb0"), (0.85, 0.00, "#2b6cb0"),  # player t=0.2, 0.3
     (2.00, 0.00, "#c05621"), (2.00, 0.00, "#c05621"),  # TDTFB t=0.2, 0.3
 ]
@@ -35,7 +36,7 @@ for name, x, y, vx, vy, c in STATE:
     for R, ls in ((0.8, "-"), (1.0, ":")):  # punch / kick reach from body centre
         ax.add_patch(Circle((x, y), R, fill=False, color=c, ls=ls, lw=.8, alpha=.6))
     ax.text(x, -.45, name, ha="center", va="top", fontsize=9, color=c)
-ax.set_aspect("equal"); ax.set_xlim(-.3, 3.1); ax.set_ylim(-1.1, 1.3)
+ax.set_aspect("equal"); ax.set_xlim(-.4, 3.1); ax.set_ylim(-1.1, 1.3)
 ax.set_xticks([0, 1, 2]); ax.set_yticks([])
 ax.set_xlabel("m"); ax.set_title(f"t = {t} s", fontsize=10)
 for s in ("top", "right", "left"): ax.spines[s].set_visible(False)

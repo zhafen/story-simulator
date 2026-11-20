@@ -29,8 +29,13 @@ foot+shin 4.3 kg, whole leg 12 kg, head 6 kg, whole body 75 kg.
 - Charging time for a release = energy / P.
 
 ## Movement
-- Whole-body launch: KE = released stored energy; further releases on later
-  turns add to the existing motion.
+- A release of energy E_r into whole-body motion adds a velocity change of
+  magnitude Δv = √(2·E_r/m) in any chosen direction (vector addition to the
+  current velocity). Pushing forward gains more than E_r of KE; slowing down or
+  reversing costs effort (backward Δv removes KE). From rest this is just
+  KE = E_r.
+- Reachable region after one step Δt: a disk centred on the coasting position,
+  radius Δv·Δt (full release on the edge, partial releases inside).
 - No friction or drag: a moving body keeps its velocity until it spends
   energy again. No speed cap (deliberately unrealistic over long distances;
   revisit if it matters).
@@ -47,8 +52,6 @@ foot+shin 4.3 kg, whole leg 12 kg, head 6 kg, whole body 75 kg.
 - An entity sees others' positions and velocities, not their stored energy.
 
 ## Open questions
-- Turning while moving: cost of changing direction (rotate velocity at
-  constant KE? or must the old component be cancelled with energy?).
 - Collision resolution: what happens when the bodies meet (who deposits
   what into whom; momentum vs energy).
 - Does the 0.5 s pre-launch charge (300 J at 600 W) count, and is it visible?

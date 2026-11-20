@@ -20,7 +20,7 @@ for name, x, y, vx, vy, c in STATE:
     ax.add_patch(Circle((x, y), 0.225, color=c, alpha=.35))
     ax.annotate("", xy=(x + vx * .2, y + vy * .2), xytext=(x, y),
                 arrowprops=dict(arrowstyle="->", color=c, lw=2))
-    ax.text(x, y - .3, name, ha="center", va="top", fontsize=9, color=c)
+    ax.text(x, -.3, name, ha="center", va="top", fontsize=9, color=c)
 ax.set_aspect("equal"); ax.set_xlim(-.3, 2.7); ax.set_ylim(-.7, .8)
 ax.set_xticks([0, 1, 2]); ax.set_yticks([])
 ax.set_xlabel("m"); ax.set_title(f"t = {t} s", fontsize=10)

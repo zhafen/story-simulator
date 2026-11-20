@@ -49,7 +49,11 @@ Action: no physical action; keeps storing (does not want to just crash in).
 
 Gap: 1.43 m. Contact at current speed: t ≈ 0.71 s.
 
-### t = 0.3 s — TDTFB's turn (pending)
+### t = 0.3 s — TDTFB's turn
+Perceived: player did not speed up; 1.15 m away at 2.83 m/s.
+Action: releases 90 J into a whole-body sidestep to its left (+y), 1.55 m/s; keeps 30 J.
+Stated plan for t = 0.5: if followed, sidestep again; if the player is passing,
+release ~150 J into a whole-arm strike to the flank (8.9 m/s).
 
 | Entity | Position (x, y) m | Velocity (vx, vy) | KE | Stored | Absorbed |
 |---|---|---|---|---|---|
@@ -57,3 +61,13 @@ Gap: 1.43 m. Contact at current speed: t ≈ 0.71 s.
 | TDTFB | (2.00, 0.00) | (0, 0) | 0 J | 120 J | 0 J |
 
 Gap: 1.15 m. Contact at current speed: t ≈ 0.71 s (0.41 s away).
+
+### t = 0.4 s — player's turn (pending)
+
+| Entity | Position (x, y) m | Velocity (vx, vy) | KE | Stored | Absorbed |
+|---|---|---|---|---|---|
+| Player | (1.13, 0.00) | (2.83, 0) | 300 J | 240 J | 0 J |
+| TDTFB | (2.00, 0.15) | (0, 1.55) | 90 J | 90 J | 0 J |
+
+Gap along x: 0.87 m. If nothing changes, the player reaches x = 2.0 at
+t ≈ 0.71 s, when TDTFB will be at y ≈ 0.63 m: a miss (shoulder width ~0.45 m).

@@ -9,7 +9,13 @@ STATE = [  # name, x, y, vx, vy, color
     ("Player", 1.13, 0.00, 2.83, 0.00, "#2b6cb0"),
     ("TDTFB", 2.00, 0.15, 0.00, 1.55, "#c05621"),
 ]
+HISTORY = [  # (x, y, color) at earlier turns, drawn as empty circles
+    (0.57, 0.00, "#2b6cb0"), (0.85, 0.00, "#2b6cb0"),  # player t=0.2, 0.3
+    (2.00, 0.00, "#c05621"), (2.00, 0.00, "#c05621"),  # TDTFB t=0.2, 0.3
+]
 fig, ax = plt.subplots(figsize=(6, 3), dpi=150)
+for x, y, c in HISTORY:
+    ax.add_patch(Circle((x, y), 0.225, fill=False, color=c, lw=1, alpha=.5))
 for name, x, y, vx, vy, c in STATE:
     ax.add_patch(Circle((x, y), 0.225, color=c, alpha=.35))
     ax.annotate("", xy=(x + vx * .2, y + vy * .2), xytext=(x, y),

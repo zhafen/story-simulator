@@ -25,4 +25,14 @@ ax.set_aspect("equal"); ax.set_xlim(-.3, 2.7); ax.set_ylim(-.7, .8)
 ax.set_xticks([0, 1, 2]); ax.set_yticks([])
 ax.set_xlabel("m"); ax.set_title(f"t = {t} s", fontsize=10)
 for s in ("top", "right", "left"): ax.spines[s].set_visible(False)
+# Reachable region for the player over the next step (DT): release up to
+# STORED joules as a velocity change of magnitude sqrt(2E/m) in any direction.
+import math
+DT, STORED, M = 0.1, 240, 75
+px, py, pvx, pvy = 1.13, 0.00, 2.83, 0.00
+dv = math.sqrt(2 * STORED / M)
+ax.add_patch(Circle((px + pvx * DT, py + pvy * DT), dv * DT,
+                    color="#2b6cb0", alpha=.12, ls="--", lw=1))
+ax.add_patch(Circle((px + pvx * DT, py + pvy * DT), dv * DT,
+                    fill=False, color="#2b6cb0", ls="--", lw=1))
 fig.tight_layout(); fig.savefig(sys.argv[1] if len(sys.argv) > 1 else f"docs/combat/frames/t{t}.png")

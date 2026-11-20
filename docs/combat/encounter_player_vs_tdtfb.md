@@ -13,31 +13,36 @@ Turn order: player at t = 0, 0.2, 0.4 …; TDTFB at t = 0.1, 0.3, 0.5 ….
 
 ## History
 
-### t = 0.0 s — player's turn
-Action: player launches whole body at TDTFB with all 300 J stored; P → movement.
+Rewound once: the first version of t = 0.1 used continuous power-to-motion
+(superseded by rules v0 power/storage section); TDTFB's turn was replayed.
 
-| Entity | Position (x, y) m | Velocity (vx, vy) | KE | Stored | Absorbed | P allocation |
-|---|---|---|---|---|---|---|
-| Player | (0.00, 0.00) | (2.83, 0) | 300 J | 0 J | 0 J | movement |
-| TDTFB | (2.00, 0.00) | (0, 0) | 0 J | 300 J | 0 J | recharge (already full) |
+### t = 0.0 s — player's turn
+Action: player launches whole body at TDTFB with all 300 J stored; then stores at 600 W.
+
+| Entity | Position (x, y) m | Velocity (vx, vy) | KE | Stored | Absorbed |
+|---|---|---|---|---|---|
+| Player | (0.00, 0.00) | (2.83, 0) | 300 J | 0 J | 0 J |
+| TDTFB | (2.00, 0.00) | (0, 0) | 0 J | 0 J | 0 J |
 
 ### t = 0.1 s — TDTFB's turn (first poll)
-Perceived: player 1.70 m away, closing at 3.1 m/s, accelerating.
-Action: launches whole body sideways (+y) with 100 J; keeps 200 J in reserve;
-P → sidestep movement. Plan: if the player follows, use reserve at t = 0.3/0.5
-for a foot+shin side kick (200 J, 4.3 kg at 9.6 m/s) or an emergency block.
+Perceived: player 1.72 m away, closing at 2.83 m/s.
+Action: no physical action; begins storing energy, stays balanced to go either way.
+Stated plan (not binding — no queued actions):
+- t = 0.3 (120 J): if player has not sped up, sidestep across the line with ~90 J
+  (1.55 m/s, ~0.6 m clear by contact), keep ~30 J; if sped up, sidestep with all 120 J (1.79 m/s).
+- t = 0.5: if followed, second sidestep; if player is passing, release the
+  store into a whole-arm or whole-leg strike to the flank (e.g. 150 J → arm at 8.9 m/s).
 
-| Entity | Position (x, y) m | Velocity (vx, vy) | KE | Stored | Absorbed | P allocation |
-|---|---|---|---|---|---|---|
-| Player | (0.30, 0.00) | (3.10, 0) | 360 J | 0 J | 0 J | movement |
-| TDTFB | (2.00, 0.00) | (0, 1.63) | 100 J | 200 J | 0 J | movement |
+| Entity | Position (x, y) m | Velocity (vx, vy) | KE | Stored | Absorbed |
+|---|---|---|---|---|---|
+| Player | (0.28, 0.00) | (2.83, 0) | 300 J | 60 J | 0 J |
+| TDTFB | (2.00, 0.00) | (0, 0) | 0 J | 0 J | 0 J |
 
 ### t = 0.2 s — player's turn (pending)
 
-| Entity | Position (x, y) m | Velocity (vx, vy) | KE | Stored | Absorbed | P allocation |
-|---|---|---|---|---|---|---|
-| Player | (0.62, 0.00) | (3.35, 0) | 420 J | 0 J | 0 J | movement |
-| TDTFB | (2.00, 0.19) | (0, 2.07) | 160 J | 200 J | 0 J | movement |
+| Entity | Position (x, y) m | Velocity (vx, vy) | KE | Stored | Absorbed |
+|---|---|---|---|---|---|
+| Player | (0.57, 0.00) | (2.83, 0) | 300 J | 120 J | 0 J |
+| TDTFB | (2.00, 0.00) | (0, 0) | 0 J | 60 J | 0 J |
 
-Gap along x: 1.38 m. Projected contact if nothing changes: none —
-TDTFB would be ~1.2 m off the line by t ≈ 0.57 s.
+Gap: 1.43 m. Contact at current speed: t ≈ 0.71 s.

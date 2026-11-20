@@ -16,17 +16,24 @@ Reference data: `docs/research/aggregated_table.md`.
 Segment masses (75 kg body): hand+forearm 1.65 kg, whole arm 3.75 kg,
 foot+shin 4.3 kg, whole leg 12 kg, head 6 kg, whole body 75 kg.
 
+## Power and storage
+- P **never drives motion directly**. It only fills the energy store, at P,
+  continuously (including while moving), up to the cap E.
+- Every action is paid for from the store.
+- An entity idle at rest before its first poll has an empty store (as of v0).
+- One action per turn; actions cannot be queued for later turns.
+
 ## Offense
 - An entity releases stored energy into a body part, which moves at
   v = √(2·energy/mass) using the part's **actual** mass (no effective-mass factor).
 - Charging time for a release = energy / P.
 
 ## Movement
-- Launch: whole body starts with KE = released stored energy.
-- While moving, P is added continuously as kinetic energy:
-  ½mv² = E_launch + P·t. No speed cap, no friction or drag (deliberately
-  unrealistic over long distances; revisit if it matters).
-- Position: x(t) = (m / 3P)·[u(t)^1.5 − u0^1.5], u = v².
+- Whole-body launch: KE = released stored energy; further releases on later
+  turns add to the existing motion.
+- No friction or drag: a moving body keeps its velocity until it spends
+  energy again. No speed cap (deliberately unrealistic over long distances;
+  revisit if it matters).
 
 ## Defense
 - Every impact is **clean**: its full kinetic energy is deposited in the target.
@@ -40,9 +47,6 @@ foot+shin 4.3 kg, whole leg 12 kg, head 6 kg, whole body 75 kg.
 - An entity sees others' positions and velocities, not their stored energy.
 
 ## Open questions
-- Power budget: can P recharge stored energy while also powering movement?
-  Proposed: P is one budget split between movement and recharging
-  (TDTFB's first move assumed this).
 - Turning while moving: cost of changing direction (rotate velocity at
   constant KE? or must the old component be cancelled with energy?).
 - Collision resolution: what happens when the bodies meet (who deposits

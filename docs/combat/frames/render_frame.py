@@ -14,8 +14,8 @@ HISTORY = [  # (x, y, color) at earlier turns, drawn as empty circles
     (2.00, 0.00, "#c05621"), (2.00, 0.00, "#c05621"),  # TDTFB t=0.2, 0.3
 ]
 fig = plt.figure(figsize=(6.6, 4), dpi=150)
-bx = fig.add_axes([0.04, 0.2, 0.04, 0.6])   # player's energy store bar
-ax = fig.add_axes([0.12, 0.08, 0.86, 0.84])
+bx = fig.add_axes([0.08, 0.2, 0.04, 0.6])   # player's energy store bar
+ax = fig.add_axes([0.15, 0.08, 0.83, 0.84])
 CAP, P_W, STEP = 300, 600, 0.1
 STORE_NOW = 240
 store_next = min(CAP, STORE_NOW + P_W * STEP)

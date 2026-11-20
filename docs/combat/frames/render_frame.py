@@ -35,4 +35,10 @@ ax.add_patch(Circle((px + pvx * DT, py + pvy * DT), dv * DT,
                     color="#2b6cb0", alpha=.12, ls="--", lw=1))
 ax.add_patch(Circle((px + pvx * DT, py + pvy * DT), dv * DT,
                     fill=False, color="#2b6cb0", ls="--", lw=1))
+# Comparison: "adds exactly its energy" rule -> final speed sqrt(v0^2 + 2E/m)
+# in any direction, measured from the current position.
+v_e = math.sqrt(pvx**2 + pvy**2 + 2 * STORED / M)
+ax.add_patch(Circle((px, py), v_e * DT, fill=False, color="#2f855a", ls=":", lw=1.5))
+ax.text(.0, .7, "- - velocity rule (release adds 2.53 m/s)", fontsize=7, color="#2b6cb0")
+ax.text(.0, .58, "···· energy rule (always 3.80 m/s)", fontsize=7, color="#2f855a")
 fig.tight_layout(); fig.savefig(sys.argv[1] if len(sys.argv) > 1 else f"docs/combat/frames/t{t}.png")

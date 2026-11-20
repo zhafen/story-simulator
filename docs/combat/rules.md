@@ -41,7 +41,9 @@ foot+shin 4.3 kg, whole leg 12 kg, head 6 kg, whole body 75 kg.
   revisit if it matters).
 
 ## Defense
-- Every impact is **clean**: its full kinetic energy is deposited in the target.
+- Every impact is **clean** (no glancing blows / missed fraction).
+- The attacker takes no damage from its own strikes (v0 simplification).
+- Split of impact energy between damage and target KE: pending (see open questions).
 - Absorbed energy accumulates; when it exceeds H the entity is defeated.
 - Dodging/blocking costs energy and power like any other action.
 
@@ -52,6 +54,7 @@ foot+shin 4.3 kg, whole leg 12 kg, head 6 kg, whole body 75 kg.
 - An entity sees others' positions and velocities, not their stored energy.
 
 ## Open questions
-- Collision resolution: what happens when the bodies meet (who deposits
-  what into whom; momentum vs energy).
+- Collision resolution: fraction of impact energy deposited as damage vs
+  converted to the target's KE (literature review in progress:
+  `docs/research/collision_energy_partition.md`).
 - Does the 0.5 s pre-launch charge (300 J at 600 W) count, and is it visible?

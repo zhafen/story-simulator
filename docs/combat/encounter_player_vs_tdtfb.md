@@ -62,7 +62,16 @@ release ~150 J into a whole-arm strike to the flank (8.9 m/s).
 
 Gap: 1.15 m. Contact at current speed: t ≈ 0.71 s (0.41 s away).
 
-### t = 0.4 s — player's turn (pending)
+### t = 0.4 s — player's turn
+Perceived: TDTFB 0.88 m away (centre to centre), moving sideways at 1.55 m/s.
+Action: punches TDTFB with all 240 J into the whole arm (3.75 kg) → fist
+11.3 m/s relative to the body; body keeps coasting at 2.83 m/s.
+Contact: fist needs ~0.45 m of extension to reach TDTFB's surface → lands at
+t ≈ 0.44 s, before TDTFB's next poll (t = 0.5).
+Outcome: **pending** — split of the 240 J between damage (absorbed) and
+TDTFB's post-impact KE awaits the collision rule (literature review in
+`docs/research/collision_energy_partition.md`). Attacker takes no damage
+from its own strikes (rules v0).
 
 | Entity | Position (x, y) m | Velocity (vx, vy) | KE | Stored | Absorbed |
 |---|---|---|---|---|---|

@@ -13,7 +13,19 @@ HISTORY = [  # (x, y, color) at earlier turns, drawn as empty circles
     (0.57, 0.00, "#2b6cb0"), (0.85, 0.00, "#2b6cb0"),  # player t=0.2, 0.3
     (2.00, 0.00, "#c05621"), (2.00, 0.00, "#c05621"),  # TDTFB t=0.2, 0.3
 ]
-fig, ax = plt.subplots(figsize=(6, 4), dpi=150)
+fig = plt.figure(figsize=(6.6, 4), dpi=150)
+bx = fig.add_axes([0.04, 0.2, 0.04, 0.6])   # player's energy store bar
+ax = fig.add_axes([0.12, 0.08, 0.86, 0.84])
+CAP, P_W, STEP = 300, 600, 0.1
+STORE_NOW = 240
+store_next = min(CAP, STORE_NOW + P_W * STEP)
+bx.bar(0, CAP, color="none", edgecolor="#2b6cb0", lw=1)
+bx.bar(0, store_next, color="#2b6cb0", alpha=.2)
+bx.bar(0, STORE_NOW, color="#2b6cb0", alpha=.7)
+bx.set_xlim(-.5, .5); bx.set_ylim(0, CAP); bx.set_xticks([])
+bx.set_yticks([0, STORE_NOW, CAP]); bx.tick_params(labelsize=7)
+bx.set_title("Player\nstore (J)", fontsize=7)
+for sp in ("top", "right"): bx.spines[sp].set_visible(False)
 for x, y, c in HISTORY:
     ax.add_patch(Circle((x, y), 0.225, fill=False, color=c, lw=1, alpha=.5))
 for name, x, y, vx, vy, c in STATE:
@@ -38,4 +50,4 @@ ax.add_patch(Circle((px + pvx * DT, py + pvy * DT), dv * DT,
 ax.add_patch(Circle((px + pvx * DT, py + pvy * DT), dv * DT,
                     fill=False, color="#2b6cb0", ls="--", lw=1))
 ax.text(-.25, 1.15, "— punch reach 0.8 m   ··· kick reach 1.0 m", fontsize=7, color="#555")
-fig.tight_layout(); fig.savefig(sys.argv[1] if len(sys.argv) > 1 else f"docs/combat/frames/t{t}.png")
+fig.savefig(sys.argv[1] if len(sys.argv) > 1 else f"docs/combat/frames/t{t}.png")

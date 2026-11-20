@@ -33,8 +33,6 @@ for name, x, y, vx, vy, c in STATE:
     ax.add_patch(Circle((x, y), 0.225, color=c, alpha=.35))
     ax.annotate("", xy=(x + vx * .2, y + vy * .2), xytext=(x, y),
                 arrowprops=dict(arrowstyle="->", color=c, lw=2))
-    for R, ls in ((0.8, "-"), (1.0, ":")):  # punch / kick reach from body centre
-        ax.add_patch(Circle((x, y), R, fill=False, color=c, ls=ls, lw=.8, alpha=.6))
     ax.text(x, -.45, name, ha="center", va="top", fontsize=9, color=c)
 ax.set_aspect("equal"); ax.set_xlim(-.4, 3.1); ax.set_ylim(-1.1, 1.3)
 ax.set_xticks([0, 1, 2]); ax.set_yticks([])
@@ -54,5 +52,11 @@ PACE = 1.0  # jogging step length, m (~2.8 m/s at ~165 steps/min)
 ax.plot([0, PACE], [.3, .3], color="#2b6cb0", lw=2)
 ax.plot([0, 0], [.27, .33], [PACE, PACE], [.27, .33], color="#2b6cb0", lw=1)
 ax.text(PACE / 2, .34, "1 pace", ha="center", va="bottom", fontsize=7, color="#2b6cb0")
-ax.text(-.25, 1.15, "— punch reach 0.8 m   ··· kick reach 1.0 m", fontsize=7, color="#555")
+# Punch option: release STORED into the whole arm (actual mass), body coasts.
+ARM_M, ARM_REACH = 3.75, 0.8  # kg; fist reach from body centre, m
+v_fist = math.sqrt(2 * STORED / ARM_M)
+cx, cy = px + pvx * DT, py + pvy * DT  # coasting body centre at end of step
+ax.add_patch(Circle((cx, cy), ARM_REACH, fill=False, color="#2b6cb0", lw=1, alpha=.7))
+ax.text(cx, cy + ARM_REACH + .03, f"punch reach at t = {t + DT:.1f} s ({v_fist:.1f} m/s fist)",
+        ha="center", va="bottom", fontsize=7, color="#2b6cb0")
 fig.savefig(sys.argv[1] if len(sys.argv) > 1 else f"docs/combat/frames/t{t}.png")

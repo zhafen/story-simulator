@@ -13,15 +13,17 @@ HISTORY = [  # (x, y, color) at earlier turns, drawn as empty circles
     (0.57, 0.00, "#2b6cb0"), (0.85, 0.00, "#2b6cb0"),  # player t=0.2, 0.3
     (2.00, 0.00, "#c05621"), (2.00, 0.00, "#c05621"),  # TDTFB t=0.2, 0.3
 ]
-fig, ax = plt.subplots(figsize=(6, 3), dpi=150)
+fig, ax = plt.subplots(figsize=(6, 4), dpi=150)
 for x, y, c in HISTORY:
     ax.add_patch(Circle((x, y), 0.225, fill=False, color=c, lw=1, alpha=.5))
 for name, x, y, vx, vy, c in STATE:
     ax.add_patch(Circle((x, y), 0.225, color=c, alpha=.35))
     ax.annotate("", xy=(x + vx * .2, y + vy * .2), xytext=(x, y),
                 arrowprops=dict(arrowstyle="->", color=c, lw=2))
+    for R, ls in ((0.8, "-"), (1.0, ":")):  # punch / kick reach from body centre
+        ax.add_patch(Circle((x, y), R, fill=False, color=c, ls=ls, lw=.8, alpha=.6))
     ax.text(x, -.45, name, ha="center", va="top", fontsize=9, color=c)
-ax.set_aspect("equal"); ax.set_xlim(-.3, 2.7); ax.set_ylim(-.7, .8)
+ax.set_aspect("equal"); ax.set_xlim(-.3, 3.1); ax.set_ylim(-1.1, 1.3)
 ax.set_xticks([0, 1, 2]); ax.set_yticks([])
 ax.set_xlabel("m"); ax.set_title(f"t = {t} s", fontsize=10)
 for s in ("top", "right", "left"): ax.spines[s].set_visible(False)
@@ -35,4 +37,5 @@ ax.add_patch(Circle((px + pvx * DT, py + pvy * DT), dv * DT,
                     color="#2b6cb0", alpha=.12, ls="--", lw=1))
 ax.add_patch(Circle((px + pvx * DT, py + pvy * DT), dv * DT,
                     fill=False, color="#2b6cb0", ls="--", lw=1))
+ax.text(-.25, 1.15, "— punch reach 0.8 m   ··· kick reach 1.0 m", fontsize=7, color="#555")
 fig.tight_layout(); fig.savefig(sys.argv[1] if len(sys.argv) > 1 else f"docs/combat/frames/t{t}.png")

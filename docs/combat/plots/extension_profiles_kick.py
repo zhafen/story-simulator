@@ -15,7 +15,7 @@ for k, lab, c in [(1, "x ~ t  (constant speed)", "#2f855a"),
     ax.plot(E, k * d / vf, color=c, label=lab)
 ax.axvline(300, color="#555", ls=":", lw=1); ax.text(302, .02, "cap", fontsize=7, color="#555")
 ax.set_xlabel("final energy (J)"); ax.set_ylabel("time for foot to travel 1.0 m (s)")
-ax.set_ylim(0, 1.2); ax.legend(fontsize=7, frameon=False, loc="center right")
+ax.set_ylim(0, 1.2); ax.legend(fontsize=7, frameon=False, loc="upper right", bbox_to_anchor=(1, .93))
 ax.set_title("Kick: whole leg 12 kg", fontsize=9)
 for s in ("top", "right"): ax.spines[s].set_visible(False)
 fig.tight_layout(); fig.savefig("docs/combat/plots/extension_profiles_kick.png")

@@ -65,5 +65,9 @@ foot+shin 4.3 kg, whole leg 12 kg, head 6 kg, whole body 75 kg.
   ⅓ of the 12 kg leg (swing correction) = 4 kg.
 - Collision (tentative): damage = ½·μ·v_rel²·(1 − e²), μ = m_limb·M/(m_limb+M),
   e = 0.2; target knockback Δv = (1+e)·m_limb·v_rel/(m_limb+M).
+- Movement releases are delivered at constant power P (duration E_r/P),
+  not instantaneously; the store keeps refilling during the movement. With a
+  store saved over one turn, this gives continuous constant-power motion with
+  a one-turn lag.
 - Entities whose polls coincide decide simultaneously, without seeing each
   other's choices for that instant.

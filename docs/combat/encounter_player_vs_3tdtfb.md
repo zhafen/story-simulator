@@ -28,17 +28,26 @@ TDTFB-1, -2, -3: no action (store empty); each holds position.
 | TDTFB-3 | (2.30, −1.93) | (0, 0) | 0 J | 0 J | 0 J |
 
 ### t = 0.02 s — player's turn
-Action: launches toward TDTFB-1 (+x) with a constant-power profile: the 120 J
-stored is released as initial KE, then P = 6000 W goes into forward motion
-(store does not fill while P drives movement). KE(τ) = 120 J + 6000 W·τ.
-Projection if unchanged: x = 0.73 m, 5.7 m/s, 1200 J at t = 0.2 s; reaches
-body contact with TDTFB-1 (x = 2.55 m) at t ≈ 0.45 s, 8.5 m/s, ~2700 J.
+Action: releases the 120 J stored into forward motion toward TDTFB-1 (+x),
+delivered at constant power (6000 W) from rest over 0.02–0.04 s. The store
+keeps refilling at 6000 W during the movement.
 
-### t = 0.04 s — player's turn (pending)
+### t = 0.04 s — player's turn
+Action: releases the 120 J saved during the last movement into more forward
+motion, again at constant power, over 0.04–0.06 s.
 
 | Entity | Position (x, y) | Velocity | KE | Stored | Absorbed |
 |---|---|---|---|---|---|
-| Player | (0.04, 0.00) | (2.53, 0) | 240 J | 0 J | 0 J |
+| Player | (0.024, 0.00) | (1.79, 0) | 120 J | 120 J | 0 J |
 | TDTFB-1 | (3.00, 0.00) | (0, 0) | 0 J | 24 J | 0 J |
 | TDTFB-2 | (2.30, 1.93) | (0, 0) | 0 J | 24 J | 0 J |
 | TDTFB-3 | (2.30, −1.93) | (0, 0) | 0 J | 24 J | 0 J |
+
+### t = 0.06 s — player's turn (pending)
+
+| Entity | Position (x, y) | Velocity | KE | Stored | Absorbed |
+|---|---|---|---|---|---|
+| Player | (0.068, 0.00) | (2.53, 0) | 240 J | 120 J | 0 J |
+| TDTFB-1 | (3.00, 0.00) | (0, 0) | 0 J | 36 J | 0 J |
+| TDTFB-2 | (2.30, 1.93) | (0, 0) | 0 J | 36 J | 0 J |
+| TDTFB-3 | (2.30, −1.93) | (0, 0) | 0 J | 36 J | 0 J |

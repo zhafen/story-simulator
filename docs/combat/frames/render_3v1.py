@@ -2,8 +2,8 @@
 import sys, matplotlib; matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib.patches import Circle
-t, STORE, CAP, P, DT = 0.02, 120, 3000, 6000, 0.02
-STATE = [("Player", 0, 0, 0, 0, "#2b6cb0"), ("1", 3.0, 0, 0, 0, "#c05621"),
+t, STORE, CAP, P, DT = 0.04, 0, 3000, 0, 0.02  # P into movement, store not filling
+STATE = [("Player", 0.04, 0, 2.53, 0, "#2b6cb0"), ("1", 3.0, 0, 0, 0, "#c05621"),
          ("2", 2.30, 1.93, 0, 0, "#c05621"), ("3", 2.30, -1.93, 0, 0, "#c05621")]
 fig = plt.figure(figsize=(6.6, 4.4), dpi=150)
 bx = fig.add_axes([0.08, 0.2, 0.04, 0.6]); ax = fig.add_axes([0.16, 0.08, 0.82, 0.84])

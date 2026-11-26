@@ -58,3 +58,12 @@ foot+shin 4.3 kg, whole leg 12 kg, head 6 kg, whole body 75 kg.
   converted to the target's KE (literature review in progress:
   `docs/research/collision_energy_partition.md`).
 - Does the 0.5 s pre-launch charge (300 J at 600 W) count, and is it visible?
+
+## Working assumptions (v1, used from the 1-vs-3 encounter onward)
+- Strike timing: power-law profile x = D·(t/T)^n with n ≈ 5, so T = 5·D/v.
+  D = 0.6 m (punch), 1.0 m (kick). Limb mass: whole arm 3.75 kg; kick uses
+  ⅓ of the 12 kg leg (swing correction) = 4 kg.
+- Collision (tentative): damage = ½·μ·v_rel²·(1 − e²), μ = m_limb·M/(m_limb+M),
+  e = 0.2; target knockback Δv = (1+e)·m_limb·v_rel/(m_limb+M).
+- Entities whose polls coincide decide simultaneously, without seeing each
+  other's choices for that instant.
